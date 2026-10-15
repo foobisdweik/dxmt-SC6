@@ -907,6 +907,23 @@ public:
       }
     }
     hud.end();
+
+    // DXMT_LOG_FRAME_STATS=1: also write the averages to the log every 120
+    // frames, so profiling runs can be compared without reading the HUD.
+    static const bool log_stats = env::getEnvVar("DXMT_LOG_FRAME_STATS") == "1";
+    if (log_stats && frame_id % 120 == 0) {
+      WARN(std::format(
+          "frame-stats: frame={} cmdbufs={} commit_avg={:.2f}ms commit_max={:.2f}ms sync_avg={:.2f}ms "
+          "stall_max={} present_latency={:.2f}ms encode_prepare={:.2f}ms encode_flush={:.2f}ms "
+          "drawable_wait={:.2f}ms render_passes={} clear_passes={}",
+          frame_id, frame.command_buffer_count, average.commit_interval.count() / 1e6,
+          statistics.max().commit_interval.count() / 1e6, average.sync_interval.count() / 1e6,
+          statistics.max().event_stall, average.present_latency_interval.count() / 1e6,
+          average.encode_prepare_interval.count() / 1e6,
+          (average.encode_flush_interval - average.drawable_blocking_interval).count() / 1e6,
+          average.drawable_blocking_interval.count() / 1e6, frame.render_pass_count, frame.clear_pass_count
+      ));
+    }
   }
 
   BOOL STDMETHODCALLTYPE IsTemporaryMonoSupported() final { return FALSE; };
