@@ -2148,4 +2148,19 @@ WINEMETAL_API void MTLTexture_getBytes(
     struct WMTMemoryPointer data, uint64_t bytes_per_row, uint64_t bytes_per_image
 );
 
+/* Native macOS fullscreen for the window that hosts a swapchain.
+ * The request runs asynchronously on the Cocoa main thread; the return value
+ * is the state that the previous request observed. */
+enum WMTNativeFullscreenState {
+  WMTNativeFullscreenUnknown = 0,
+  WMTNativeFullscreenUnavailable = 1, /* no Cocoa window for this HWND */
+  WMTNativeFullscreenWindowed = 2,
+  WMTNativeFullscreenNotCoveringScreen = 3,
+  WMTNativeFullscreenRequested = 4,
+  WMTNativeFullscreenActive = 5,
+  WMTNativeFullscreenGaveUp = 6, /* request limit reached */
+};
+
+WINEMETAL_API enum WMTNativeFullscreenState WMTRequestNativeFullscreen(intptr_t hwnd, bool enable);
+
 #endif

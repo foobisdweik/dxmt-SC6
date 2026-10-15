@@ -230,6 +230,12 @@ struct unixcall_nsstring_string {
   obj_handle_t ret;
 };
 
+struct unixcall_request_native_fullscreen {
+  uint64_t hwnd;
+  uint64_t enable;
+  uint64_t ret_state;
+};
+
 struct unixcall_create_metal_view_from_hwnd {
   uint64_t hwnd;
   obj_handle_t device;

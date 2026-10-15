@@ -1718,6 +1718,68 @@ _CreateMetalViewFromHWND(void *obj) {
   return STATUS_SUCCESS;
 }
 
+/* Wine's Mac driver allows Cocoa fullscreen only for resizable windows, so a
+ * borderless "fullscreen" game window is never put in a fullscreen Space and
+ * WindowServer composites it. Native fullscreen lets macOS show the layer
+ * directly. Wine's own toggleFullScreen: and fullscreen delegate methods still
+ * run, so Wine reports the new window size to the game as usual. */
+static _Atomic(int) g_native_fullscreen_state = WMTNativeFullscreenUnknown;
+static _Atomic(int) g_native_fullscreen_requests = 0;
+#define NATIVE_FULLSCREEN_MAX_REQUESTS 3
+
+static NTSTATUS
+_WMTRequestNativeFullscreen(void *obj) {
+  struct unixcall_request_native_fullscreen *params = obj;
+  params->ret_state = atomic_load(&g_native_fullscreen_state);
+
+  macdrv_window (*pfn_macdrv_get_cocoa_window)(HWND hwnd, BOOL require_on_screen) = NULL;
+  struct macdrv_functions_t *macdrv_functions;
+  if ((macdrv_functions = dlsym(RTLD_DEFAULT, "macdrv_functions")))
+    pfn_macdrv_get_cocoa_window = macdrv_functions->macdrv_get_cocoa_window;
+  else
+    pfn_macdrv_get_cocoa_window = dlsym(RTLD_DEFAULT, "macdrv_get_cocoa_window");
+
+  NSWindow *window = pfn_macdrv_get_cocoa_window
+      ? (NSWindow *)pfn_macdrv_get_cocoa_window((HWND)params->hwnd, FALSE) : nil;
+  if (!window) {
+    atomic_store(&g_native_fullscreen_state, WMTNativeFullscreenUnavailable);
+    return STATUS_SUCCESS;
+  }
+
+  BOOL enable = params->enable != 0;
+  [window retain];
+  /* Asynchronous on purpose: entering fullscreen makes Wine query the window's
+   * thread (QUERY_MIN_MAX_INFO), which may be the thread that calls us. */
+  dispatch_async(dispatch_get_main_queue(), ^{
+    BOOL is_fullscreen = ([window styleMask] & NSWindowStyleMaskFullScreen) != 0;
+    int state;
+    if (enable && !is_fullscreen) {
+      NSScreen *screen = [window screen];
+      NSRect content = [window contentRectForFrameRect:[window frame]];
+      if (!screen || !NSContainsRect(content, [screen frame])) {
+        state = WMTNativeFullscreenNotCoveringScreen;
+      } else if (atomic_fetch_add(&g_native_fullscreen_requests, 1) >= NATIVE_FULLSCREEN_MAX_REQUESTS) {
+        state = WMTNativeFullscreenGaveUp;
+      } else {
+        NSWindowCollectionBehavior behavior = [window collectionBehavior];
+        behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
+        behavior &= ~NSWindowCollectionBehaviorFullScreenAuxiliary;
+        [window setCollectionBehavior:behavior];
+        [window toggleFullScreen:nil];
+        state = WMTNativeFullscreenRequested;
+      }
+    } else if (!enable && is_fullscreen) {
+      [window toggleFullScreen:nil];
+      state = WMTNativeFullscreenRequested;
+    } else {
+      state = is_fullscreen ? WMTNativeFullscreenActive : WMTNativeFullscreenWindowed;
+    }
+    atomic_store(&g_native_fullscreen_state, state);
+    [window release];
+  });
+  return STATUS_SUCCESS;
+}
+
 static NTSTATUS
 _ReleaseMetalView(void *obj) {
   struct unixcall_generic_obj_noret *params = obj;
@@ -3310,6 +3372,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newIndirectCommandBuffer,
     &_MTLDevice_newLibraryWithSource,
     &_MTLTexture_getBytes,
+    &_WMTRequestNativeFullscreen,
 };
 
 #ifndef DXMT_NATIVE
@@ -3460,5 +3523,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newIndirectCommandBuffer,
     &_MTLDevice_newLibraryWithSource,
     &_MTLTexture_getBytes,
+    &_WMTRequestNativeFullscreen,
 };
 #endif

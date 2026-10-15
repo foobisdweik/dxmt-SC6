@@ -178,6 +178,7 @@ public:
     }
 
     handle_alt_tab_ = Config::getInstance().getOption<bool>("dxgi.handleAltTab", false);
+    native_fullscreen_ = Config::getInstance().getOption<bool>("dxgi.nativeFullscreen", false);
 
     hud.initialize(GetVersionDescriptionText(device_->GetDirectXVersion(), device_->GetFeatureLevel()));
 
@@ -767,6 +768,15 @@ public:
       return hr;
     }
 
+    if (native_fullscreen_ && native_fullscreen_presents_++ % 60 == 0) {
+      // Asynchronous: returns what the previous check saw.
+      auto state = WMTRequestNativeFullscreen((intptr_t)hWnd, true);
+      if (state != native_fullscreen_state_) {
+        WARN("DXGISwapChain: native fullscreen state ", (int)native_fullscreen_state_, " -> ", (int)state);
+        native_fullscreen_state_ = state;
+      }
+    }
+
     double vsync_duration =
         std::max(SyncInterval * 1.0 /
                      (preferred_max_frame_rate ? preferred_max_frame_rate
@@ -1088,6 +1098,9 @@ private:
   dxmt::mutex mutex_;
 
   bool handle_alt_tab_;
+  bool native_fullscreen_ = false;
+  uint64_t native_fullscreen_presents_ = 0;
+  WMTNativeFullscreenState native_fullscreen_state_ = WMTNativeFullscreenUnknown;
 
   std::conditional<EnableMetalFX, Rc<SpatialScaler>, std::monostate>::type metalfx_scaler;
   std::conditional<EnableMetalFX, Com<D3D11ResourceCommon>, std::monostate>::type upscaled_backbuffer_;

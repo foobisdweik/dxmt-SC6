@@ -1331,3 +1331,13 @@ MTLTexture_getBytes(
   params.bytes_per_image = bytes_per_image;
   UNIX_CALL(145, &params);
 }
+
+WINEMETAL_API enum WMTNativeFullscreenState
+WMTRequestNativeFullscreen(intptr_t hwnd, bool enable) {
+  struct unixcall_request_native_fullscreen params;
+  params.hwnd = (uint64_t)(uintptr_t)hwnd;
+  params.enable = enable;
+  params.ret_state = WMTNativeFullscreenUnknown;
+  UNIX_CALL(146, &params);
+  return (enum WMTNativeFullscreenState)params.ret_state;
+}

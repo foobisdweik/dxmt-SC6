@@ -70,6 +70,7 @@ namespace dxmt {
       { "d3d11.preferredMaxFrameRate",     "120" },
       { "d3d11.metalSpatialUpscale",       "True" },
       { "d3d11.metalSpatialUpscaleFactor", "2.0" },
+      { "dxgi.nativeFullscreen",           "True" },
     }} },
   }};
 
