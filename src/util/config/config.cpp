@@ -64,6 +64,13 @@ namespace dxmt {
     { R"(\\helldivers2\.exe$)", {{
       { "d3d11.maxFeatureLevel",   "12_1" },
     }} },
+    /** SoulCalibur VI: ProMotion pacing at up to 120 Hz, and
+     *  MetalFX upscaling from 1728x1117 to the 3456x2234 panel */
+    { R"(\\SoulcaliburVI\.exe$)", {{
+      { "d3d11.preferredMaxFrameRate",     "120" },
+      { "d3d11.metalSpatialUpscale",       "True" },
+      { "d3d11.metalSpatialUpscaleFactor", "2.0" },
+    }} },
   }};
 
   const Config* findProfile(const ProfileList& profiles, const std::string& appName) {

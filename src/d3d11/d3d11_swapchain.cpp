@@ -145,7 +145,8 @@ public:
 
     presenter = Rc(new Presenter(pDevice->GetMTLDevice(), layer_weak_,
                                  pDevice->GetDXMTDevice().queue().cmd_library,
-                                 scale_factor, desc_.SampleDesc.Count));
+                                 scale_factor, desc_.SampleDesc.Count,
+                                 Config::getInstance().getOption<bool>("dxgi.metalDisplaySync", false)));
 
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
@@ -1121,7 +1122,8 @@ CreateSwapChain(
       pDesc->BufferCount != 1) {
     WARN("CreateSwapChain: unsupported swap effect ", pDesc->SwapEffect, " with backbuffer size ", pDesc->BufferCount);
   }
-  if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
+  if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1" ||
+      Config::getInstance().getOption<bool>("d3d11.metalSpatialUpscale", false)) {
     if (pDevice->GetMTLDevice().supportsFXSpatialScaler()) {
       *ppSwapChain = new MTLD3D11SwapChain<true>(
           pFactory, pDevice, layer_factory.ptr(), hWnd, pDesc, pFullscreenDesc
