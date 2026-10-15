@@ -1724,6 +1724,64 @@ _CreateMetalViewFromHWND(void *obj) {
  * directly. Wine's own toggleFullScreen: and fullscreen delegate methods still
  * run, so Wine reports the new window size to the game as usual. */
 static _Atomic(int) g_native_fullscreen_state = WMTNativeFullscreenUnknown;
+static _Atomic(int) g_native_fullscreen_dumped = 0;
+
+/* Diagnostic: print the window's view and layer tree to stderr once native
+ * fullscreen is active. macOS shows a layer directly (without compositing) only
+ * if it is the single opaque layer covering the display in a supported format,
+ * so this shows which condition fails. Enabled with DXMT_DUMP_LAYERS=1. */
+static void
+dump_layer(CALayer *layer, int depth) {
+  NSRect f = [layer frame];
+  fprintf(stderr, "dxmt-layers: %*s%s hidden=%d opaque=%d opacity=%.2f frame=(%.0f,%.0f %.0fx%.0f) scale=%.1f bg=%s sublayers=%lu\n",
+          depth * 2, "", class_getName([layer class]), [layer isHidden], [layer isOpaque], [layer opacity],
+          f.origin.x, f.origin.y, f.size.width, f.size.height, [layer contentsScale],
+          [layer backgroundColor] ? "set" : "nil", (unsigned long)[[layer sublayers] count]);
+  if ([layer isKindOfClass:[CAMetalLayer class]]) {
+    CAMetalLayer *m = (CAMetalLayer *)layer;
+    CGSize ds = [m drawableSize];
+    CFStringRef cs = [m colorspace] ? CGColorSpaceCopyName([m colorspace]) : NULL;
+    fprintf(stderr, "dxmt-layers: %*s  metal: pixelFormat=%lu drawable=%.0fx%.0f framebufferOnly=%d displaySync=%d edr=%d colorspace=%s\n",
+            depth * 2, "", (unsigned long)[m pixelFormat], ds.width, ds.height, [m framebufferOnly],
+            [m displaySyncEnabled], [m wantsExtendedDynamicRangeContent],
+            cs ? [(__bridge NSString *)cs UTF8String] : "nil");
+    if (cs) CFRelease(cs);
+  }
+  for (CALayer *sub in [layer sublayers])
+    dump_layer(sub, depth + 1);
+}
+
+static void
+dump_view(NSView *view, int depth) {
+  NSRect f = [view frame];
+  fprintf(stderr, "dxmt-layers: %*sview %s hidden=%d opaque=%d frame=(%.0f,%.0f %.0fx%.0f) wantsLayer=%d\n",
+          depth * 2, "", class_getName([view class]), [view isHidden], [view isOpaque],
+          f.origin.x, f.origin.y, f.size.width, f.size.height, [view wantsLayer]);
+  for (NSView *sub in [view subviews])
+    dump_view(sub, depth + 1);
+}
+
+static void
+dump_window_tree(NSWindow *window) {
+  const char *env = getenv("DXMT_DUMP_LAYERS");
+  if (!env || env[0] != '1')
+    return;
+  NSRect f = [window frame];
+  NSRect sf = [[window screen] frame];
+  CGColorSpaceRef scs = [[[window screen] colorSpace] CGColorSpace];
+  CFStringRef scs_name = scs ? CGColorSpaceCopyName(scs) : NULL;
+  fprintf(stderr, "dxmt-layers: screen colorspace=%s (%s)\n", scs_name ? [(__bridge NSString *)scs_name UTF8String] : "unnamed",
+          [[[[window screen] colorSpace] localizedName] UTF8String] ?: "?");
+  if (scs_name) CFRelease(scs_name);
+  fprintf(stderr, "dxmt-layers: window %s style=0x%lx behavior=0x%lx frame=(%.0f,%.0f %.0fx%.0f) screen=(%.0fx%.0f) backing=%.1f opaque=%d\n",
+          class_getName([window class]), (unsigned long)[window styleMask], (unsigned long)[window collectionBehavior],
+          f.origin.x, f.origin.y, f.size.width, f.size.height, sf.size.width, sf.size.height,
+          [window backingScaleFactor], [window isOpaque]);
+  NSView *root = [[window contentView] superview] ? [[window contentView] superview] : [window contentView];
+  dump_view(root, 0);
+  if ([root layer])
+    dump_layer([root layer], 0);
+}
 static _Atomic(int) g_native_fullscreen_requests = 0;
 #define NATIVE_FULLSCREEN_MAX_REQUESTS 3
 
@@ -1773,6 +1831,8 @@ _WMTRequestNativeFullscreen(void *obj) {
       state = WMTNativeFullscreenRequested;
     } else {
       state = is_fullscreen ? WMTNativeFullscreenActive : WMTNativeFullscreenWindowed;
+      if (is_fullscreen && atomic_exchange(&g_native_fullscreen_dumped, 1) == 0)
+        dump_window_tree(window);
     }
     atomic_store(&g_native_fullscreen_state, state);
     [window release];

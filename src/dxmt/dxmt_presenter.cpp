@@ -4,6 +4,7 @@
 #include "dxmt_format.hpp"
 #include "dxmt_presenter.hpp"
 #include "util_likely.hpp"
+#include "config/config.hpp"
 
 
 namespace dxmt {
@@ -44,6 +45,15 @@ Presenter::changeLayerProperties(
   should_invalidated |= sample_count_ != sample_count;
   sample_count_ = sample_count;
   layer_props_.pixel_format = Forget_sRGB(format);
+  // macOS shows a layer directly (without compositing) only in a pixel format
+  // the display scans out; an RGB10A2 layer is always composited. The present
+  // pass converts from the backbuffer, so the layer may use another format.
+  static const std::string layer_format =
+      Config::getInstance().getOption<std::string>("dxgi.metalLayerPixelFormat", "auto");
+  if (layer_format == "bgra8")
+    layer_props_.pixel_format = WMTPixelFormatBGRA8Unorm;
+  else if (layer_format == "bgr10a2")
+    layer_props_.pixel_format = WMTPixelFormatBGR10A2Unorm;
   layer_props_.drawable_height = height;
   layer_props_.drawable_width = width;
   colorspace_ = colorspace;
