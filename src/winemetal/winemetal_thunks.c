@@ -1341,3 +1341,28 @@ WMTRequestNativeFullscreen(intptr_t hwnd, bool enable) {
   UNIX_CALL(146, &params);
   return (enum WMTNativeFullscreenState)params.ret_state;
 }
+
+WINEMETAL_API bool
+WMTReadCacheFile(const char *path, void *buffer, uint64_t capacity, uint64_t *size_out) {
+  struct unixcall_read_cache_file params;
+  WMT_MEMPTR_SET(params.path, path);
+  WMT_MEMPTR_SET(params.buffer, buffer);
+  params.capacity = capacity;
+  params.ret_size = 0;
+  params.ret_success = 0;
+  UNIX_CALL(147, &params);
+  if (size_out)
+    *size_out = params.ret_size;
+  return params.ret_success != 0;
+}
+
+WINEMETAL_API bool
+WMTWriteCacheFile(const char *path, const void *data, uint64_t size) {
+  struct unixcall_write_cache_file params;
+  WMT_MEMPTR_SET(params.path, path);
+  WMT_MEMPTR_SET(params.data, data);
+  params.size = size;
+  params.ret_success = 0;
+  UNIX_CALL(148, &params);
+  return params.ret_success != 0;
+}

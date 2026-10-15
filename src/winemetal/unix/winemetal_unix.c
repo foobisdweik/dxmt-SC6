@@ -1,5 +1,8 @@
 #include <stdatomic.h>
 #include <dlfcn.h>
+#include <errno.h>
+#include <stdio.h>
+#include <unistd.h>
 #import <Cocoa/Cocoa.h>
 #import <ColorSync/ColorSync.h>
 #import <CoreFoundation/CFRunLoop.h>
@@ -2778,6 +2781,8 @@ _WMTGetOSVersion(void *obj) {
   return STATUS_SUCCESS;
 }
 
+extern NSString *wmt_resolve_cache_file_path(const char *path);
+
 static NTSTATUS
 _MTLDevice_newBinaryArchive(void *obj) {
   struct unixcall_mtldevice_newbinaryarchive *params = obj;
@@ -2785,9 +2790,12 @@ _MTLDevice_newBinaryArchive(void *obj) {
   NSURL *url = NULL;
   MTLBinaryArchiveDescriptor *desc = [[MTLBinaryArchiveDescriptor alloc] init];
   if (params->url.ptr != NULL) {
-    path_str = [[NSString alloc] initWithCString:params->url.ptr encoding:NSUTF8StringEncoding];
-    url = [[NSURL alloc] initFileURLWithPath:path_str];
-    desc.url = url;
+    /* relative paths are inside the DXMT cache directory */
+    path_str = [wmt_resolve_cache_file_path(params->url.ptr) retain];
+    if (path_str) {
+      url = [[NSURL alloc] initFileURLWithPath:path_str];
+      desc.url = url;
+    }
   }
   NSError *err = NULL;
   params->ret_archive = (obj_handle_t)[(id<MTLDevice>)params->device newBinaryArchiveWithDescriptor:desc error:&err];
@@ -2803,12 +2811,25 @@ _MTLDevice_newBinaryArchive(void *obj) {
 static NTSTATUS
 _MTLBinaryArchive_serialize(void *obj) {
   struct unixcall_mtlbinaryarchive_serialize *params = obj;
-  NSString *path_str = [[NSString alloc] initWithCString:params->url.ptr encoding:NSUTF8StringEncoding];
-  NSURL *url = [[NSURL alloc] initFileURLWithPath:path_str];
+  NSString *path_str = [wmt_resolve_cache_file_path(params->url.ptr) retain];
+  if (!path_str) {
+    params->ret_error = (obj_handle_t)[NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil];
+    return STATUS_SUCCESS;
+  }
+  /* Metal may still map the archive file that it loaded at startup. Writing a
+   * temporary file and renaming it keeps that mapping valid and never leaves a
+   * half-written archive behind. */
+  NSString *tmp_str = [path_str stringByAppendingString:@".tmp"];
+  NSURL *tmp_url = [[NSURL alloc] initFileURLWithPath:tmp_str];
   NSError *err = NULL;
-  [(id<MTLBinaryArchive>)params->archive serializeToURL:url error:&err];
+  if ([(id<MTLBinaryArchive>)params->archive serializeToURL:tmp_url error:&err]) {
+    if (rename([tmp_str fileSystemRepresentation], [path_str fileSystemRepresentation]) != 0)
+      err = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:nil];
+  } else {
+    unlink([tmp_str fileSystemRepresentation]);
+  }
   params->ret_error = (obj_handle_t)err;
-  [url release];
+  [tmp_url release];
   [path_str release];
   return STATUS_SUCCESS;
 }
@@ -3284,6 +3305,8 @@ NTSTATUS _CacheReader_get(void *obj);
 NTSTATUS _CacheWriter_alloc_init(void *obj);
 NTSTATUS _CacheWriter_set(void *obj);
 NTSTATUS _WMTSetMetalShaderCachePath(void *obj);
+NTSTATUS _WMTReadCacheFile(void *obj);
+NTSTATUS _WMTWriteCacheFile(void *obj);
 
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
@@ -3433,6 +3456,8 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newLibraryWithSource,
     &_MTLTexture_getBytes,
     &_WMTRequestNativeFullscreen,
+    &_WMTReadCacheFile,
+    &_WMTWriteCacheFile,
 };
 
 #ifndef DXMT_NATIVE
@@ -3584,5 +3609,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newLibraryWithSource,
     &_MTLTexture_getBytes,
     &_WMTRequestNativeFullscreen,
+    &_WMTReadCacheFile,
+    &_WMTWriteCacheFile,
 };
 #endif
