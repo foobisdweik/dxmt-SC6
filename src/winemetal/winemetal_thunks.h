@@ -236,6 +236,21 @@ struct unixcall_request_native_fullscreen {
   uint64_t ret_state;
 };
 
+struct unixcall_read_cache_file {
+  struct WMTConstMemoryPointer path;
+  struct WMTMemoryPointer buffer;
+  uint64_t capacity;
+  uint64_t ret_size;
+  uint64_t ret_success;
+};
+
+struct unixcall_write_cache_file {
+  struct WMTConstMemoryPointer path;
+  struct WMTConstMemoryPointer data;
+  uint64_t size;
+  uint64_t ret_success;
+};
+
 struct unixcall_create_metal_view_from_hwnd {
   uint64_t hwnd;
   obj_handle_t device;

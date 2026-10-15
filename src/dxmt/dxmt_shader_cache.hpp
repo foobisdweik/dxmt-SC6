@@ -41,6 +41,13 @@ public:
 
   static ShaderCache &getInstance(WMTMetalVersion version);
 
+  /**
+  The folder for DXMT's per-game cache files, with a trailing '/'.
+  A relative path is relative to $(getconf DARWIN_USER_CACHE_DIR); winemetal
+  resolves it. Empty if DXMT_SHADER_CACHE=0 disables disk caches.
+   */
+  static std::string cacheDirectory();
+
   LockProtected<WMT::CacheWriter>
   getWriter() {
     if (!scache_writer_)

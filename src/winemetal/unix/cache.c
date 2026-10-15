@@ -221,6 +221,59 @@ _CacheWriter_set(void *obj) {
   return 0;
 }
 
+/* Used by winemetal_unix.c for binary archive paths. Returns an autoreleased
+ * absolute path, or nil if the cache directory cannot be found. */
+NSString *
+wmt_resolve_cache_file_path(const char *path) {
+  NSString *str = [NSString stringWithUTF8String:path];
+  if (!str)
+    return nil;
+  return resolve_cache_dir(str, true);
+}
+
+int
+_WMTReadCacheFile(void *obj) {
+  struct unixcall_read_cache_file *params = obj;
+  params->ret_size = 0;
+  params->ret_success = 0;
+  @autoreleasepool {
+    NSString *path = wmt_resolve_cache_file_path(params->path.ptr);
+    if (!path)
+      return 0;
+    if (!params->buffer.ptr) {
+      /* size query: do not read a large file just to measure it */
+      NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+      if (!attributes)
+        return 0;
+      params->ret_size = [attributes fileSize];
+      params->ret_success = 1;
+      return 0;
+    }
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if (!data)
+      return 0;
+    params->ret_size = data.length;
+    if (params->buffer.ptr && params->capacity >= data.length)
+      memcpy(params->buffer.ptr, data.bytes, data.length);
+    params->ret_success = 1;
+  }
+  return 0;
+}
+
+int
+_WMTWriteCacheFile(void *obj) {
+  struct unixcall_write_cache_file *params = obj;
+  params->ret_success = 0;
+  @autoreleasepool {
+    NSString *path = wmt_resolve_cache_file_path(params->path.ptr);
+    if (!path)
+      return 0;
+    NSData *data = [NSData dataWithBytesNoCopy:(void *)params->data.ptr length:params->size freeWhenDone:NO];
+    params->ret_success = [data writeToFile:path atomically:YES];
+  }
+  return 0;
+}
+
 #ifndef DXMT_NO_PRIVATE_API
 
 extern void MTLSetShaderCachePath(NSString* path);

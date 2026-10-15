@@ -1974,6 +1974,9 @@ enum WMTMetalVersion : uint32_t {
   WMTMetalVersionMax = WMTMetal320,
 };
 
+/* A relative url is resolved against $(getconf DARWIN_USER_CACHE_DIR), like the
+ * shader cache path. serialize writes to a temporary file and renames it, so a
+ * reader of the old file (Metal maps loaded archives) never sees a partial file. */
 WINEMETAL_API obj_handle_t MTLDevice_newBinaryArchive(obj_handle_t device, const char *url, obj_handle_t *err_out);
 
 WINEMETAL_API void MTLBinaryArchive_serialize(obj_handle_t archive, const char *url, obj_handle_t *err_out);
@@ -2162,5 +2165,14 @@ enum WMTNativeFullscreenState {
 };
 
 WINEMETAL_API enum WMTNativeFullscreenState WMTRequestNativeFullscreen(intptr_t hwnd, bool enable);
+
+/* Small whole-file reads and writes in the DXMT cache directory. A relative
+ * path is resolved against $(getconf DARWIN_USER_CACHE_DIR).
+ * WMTReadCacheFile returns false if the file cannot be read. It always stores
+ * the file size in *size_out, and copies the data only if capacity is enough.
+ * WMTWriteCacheFile replaces the file atomically and creates missing folders. */
+WINEMETAL_API bool WMTReadCacheFile(const char *path, void *buffer, uint64_t capacity, uint64_t *size_out);
+
+WINEMETAL_API bool WMTWriteCacheFile(const char *path, const void *data, uint64_t size);
 
 #endif

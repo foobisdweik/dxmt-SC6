@@ -23,6 +23,7 @@ d3d11_src = [
   'd3d11_pipeline_ts.cpp',
   'd3d11_enumerable.cpp',
   'd3d11_pipeline_cache.cpp',
+  'd3d11_pipeline_archive.cpp',
   'd3d11_context_imm.cpp',
   'd3d11_context_def.cpp',
   'd3d11_multithread.cpp',
