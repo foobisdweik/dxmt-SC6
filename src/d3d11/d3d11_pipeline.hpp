@@ -140,6 +140,8 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
 
 namespace dxmt {
 
+class PipelineArchive;
+
 class MTLCompiledGraphicsPipeline : public ThreadpoolWork {
 public:
   /**
@@ -163,10 +165,15 @@ public:
   virtual void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *pTessellationPipeline) = 0;
 };
 
+/* pArchive may be null. WarmUp marks a pipeline compiled ahead of its first
+   use from a PipelineArchive record. */
 std::unique_ptr<MTLCompiledGraphicsPipeline>
-CreateGraphicsPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc);
+CreateGraphicsPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                       PipelineArchive *pArchive = nullptr, bool WarmUp = false);
 
-std::unique_ptr<MTLCompiledComputePipeline> CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader);
+std::unique_ptr<MTLCompiledComputePipeline>
+CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader,
+                      PipelineArchive *pArchive = nullptr, bool WarmUp = false);
 
 std::unique_ptr<MTLCompiledGeometryPipeline>
 CreateGeometryPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc);

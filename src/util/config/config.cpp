@@ -72,6 +72,7 @@ namespace dxmt {
       { "d3d11.metalSpatialUpscaleFactor", "2.0" },
       { "dxgi.nativeFullscreen",           "True" },
       { "dxgi.metalLayerPixelFormat",      "bgr10a2" },
+      { "d3d11.pipelineArchive",           "True" },
     }} },
   }};
 

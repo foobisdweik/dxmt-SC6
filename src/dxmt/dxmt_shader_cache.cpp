@@ -18,9 +18,10 @@ ShaderCache::getInstance(WMTMetalVersion version) {
   return *iter->second;
 }
 
-ShaderCache::ShaderCache(WMTMetalVersion metal_version) {
+std::string
+ShaderCache::cacheDirectory() {
   if (env::getEnvVar("DXMT_SHADER_CACHE") == "0")
-    return;
+    return {};
   std::string path;
   if (path = env::getEnvVar("DXMT_SHADER_CACHE_PATH"); !path.empty() && path.starts_with("/")) {
     if (!path.ends_with('/'))
@@ -28,6 +29,13 @@ ShaderCache::ShaderCache(WMTMetalVersion metal_version) {
   } else {
     path = str::format("dxmt/", env::getExeName(), "/");
   }
+  return path;
+}
+
+ShaderCache::ShaderCache(WMTMetalVersion metal_version) {
+  std::string path = cacheDirectory();
+  if (path.empty())
+    return;
   path += str::format("shaders_", (unsigned int)metal_version, ".db");
   scache_writer_ = WMT::CacheWriter::alloc_init(path.c_str(), kDXMTShaderCacheVersion);
   scache_reader_ = WMT::CacheReader::alloc_init(path.c_str(), kDXMTShaderCacheVersion);

@@ -3,6 +3,7 @@
 #include "d3d11_device.hpp"
 #include "d3d11_shader.hpp"
 #include "d3d11_pipeline.hpp"
+#include "d3d11_pipeline_archive.hpp"
 #include "dxmt_shader_cache.hpp"
 #include "dxmt_tasks.hpp"
 #include "log/log.hpp"
@@ -11,6 +12,7 @@
 #include "../d3d10/d3d10_input_layout.hpp"
 #include <cstring>
 #include <shared_mutex>
+#include <unordered_set>
 
 namespace dxmt {
 
@@ -74,6 +76,9 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     MTL_SHADER_REFLECTION reflection_;
     MTL_SM50_SHADER_ARGUMENT *arguments_info_buffer;
     std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>> variants;
+    /* Pipelines for one shader can be created from several threads: the
+       context threads, and the thread that creates shaders (warm-up). */
+    dxmt::mutex variants_mutex;
 
   public:
     CachedSM50Shader(PipelineCache *cache, sm50_shader_t shader_transferred,
@@ -113,6 +118,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       return arguments_info_buffer + reflection_.NumConstantBuffers;
     };
     virtual CompiledShader *get_shader(ShaderVariant variant) {
+      std::lock_guard<dxmt::mutex> lock(variants_mutex);
       auto c = variants.insert({variant, nullptr});
       if (c.second) {
         c.first->second = std::visit(
@@ -190,6 +196,10 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
 
   ShaderCache& scache_;
 
+  /* Declared before scheduler_, so it is destroyed after the workers stop
+     and can write its files last. Null unless d3d11.pipelineArchive is on. */
+  std::unique_ptr<PipelineArchive> archive_;
+
   task_scheduler<ThreadpoolWork *> scheduler_;
 
   MTLD3D11Device *device;
@@ -206,6 +216,8 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   std::shared_mutex mutex_shares;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC, std::unique_ptr<MTLCompiledGraphicsPipeline>> pipelines_;
+  /* warm-up pipelines that the game has not asked for yet */
+  std::unordered_set<ThreadpoolWork *> warm_pending_;
   dxmt::mutex mutex_;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC, std::unique_ptr<MTLCompiledGeometryPipeline>> pipelines_gs_;
@@ -215,6 +227,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   dxmt::mutex mutex_ts_;
 
   std::unordered_map<ManagedShader, std::unique_ptr<MTLCompiledComputePipeline>> pipelines_cs_;
+  std::unordered_set<ThreadpoolWork *> warm_pending_cs_;
   dxmt::mutex mutex_cs_;
 
   CachedSM50Shader *CreateShader(const void *pBytecode,
@@ -236,6 +249,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       return nullptr;
     }
     auto shader = std::make_unique<CachedSM50Shader>(this, sm50, sha1, reflection);
+    CachedSM50Shader *created;
     {
       std::unique_lock<std::shared_mutex> lock(mutex_shares);
       auto result = shaders_.find(sha1);
@@ -247,7 +261,84 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       shader->bytecode_length = BytecodeLength;
       memcpy(shader->bytecode, pBytecode, BytecodeLength);
 #endif
-      return shaders_.emplace(sha1, std::move(shader)).first->second.get();
+      created = shaders_.emplace(sha1, std::move(shader)).first->second.get();
+    }
+    if (archive_)
+      WarmUpPipelines(sha1);
+    return created;
+  }
+
+  CachedSM50Shader *
+  FindShader(const Sha1Digest &sha1) {
+    std::shared_lock<std::shared_mutex> lock(mutex_shares);
+    auto result = shaders_.find(sha1);
+    return result != shaders_.end() ? result->second.get() : nullptr;
+  }
+
+  /**
+  Queue the recorded pipelines whose shaders all exist now that `sha1` was
+  created. A record that no longer fits (a shader or state object cannot be
+  rebuilt) is skipped. A pipeline that the game already created is not
+  compiled again, because the lookup below finds it.
+   */
+  void
+  WarmUpPipelines(const Sha1Digest &sha1) {
+    std::vector<PipelineRecord> ready;
+    archive_->OnShaderCreated(sha1, ready);
+    for (auto &record : ready) {
+      if (record.kind == PipelineRecord::Compute) {
+        auto cs = FindShader(record.shaders[PipelineRecord::SlotCompute]);
+        if (!cs)
+          continue;
+        MTL_COMPUTE_PIPELINE_DESC desc{cs};
+        MTLCompiledComputePipeline *pipeline;
+        if (GetComputePipelineImpl(&desc, &pipeline, true))
+          archive_->OnWarmUpQueued();
+        continue;
+      }
+
+      MTL_GRAPHICS_PIPELINE_DESC desc{};
+      ManagedShader shaders[PipelineRecord::NumSlots] = {};
+      bool missing = false;
+      for (unsigned slot = 0; slot < PipelineRecord::NumSlots; slot++) {
+        if (record.shader_mask & (1 << slot)) {
+          shaders[slot] = FindShader(record.shaders[slot]);
+          missing |= !shaders[slot];
+        }
+      }
+      if (missing)
+        continue;
+      desc.VertexShader = shaders[PipelineRecord::SlotVertex];
+      desc.PixelShader = shaders[PipelineRecord::SlotPixel];
+      desc.HullShader = shaders[PipelineRecord::SlotHull];
+      desc.DomainShader = shaders[PipelineRecord::SlotDomain];
+      desc.GeometryShader = shaders[PipelineRecord::SlotGeometry];
+
+      IMTLD3D11BlendState *blend_state = nullptr;
+      if (FAILED(blend_states.CreateStateObject(&record.blend, &blend_state)) || !blend_state)
+        continue;
+      /* the state object cache keeps the object alive after this release */
+      desc.BlendState = blend_state;
+      blend_state->Release();
+
+      desc.InputLayout =
+          record.has_input_layout ? GetOrCreateInputLayout(MTL_INPUT_LAYOUT_DESC(record.input_layout)) : nullptr;
+      desc.SOLayout = nullptr;
+      desc.NumColorAttachments = record.num_color_attachments;
+      for (unsigned i = 0; i < 8; i++)
+        desc.ColorAttachmentFormats[i] = WMTPixelFormat(record.color_formats[i]);
+      desc.DepthStencilFormat = WMTPixelFormat(record.depth_stencil_format);
+      desc.TopologyClass = WMTPrimitiveTopologyClass(record.topology_class);
+      desc.RasterizationEnabled = record.rasterization_enabled;
+      desc.SampleCount = record.sample_count;
+      desc.GSStripTopology = record.gs_strip_topology;
+      desc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT(record.index_buffer_format);
+      desc.SampleMask = record.sample_mask;
+      desc.GSPassthrough = record.gs_passthrough;
+
+      MTLCompiledGraphicsPipeline *pipeline;
+      if (GetGraphicsPipelineImpl(&desc, &pipeline, true))
+        archive_->OnWarmUpQueued();
     }
   }
 
@@ -323,7 +414,6 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
                          const D3D11_INPUT_ELEMENT_DESC *pInputElementDesc,
                          UINT NumElements,
                          IMTLD3D11InputLayout **ppInputLayout) override {
-    std::lock_guard<dxmt::mutex> lock(mutex_ia_);
     std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> buffer(NumElements);
     uint32_t num_metal_ia_elements;
     HRESULT hr;
@@ -333,17 +423,25 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       return hr;
     }
     buffer.resize(num_metal_ia_elements);
-    if (!input_layouts.contains(buffer)) {
-      uint32_t input_slot_mask = 0;
-      for (auto &element : buffer) {
-        input_slot_mask |= (1 << element.Slot);
-      }
-      input_layouts.emplace(buffer, std::make_unique<CachedInputLayout>(
-                                        std::move(buffer), input_slot_mask));
-    }
     *ppInputLayout =
-        ref(new MTLD3D11InputLayout(device, input_layouts.at(buffer).get()));
+        ref(new MTLD3D11InputLayout(device, GetOrCreateInputLayout(std::move(buffer))));
     return hr;
+  }
+
+  CachedInputLayout *
+  GetOrCreateInputLayout(MTL_INPUT_LAYOUT_DESC &&buffer) {
+    std::lock_guard<dxmt::mutex> lock(mutex_ia_);
+    if (auto iter = input_layouts.find(buffer); iter != input_layouts.end())
+      return iter->second.get();
+    uint32_t input_slot_mask = 0;
+    for (auto &element : buffer) {
+      input_slot_mask |= (1 << element.Slot);
+    }
+    /* the map key is a copy, because the layout object takes the buffer */
+    MTL_INPUT_LAYOUT_DESC key = buffer;
+    return input_layouts.emplace(std::move(key), std::make_unique<CachedInputLayout>(
+                                                     std::move(buffer), input_slot_mask))
+        .first->second.get();
   }
 
   HRESULT
@@ -379,19 +477,38 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
 
   void GetGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
                            MTLCompiledGraphicsPipeline **ppPipeline) override {
+    if (GetGraphicsPipelineImpl(pDesc, ppPipeline, false) && archive_) {
+      PipelineRecord record;
+      if (PipelineRecord::FromGraphicsDesc(*pDesc, record))
+        archive_->Record(record);
+    }
+  }
+
+  /* Returns true if a new pipeline was created and queued. */
+  bool GetGraphicsPipelineImpl(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                               MTLCompiledGraphicsPipeline **ppPipeline, bool WarmUp) {
     std::lock_guard<dxmt::mutex> lock(mutex_);
 
     if (auto iter = pipelines_.find(*pDesc); iter != pipelines_.end()) {
       *ppPipeline = iter->second.get();
-      return;
+      /* The game needs a warm-up pipeline now. If it still waits in the
+         low-priority queue, move it to the normal queue. */
+      if (!WarmUp && !warm_pending_.empty() && warm_pending_.erase(iter->second.get()) &&
+          !iter->second->GetIsDone())
+        scheduler_.promote(iter->second.get());
+      return false;
     }
-    auto [iter, inserted] = pipelines_.insert({*pDesc, CreateGraphicsPipeline(device, pDesc)});
+    auto [iter, inserted] = pipelines_.insert({*pDesc, CreateGraphicsPipeline(device, pDesc, archive_.get(), WarmUp)});
     if (!inserted) {
       D3D11_ASSERT(0 && "duplicated graphics pipeline");
+    } else if (WarmUp) {
+      warm_pending_.insert(iter->second.get());
+      scheduler_.submit_low(iter->second.get());
     } else {
       scheduler_.submit(iter->second.get());
     }
     *ppPipeline = iter->second.get();
+    return inserted;
   }
 
   void GetGeometryPipeline(
@@ -432,24 +549,44 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
 
   void GetComputePipeline(MTL_COMPUTE_PIPELINE_DESC *pDesc,
                                   MTLCompiledComputePipeline **ppPipeline) override {
-   std::lock_guard<dxmt::mutex> lock(mutex_cs_);
+    if (GetComputePipelineImpl(pDesc, ppPipeline, false) && archive_) {
+      PipelineRecord record;
+      record.kind = PipelineRecord::Compute;
+      record.shader_mask = 1 << PipelineRecord::SlotCompute;
+      record.shaders[PipelineRecord::SlotCompute] = pDesc->ComputeShader->sha1();
+      archive_->Record(record);
+    }
+  }
+
+  bool GetComputePipelineImpl(MTL_COMPUTE_PIPELINE_DESC *pDesc,
+                              MTLCompiledComputePipeline **ppPipeline, bool WarmUp) {
+    std::lock_guard<dxmt::mutex> lock(mutex_cs_);
 
     if (auto iter = pipelines_cs_.find(pDesc->ComputeShader); iter != pipelines_cs_.end()) {
       *ppPipeline = iter->second.get();
-      return;
+      if (!WarmUp && !warm_pending_cs_.empty() && warm_pending_cs_.erase(iter->second.get()) &&
+          !iter->second->GetIsDone())
+        scheduler_.promote(iter->second.get());
+      return false;
     }
-    auto [iter, inserted] = pipelines_cs_.insert({pDesc->ComputeShader, CreateComputePipeline(device, pDesc->ComputeShader)});
+    auto [iter, inserted] = pipelines_cs_.insert(
+        {pDesc->ComputeShader, CreateComputePipeline(device, pDesc->ComputeShader, archive_.get(), WarmUp)});
     if (!inserted) {
       D3D11_ASSERT(0 && "duplicated compute pipeline");
+    } else if (WarmUp) {
+      warm_pending_cs_.insert(iter->second.get());
+      scheduler_.submit_low(iter->second.get());
     } else {
       scheduler_.submit(iter->second.get());
     }
     *ppPipeline = iter->second.get();
+    return inserted;
   }
 
 public:
   PipelineCache(MTLD3D11Device *pDevice) :
       scache_(ShaderCache::getInstance(pDevice->GetDXMTDevice().metalVersion())),
+      archive_(PipelineArchive::Create(pDevice->GetMTLDevice(), pDevice->GetDXMTDevice().metalVersion())),
       device(pDevice),
       blend_states(pDevice),
       so_layouts(pDevice) {};

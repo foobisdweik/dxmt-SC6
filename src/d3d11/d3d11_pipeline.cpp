@@ -1,6 +1,7 @@
 #include "Metal.hpp"
 #include "d3d11_private.h"
 #include "d3d11_pipeline.hpp"
+#include "d3d11_pipeline_archive.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_shader.hpp"
 #include "log/log.hpp"
@@ -12,8 +13,10 @@ class MTLCompiledGraphicsPipelineImpl
     : public MTLCompiledGraphicsPipeline {
 public:
   MTLCompiledGraphicsPipelineImpl(MTLD3D11Device *pDevice,
-                              MTL_GRAPHICS_PIPELINE_DESC *pDesc)
-      : num_rtvs(pDesc->NumColorAttachments),
+                              MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                              PipelineArchive *pArchive, bool WarmUp)
+      : archive_(pArchive), warm_up_(WarmUp),
+        num_rtvs(pDesc->NumColorAttachments),
         depth_stencil_format(pDesc->DepthStencilFormat),
         topology_class(pDesc->TopologyClass), device_(pDevice),
         pBlendState(pDesc->BlendState),
@@ -96,12 +99,31 @@ public:
     info.immutable_vertex_buffers = (1 << 16) | (1 << 29) | (1 << 30);
     info.immutable_fragment_buffers = (1 << 29) | (1 << 30);
 
-    state_ = device_->GetMTLDevice().newRenderPipelineState(info, err);
+    bool add_to_archive = false;
+    if (archive_)
+      state_ = archive_->NewRenderPipelineState(info, err, add_to_archive);
+    else
+      state_ = device_->GetMTLDevice().newRenderPipelineState(info, err);
 
     if (state_ == nullptr) {
-      ERR("Failed to create PSO: ", err.description().getUTF8String());
+      if (warm_up_) {
+        /* a stale warm-up record; the game may never use this pipeline */
+        WARN("Failed to create warm-up PSO: ", err.description().getUTF8String());
+        archive_->OnWarmUpFinished(false);
+      } else {
+        ERR("Failed to create PSO: ", err.description().getUTF8String());
+      }
       return this;
     }
+
+    if (add_to_archive) {
+      /* The pipeline is usable now. Publish it before the archive copy, so
+         an encoder waiting in GetPipeline() does not wait for that copy. */
+      SetIsDone(true);
+      archive_->AddRenderPipeline(info);
+    }
+    if (warm_up_)
+      archive_->OnWarmUpFinished(true);
 
     TRACE("Compiled 1 PSO");
 
@@ -116,6 +138,8 @@ public:
   }
 
 private:
+  PipelineArchive *archive_;
+  bool warm_up_;
   UINT num_rtvs;
   UINT ps_valid_render_targets;
   WMTPixelFormat rtv_formats[8];
@@ -133,15 +157,17 @@ private:
 
 std::unique_ptr<MTLCompiledGraphicsPipeline>
 CreateGraphicsPipeline(MTLD3D11Device *pDevice,
-                       MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
-  return std::make_unique<MTLCompiledGraphicsPipelineImpl>(pDevice, pDesc);
+                       MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                       PipelineArchive *pArchive, bool WarmUp) {
+  return std::make_unique<MTLCompiledGraphicsPipelineImpl>(pDevice, pDesc, pArchive, WarmUp);
 }
 
 class MTLCompiledComputePipelineImpl
     : public MTLCompiledComputePipeline {
 public:
-  MTLCompiledComputePipelineImpl(MTLD3D11Device *pDevice, ManagedShader shader)
-      : device_(pDevice) {
+  MTLCompiledComputePipelineImpl(MTLD3D11Device *pDevice, ManagedShader shader,
+                                 PipelineArchive *pArchive, bool WarmUp)
+      : archive_(pArchive), warm_up_(WarmUp), device_(pDevice) {
     ComputeShader = shader->get_shader(ShaderVariantDefault{});
     uint32_t total_tgsize = shader->reflection().ThreadgroupSize[0] *
                             shader->reflection().ThreadgroupSize[1] *
@@ -172,12 +198,28 @@ public:
     info.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
     info.immutable_buffers = (1 << 29) | (1 << 30);
 
-    state_ = device_->GetMTLDevice().newComputePipelineState(info, err);
+    bool add_to_archive = false;
+    if (archive_)
+      state_ = archive_->NewComputePipelineState(info, err, add_to_archive);
+    else
+      state_ = device_->GetMTLDevice().newComputePipelineState(info, err);
 
     if (!state_) {
-      ERR("Failed to create compute PSO: ", err.description().getUTF8String());
+      if (warm_up_) {
+        WARN("Failed to create warm-up compute PSO: ", err.description().getUTF8String());
+        archive_->OnWarmUpFinished(false);
+      } else {
+        ERR("Failed to create compute PSO: ", err.description().getUTF8String());
+      }
       return this;
     }
+
+    if (add_to_archive) {
+      SetIsDone(true);
+      archive_->AddComputePipeline(info);
+    }
+    if (warm_up_)
+      archive_->OnWarmUpFinished(true);
 
     TRACE("Compiled 1 PSO");
 
@@ -192,6 +234,8 @@ public:
   }
 
 private:
+  PipelineArchive *archive_;
+  bool warm_up_;
   MTLD3D11Device *device_;
   std::atomic_bool ready_;
   CompiledShader *ComputeShader;
@@ -200,8 +244,9 @@ private:
 };
 
 std::unique_ptr<MTLCompiledComputePipeline>
-CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader) {
-  return std::make_unique<MTLCompiledComputePipelineImpl>(pDevice, ComputeShader);
+CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader,
+                      PipelineArchive *pArchive, bool WarmUp) {
+  return std::make_unique<MTLCompiledComputePipelineImpl>(pDevice, ComputeShader, pArchive, WarmUp);
 }
 
 } // namespace dxmt

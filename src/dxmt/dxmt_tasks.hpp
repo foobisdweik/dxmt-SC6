@@ -2,7 +2,9 @@
 
 #include "thread.hpp"
 #include "util_win32_compat.h"
+#include <algorithm>
 #include <atomic>
+#include <deque>
 #include <queue>
 #include <unordered_map>
 
@@ -17,6 +19,21 @@ template <typename Task> struct task_trait {
 template <typename Task> class task_scheduler {
 public:
   void submit(Task task);
+
+  /**
+  Queue a task that nobody waits for yet (for example a pipeline warm-up).
+  Workers run it only when no normal task is queued, and at most
+  `max_low_running` low-priority tasks run at the same time, so warm-up
+  cannot delay a task that a frame waits for.
+   */
+  void submit_low(Task task);
+
+  /**
+  Move a task from the low-priority queue to the normal queue, because
+  something now waits for it. Returns false if the task already left the
+  low-priority queue (it is running, waiting on a dependency, or done).
+   */
+  bool promote(Task task);
 
   task_scheduler();
   ~task_scheduler();
@@ -33,6 +50,9 @@ private:
   dxmt::condition_variable worker_cond_;
   std::queue<Task> task_queue_;
   std::queue<Task> task_continuation_queue_;
+  std::deque<Task> task_low_queue_;
+  uint64_t low_running_ = 0; // protected by worker_mutex_
+  uint64_t max_low_running_ = 1;
 
   dxmt::mutex deps_mutex_;
   std::unordered_multimap<Task, Task> task_continuation_;
@@ -49,6 +69,7 @@ template <typename Task> task_scheduler<Task>::task_scheduler() {
   max_threads = dxmt::thread::hardware_concurrency() * 2;
   workers_.reserve(max_threads);
   threads = 2;
+  max_low_running_ = std::max(1u, dxmt::thread::hardware_concurrency() / 4);
 
   for (unsigned i = 0; i < threads; i++) {
     workers_.emplace_back([this]() { worker_func(); });
@@ -75,12 +96,15 @@ task_scheduler<Task>::worker_func() {
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
   while (!destroyed.load()) {
     Task task;
+    bool is_low = false;
     {
       std::unique_lock<dxmt::mutex> lock(worker_mutex_);
 
-      if (task_queue_.empty() && task_continuation_queue_.empty()) {
-        worker_cond_.wait(lock, [this]() {
-          return task_queue_.size() || task_continuation_queue_.size() || destroyed.load();
+      auto low_available = [this]() { return task_low_queue_.size() && low_running_ < max_low_running_; };
+
+      if (task_queue_.empty() && task_continuation_queue_.empty() && !low_available()) {
+        worker_cond_.wait(lock, [&, this]() {
+          return task_queue_.size() || task_continuation_queue_.size() || low_available() || destroyed.load();
         });
       }
 
@@ -90,6 +114,11 @@ task_scheduler<Task>::worker_func() {
       } else if (!task_queue_.empty()) {
         task = task_queue_.front();
         task_queue_.pop();
+      } else if (low_available()) {
+        task = task_low_queue_.front();
+        task_low_queue_.pop_front();
+        low_running_++;
+        is_low = true;
       } else {
         break;
       }
@@ -125,6 +154,13 @@ task_scheduler<Task>::worker_func() {
       }
       break;
     }
+    if (is_low) {
+      {
+        std::unique_lock<dxmt::mutex> lock(worker_mutex_);
+        low_running_--;
+      }
+      worker_cond_.notify_all();
+    }
     running.fetch_sub(1, std::memory_order_relaxed);
   }
 };
@@ -141,6 +177,30 @@ task_scheduler<Task>::submit(Task task) {
   }
 
   worker_cond_.notify_one();
+}
+
+template <typename Task>
+void
+task_scheduler<Task>::submit_low(Task task) {
+  {
+    std::unique_lock<dxmt::mutex> lock(worker_mutex_);
+    task_low_queue_.push_back(task);
+  }
+  worker_cond_.notify_one();
+}
+
+template <typename Task>
+bool
+task_scheduler<Task>::promote(Task task) {
+  {
+    std::unique_lock<dxmt::mutex> lock(worker_mutex_);
+    auto iter = std::find(task_low_queue_.begin(), task_low_queue_.end(), task);
+    if (iter == task_low_queue_.end())
+      return false;
+    task_low_queue_.erase(iter);
+  }
+  submit(task);
+  return true;
 }
 
 }; // namespace dxmt
