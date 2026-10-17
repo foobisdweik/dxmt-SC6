@@ -1358,12 +1358,17 @@ Converter::operator()(const InstLoad &load) {
   llvm::Value *SampleIndex = nullptr;
   llvm::Constant *Offset = nullptr;
   llvm::Value *OOB = nullptr;
+  llvm::Value *RGB32 = nullptr;
 
   switch (Tex->Logical) {
   case Texture::texture_buffer:
     Address = LoadOperand(load.src_address, kMaskComponentX);
     Offset = air.getInt(load.offsets[0]);
-    OOB = ir.CreateICmpUGE(ir.CreateAdd(Address, Offset), DecodeTextureBufferElement(Tex->Metadata));
+    Address = ir.CreateAdd(Address, Offset);
+    Offset = air.getInt(0);
+    OOB = ir.CreateICmpUGE(Address, DecodeTextureBufferElement(Tex->Metadata));
+    RGB32 = ir.CreateICmpNE(ir.CreateLShr(Tex->Metadata, 63uLL), ir.getInt64(0));
+    Address = ir.CreateSelect(RGB32, ir.CreateMul(Address, ir.getInt32(3)), Address);
     Address = ir.CreateAdd(Address, DecodeTextureBufferOffset(Tex->Metadata));
     break;
   case Texture::texture1d:
@@ -1419,6 +1424,31 @@ Converter::operator()(const InstLoad &load) {
 
   auto [Value, Residency] =
       air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, LOD, Tex->GlobalCoherent);
+
+  if (RGB32) {
+    auto InitialBB = ir.GetInsertBlock();
+    auto Function = InitialBB->getParent();
+    auto RGB32BB = llvm::BasicBlock::Create(ir.getContext(), "rgb32.load", Function);
+    auto MergeBB = llvm::BasicBlock::Create(ir.getContext(), "rgb32.merge", Function);
+    ir.CreateCondBr(RGB32, RGB32BB, MergeBB);
+    ir.SetInsertPoint(RGB32BB);
+    llvm::Value *RGBValue = Value;
+    for (unsigned Component = 1; Component < 3; Component++) {
+      auto ComponentAddress = ir.CreateAdd(Address, ir.getInt32(Component));
+      ComponentAddress = ir.CreateSelect(OOB, ir.getInt32(~0u), ComponentAddress);
+      auto [ComponentValue, ComponentResidency] = air.CreateRead(
+          Tex->Texture, Tex->Handle, ComponentAddress, ArrayIndex, SampleIndex, LOD, Tex->GlobalCoherent
+      );
+      RGBValue = ir.CreateInsertElement(RGBValue, ir.CreateExtractElement(ComponentValue, 0ull), Component);
+    }
+    RGBValue = ir.CreateSelect(OOB, llvm::Constant::getNullValue(RGBValue->getType()), RGBValue);
+    ir.CreateBr(MergeBB);
+    ir.SetInsertPoint(MergeBB);
+    auto Result = ir.CreatePHI(Value->getType(), 2);
+    Result->addIncoming(Value, InitialBB);
+    Result->addIncoming(RGBValue, RGB32BB);
+    Value = Result;
+  }
 
   StoreOperand(load.dst, MaskSwizzle(Value, GetMask(load.dst), Tex->Swizzle));
 }

@@ -227,6 +227,7 @@ struct BufferSlice {
   uint32_t byteLength = 0;
   uint32_t firstElement = 0;
   uint32_t elementCount = 0;
+  bool rgb32 = false;
 };
 
 } // namespace dxmt

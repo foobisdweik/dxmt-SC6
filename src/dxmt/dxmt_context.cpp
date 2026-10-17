@@ -350,7 +350,8 @@ ArgumentEncodingContext::encodeShaderResources(
           auto [view, offset] = access<stage>(srv.buffer, srv.viewId, ResourceAccess::Read);
           encoded_buffer[arg.StructurePtrOffset] = view.gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] =
-              ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)(srv.slice.firstElement + offset);
+              ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)(srv.slice.firstElement + offset) |
+              (srv.slice.rgb32 ? (1ull << 63) : 0);
           makeResident<stage, kind>(srv.buffer.ptr(), srv.viewId);
         } else if (srv.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);

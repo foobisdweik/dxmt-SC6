@@ -469,7 +469,8 @@ public:
 
   llvm::Value *
   DecodeTextureBufferElement(llvm::Value *Metadata) {
-    return ir.CreateTrunc(ir.CreateLShr(Metadata, 32uLL), air.getIntTy());
+    // Bit 63 marks an RGB32 SRV. The remaining high bits hold the logical count.
+    return ir.CreateAnd(ir.CreateTrunc(ir.CreateLShr(Metadata, 32uLL), air.getIntTy()), 0x7fffffff);
   }
 
   llvm::Value *ClampArrayIndex(llvm::Value *ShaderValue, llvm::Value *Metadata);

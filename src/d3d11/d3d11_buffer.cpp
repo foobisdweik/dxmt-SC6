@@ -31,6 +31,7 @@ struct BufferViewInfo {
   uint32_t viewElementWidth;
   uint32_t byteOffset;
   uint32_t byteWidth;
+  bool rgb32 = false;
 };
 
 class D3D11Buffer : public TResourceBase<tag_buffer> {
@@ -56,6 +57,7 @@ private:
       buffer_ = pResource->buffer_.ptr();
       view_id_ = info.viewKey;
       slice_ = {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };
+      slice_.rgb32 = info.rgb32;
       subset_ = ResourceSubsetState(info.byteOffset, info.byteWidth);
     }
 
@@ -169,6 +171,7 @@ public:
     }
     WMTPixelFormat view_format = WMTPixelFormatInvalid;
     uint32_t offset, size, viewElementOffset, viewElementWidth;
+    bool rgb32 = false;
     if (structured) {
       if (finalDesc.Format != DXGI_FORMAT_UNKNOWN) {
         return E_INVALIDARG;
@@ -207,6 +210,10 @@ public:
       size = finalDesc.Buffer.NumElements * format.BytesPerTexel;
       viewElementOffset = finalDesc.Buffer.FirstElement;
       viewElementWidth = finalDesc.Buffer.NumElements;
+      // Metal represents each RGB32 element with three adjacent R32 texels.
+      rgb32 = format.BytesPerTexel == 12;
+      if (rgb32)
+        viewElementOffset *= 3;
     }
 
     if (!ppView) {
@@ -223,6 +230,7 @@ public:
             .viewElementWidth = viewElementWidth,
             .byteOffset = offset,
             .byteWidth = size,
+            .rgb32 = rgb32,
         }
     ));
     *ppView = srv;
