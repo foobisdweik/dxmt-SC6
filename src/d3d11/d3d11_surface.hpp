@@ -39,6 +39,7 @@ public:
   HRESULT STDMETHODCALLTYPE GetResource(REFIID riid, void **ppParentResource, UINT *pSubresourceIndex);
 
 private:
+  std::atomic<ULONG> refcount_ = 0;
   ID3D11Resource *resource_;
   UINT subresource_;
   bool surface_from_subresource_;

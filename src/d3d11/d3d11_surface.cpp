@@ -29,15 +29,27 @@ D3D11DXGISurface::D3D11DXGISurface(ID3D11Resource *pResource) :
 D3D11DXGISurface::D3D11DXGISurface(ID3D11Resource *pParentResource, UINT Subresource) :
     resource_(pParentResource),
     subresource_(Subresource),
-    surface_from_subresource_(true) {}
+    surface_from_subresource_(true) {
+  resource_->AddRef();
+}
 
 ULONG STDMETHODCALLTYPE
 D3D11DXGISurface::AddRef() {
+  if (surface_from_subresource_)
+    return ++refcount_;
   return resource_->AddRef();
 }
 
 ULONG STDMETHODCALLTYPE
 D3D11DXGISurface::Release() {
+  if (surface_from_subresource_) {
+    auto remaining = --refcount_;
+    if (!remaining) {
+      resource_->Release();
+      delete this;
+    }
+    return remaining;
+  }
   return resource_->Release();
 }
 
@@ -105,7 +117,8 @@ D3D11DXGISurface::GetDesc(DXGI_SURFACE_DESC *pDesc) {
   d3d11_resource->GetType(&dimension);
 
   if (surface_from_subresource_) {
-    if (d3d11_resource->texture()) {
+    if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D ||
+        dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D || dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
       switch (dimension) {
       case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
         pDesc->Width = std::max(1u, desc.Texture1D.Width >> (subresource_ % desc.Texture1D.MipLevels));
@@ -132,7 +145,7 @@ D3D11DXGISurface::GetDesc(DXGI_SURFACE_DESC *pDesc) {
         return DXGI_ERROR_INVALID_CALL;
       }
       return S_OK;
-    } else if (d3d11_resource->buffer()) {
+    } else if (dimension == D3D11_RESOURCE_DIMENSION_BUFFER) {
       pDesc->Width = desc.Buffer.ByteWidth;
       pDesc->Height = 1;
       pDesc->Format = DXGI_FORMAT_UNKNOWN;
@@ -141,7 +154,8 @@ D3D11DXGISurface::GetDesc(DXGI_SURFACE_DESC *pDesc) {
     } else {
       return DXGI_ERROR_INVALID_CALL;
     }
-  } else if (d3d11_resource->texture()) {
+  } else if (dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D ||
+        dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D || dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
     switch (dimension) {
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
       pDesc->Width = desc.Texture1D.Width;
@@ -175,6 +189,8 @@ D3D11DXGISurface::GetDesc(DXGI_SURFACE_DESC *pDesc) {
 
 HRESULT STDMETHODCALLTYPE
 D3D11DXGISurface::Map(DXGI_MAPPED_RECT *pLockedRect, UINT MapFlags) {
+  if (!pLockedRect)
+    return DXGI_ERROR_INVALID_CALL;
   Com<ID3D11Device> device;
   Com<ID3D11DeviceContext> context;
 
@@ -238,7 +254,7 @@ HRESULT STDMETHODCALLTYPE
 D3D11DXGISurface::GetResource(REFIID riid, void **ppParentResource, UINT *pSubresourceIndex) {
   HRESULT hr;
 
-  if (!ppParentResource)
+  if (!ppParentResource || !pSubresourceIndex)
     return E_POINTER;
 
   InitReturnPtr(ppParentResource);

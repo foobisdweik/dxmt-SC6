@@ -377,7 +377,9 @@ public:
       break;
     }
     case D3D11_QUERY_TIMESTAMP: {
-      static_cast<MTLD3D11TimestampQuery *>(pAsync)->chunk_seq = cmd_queue.CurrentSeqId();
+      auto timestamp = static_cast<MTLD3D11TimestampQuery *>(pAsync);
+      timestamp->chunk_seq = cmd_queue.CurrentSeqId();
+      timestamp->following_event = cmd_queue.GetCurrentEventSeqId() + 1;
       if (auto query = static_cast<MTLD3D11TimestampQuery *>(pAsync)->End()) {
         InvalidateCurrentPass(true);
         EmitOP([query = Rc(query)](ArgumentEncodingContext &enc) mutable {
@@ -466,8 +468,9 @@ public:
       /* Timestamps are filled in by the finish thread after the GPU completes their chunk, while
        * event queries signal from the GPU itself. Windows completes queries in order, so once a
        * later event has signalled, an app may expect the timestamp too (Unreal Engine 5 calibrates
-       * its GPU clock this way and asserts otherwise). If the GPU is done, wait for the finish thread. */
-      if (hr == S_FALSE && cmd_queue.ChunkCompletedOnGPU(query->chunk_seq)) {
+       * its GPU clock this way and asserts otherwise). Once a later GPU event signals, wait for
+       * the finish thread. That wait can include remaining work in the same submitted chunk. */
+      if (hr == S_FALSE && cmd_queue.CanWaitForTimestamp(query->chunk_seq, query->following_event)) {
         cmd_queue.WaitCPUFence(query->chunk_seq);
         hr = query->GetData(data_ptr);
       }

@@ -178,6 +178,7 @@ public:
   virtual TimestampQuery *End() = 0;
   /* the command chunk the last End() was encoded into */
   uint64_t chunk_seq = 0;
+  uint64_t following_event = 0;
 };
 
 HRESULT CreateTimestampQuery(MTLD3D11Device *pDevice,

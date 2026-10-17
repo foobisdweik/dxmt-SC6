@@ -5,7 +5,8 @@
 
 namespace dxmt {
 
-constexpr int kDXMTShaderCacheVersion = AIRCONV_VERSION;
+// Local RGB32 metadata differs from upstream and earlier SC6 shader caches.
+constexpr int kDXMTShaderCacheVersion = (AIRCONV_VERSION << 16) | 1;
 
 class ShaderCache {
 public:

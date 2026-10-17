@@ -114,6 +114,7 @@ public:
     auto& statistics = enc.currentFrameStatistics();
     auto t0 = clock::now();
     list_enc.execute(enc);
+    attached_cmdbuf = cmdbuf;
     auto t1 = clock::now();
     readback = enc.flushCommands(cmdbuf, chunk_id, chunk_event_id);
     auto t2 = clock::now();
@@ -131,7 +132,6 @@ public:
 private:
   CommandQueue *queue;
   WMT::Reference<WMT::CommandBuffer> attached_cmdbuf;
-  dxmt::mutex cmdbuf_mutex;
   
   CommandList<ArgumentEncodingContext> list_enc;
   AllocationRefTracking ref_tracker;
@@ -147,7 +147,6 @@ public:
     readback = {};
     list_enc.reset();
     ref_tracker.clear();
-    std::lock_guard<dxmt::mutex> lock(cmdbuf_mutex);
     attached_cmdbuf = nullptr;
   }
 };
@@ -277,24 +276,14 @@ public:
 
   void SetMaxLatency(uint32_t value) { max_latency_ = value; };
 
-  /**
-  Whether the GPU has finished chunk `seq`, though the finish thread may not have processed it yet
-  (query results such as timestamps are filled in then).
-  */
   bool
-  ChunkCompletedOnGPU(uint64_t seq) {
+  CanWaitForTimestamp(uint64_t seq, uint64_t following_event) {
     if (seq <= cpu_coherent.signaledValue())
       return true;
-    // The encoding thread publishes the buffer only after committing it.
-    if (seq >= ready_for_commit.load(std::memory_order_acquire))
-      return false;
-    auto &chunk = chunks[seq % kCommandChunkCount];
-    std::lock_guard<dxmt::mutex> lock(chunk.cmdbuf_mutex);
-    // The finish thread may have reset the buffer before we acquired the lock.
-    if (seq <= cpu_coherent.signaledValue())
-      return true;
-    auto &cmdbuf = chunk.attached_cmdbuf;
-    return cmdbuf && cmdbuf.status() >= WMTCommandBufferStatusCompleted;
+    // A later GPU event proves the timestamp was reached. Require submission
+    // so a DONOTFLUSH poll cannot wait for an unsubmitted chunk.
+    return seq < ready_for_encode.load(std::memory_order_acquire) &&
+           following_event <= event.signaledValue();
   }
 
   void
