@@ -16,6 +16,8 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/WithColor.h"
 #include <system_error>
+#include <cstdio>
+#include <vector>
 
 #ifdef __WIN32
 #include "d3dcompiler.h"
@@ -45,6 +47,20 @@ static cl::opt<std::string>
 
 static cl::opt<std::string>
   GeometryAfterVertex("geometry-after-vertex", cl::desc("Compile vertex shader with supplied geometry shader"));
+
+// The runtime passes these to geometry pipelines (d3d11_shader.cpp); without
+// them the vertex half has no vertex input description.
+static cl::opt<std::string> IALayout(
+  "ia-layout",
+  cl::desc("Input layout for vertex pulling. One element per line: reg slot offset mtl_attribute_format step_function step_rate")
+);
+
+static cl::opt<unsigned> IndexFormat(
+  "index-format", cl::init(0), cl::desc("Index buffer format for vertex pulling: 0 none, 1 uint16, 2 uint32")
+);
+
+static cl::opt<bool>
+  StripTopology("strip-topology", cl::init(false), cl::desc("The geometry pipeline draws a strip topology"));
 
 static cl::opt<bool>
   EmitLLVM("S", cl::init(false), cl::desc("Write output as LLVM assembly"));
@@ -221,6 +237,43 @@ int main(int argc, char **argv) {
   data.next = 0;
   data.type = SM50_SHADER_COMMON;
 
+  std::vector<SM50_IA_INPUT_ELEMENT> ia_elements;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout = {};
+  ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+  ia_layout.next = &data;
+  ia_layout.index_buffer_format = (SM50_INDEX_BUFFER_FORMAT)IndexFormat.getValue();
+  if (!IALayout.getValue().empty()) {
+    auto LayoutOrErr = MemoryBuffer::getFile(IALayout, /*IsText=*/true);
+    if (std::error_code EC = LayoutOrErr.getError()) {
+      SMDiagnostic(IALayout, SourceMgr::DK_Error, "Could not open input layout: " + EC.message())
+        .print(argv[0], errs());
+      return 1;
+    }
+    SmallVector<StringRef, 32> lines;
+    LayoutOrErr->get()->getBuffer().split(lines, '\n', -1, false);
+    for (StringRef line : lines) {
+      unsigned reg, slot, offset, format, step_function, step_rate;
+      if (sscanf(line.str().c_str(), "%u %u %u %u %u %u", &reg, &slot, &offset, &format, &step_function,
+                 &step_rate) != 6)
+        continue;
+      SM50_IA_INPUT_ELEMENT e = {};
+      e.reg = reg;
+      e.slot = slot;
+      e.aligned_byte_offset = offset;
+      e.format = format;
+      e.step_function = step_function;
+      e.step_rate = step_rate;
+      ia_elements.push_back(e);
+      ia_layout.slot_mask |= 1u << slot;
+    }
+  }
+  ia_layout.num_elements = ia_elements.size();
+  ia_layout.elements = ia_elements.data();
+
+  SM50_SHADER_PSO_GEOMETRY_SHADER_DATA geometry = {};
+  geometry.type = SM50_SHADER_PSO_GEOMETRY_SHADER;
+  geometry.strip_topology = StripTopology;
+
   if (!HullBeforeDomain.getValue().empty()) {
     ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
       MemoryBuffer::getFile(HullBeforeDomain, /*IsText=*/false);
@@ -326,9 +379,10 @@ int main(int argc, char **argv) {
       SM50FreeError(err);
       return 1;
     }
+    geometry.next = &data;
     if (auto err = dxmt::dxbc::convert_dxbc_geometry_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
-          (dxmt::dxbc::SM50ShaderInternal *)sm50_vertex, Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_vertex, Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry
         )) {
       errs() << err << '\n';
       return 1;
@@ -354,9 +408,10 @@ int main(int argc, char **argv) {
       SM50FreeError(err);
       return 1;
     }
+    geometry.next = &ia_layout;
     if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_geometry_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
-          (dxmt::dxbc::SM50ShaderInternal *)sm50_geometry, Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_geometry, Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry
         )) {
       errs() << err << '\n';
       return 1;
