@@ -176,6 +176,8 @@ class MTLD3D11TimestampQuery : public ID3D11Query1 {
 public:
   virtual HRESULT GetData(void *data) = 0;
   virtual TimestampQuery *End() = 0;
+  /* the command chunk the last End() was encoded into */
+  uint64_t chunk_seq = 0;
 };
 
 HRESULT CreateTimestampQuery(MTLD3D11Device *pDevice,

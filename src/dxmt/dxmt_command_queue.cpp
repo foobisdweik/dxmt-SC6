@@ -153,7 +153,10 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
   }
 
   auto cmdbuf = commandQueue.commandBuffer();
-  chunk.attached_cmdbuf = cmdbuf;
+  {
+    std::lock_guard<dxmt::mutex> lock(chunk.cmdbuf_mutex);
+    chunk.attached_cmdbuf = cmdbuf;
+  }
   if (chunk.resource_initializer_event_id) {
     cmdbuf.encodeWaitForEvent(initializer.event(), chunk.resource_initializer_event_id);
   }
