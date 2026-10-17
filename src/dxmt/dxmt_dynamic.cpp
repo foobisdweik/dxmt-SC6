@@ -64,6 +64,10 @@ DynamicBuffer::recycle(uint64_t current_seq_id, Rc<BufferAllocation> &&allocatio
 
 uint32_t
 DynamicBuffer::nextSuballocation() {
+  // Replaying a command list restores its recorded cursor. Its later slots may
+  // still be in use by earlier immediate updates, so obtain a separate page.
+  if (owned_by_command_list_)
+    return 0;
   if (name_->hasSuballocatoin(name_suballocation_ + 1)) {
     return ++name_suballocation_;
   }
