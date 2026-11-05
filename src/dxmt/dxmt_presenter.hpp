@@ -14,6 +14,24 @@ struct DXMTPresentMetadata {
   float max_display_luminance;
 };
 
+// SC6 fork: what the presenter last applied to the screen layer and what
+// macOS reported for that layer. The sc6vrr DLL reads a copy through the
+// d3d11.dll export DXMT_SC6_GetPresentStatus, to show its HDR watermark only
+// when every part of the presentation chain reports HDR.
+struct DXMTSC6PresentStatus {
+  uint32_t size;               // sizeof(DXMTSC6PresentStatus), a version check
+  uint32_t colorspace;         // WMTColorSpace sent to the layer (5 = scRGB, 4 = PQ)
+  uint32_t source_format;      // WMTPixelFormat of the back buffer (115 = RGBA16Float)
+  uint32_t layer_pixel_format; // CAMetalLayer.pixelFormat, read back from the layer
+  uint32_t colorspace_ok;      // 1 = the last MetalLayer_setColorSpace call succeeded
+  uint32_t drawable_failures;  // presents where nextDrawable returned no drawable
+  float edr_current;           // NSScreen maximumExtendedDynamicRangeColorComponentValue (1.0 unless the layer wants EDR)
+  float edr_potential;         // NSScreen maximumPotentialExtendedDynamicRangeColorComponentValue
+  uint64_t frames;             // presents prepared
+  uint64_t drawables;          // presents that got a drawable
+};
+extern DXMTSC6PresentStatus g_sc6_present_status;
+
 constexpr uint32_t DXMT_GAMMA_CP_COUNT = 1024;
 
 struct DXMTGammaRamp {

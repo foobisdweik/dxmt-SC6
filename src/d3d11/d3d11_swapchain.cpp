@@ -1170,3 +1170,13 @@ CreateSwapChain(
 };
 
 } // namespace dxmt
+// SC6 fork: copies the presenter's HDR status (see DXMTSC6PresentStatus) for
+// the sc6vrr DLL. Returns the number of bytes copied.
+extern "C" __declspec(dllexport) uint32_t STDMETHODCALLTYPE
+DXMT_SC6_GetPresentStatus(dxmt::DXMTSC6PresentStatus *out, uint32_t size) {
+  if (!out || size < sizeof(uint32_t))
+    return 0;
+  uint32_t n = std::min<uint32_t>(size, sizeof(dxmt::DXMTSC6PresentStatus));
+  memcpy(out, &dxmt::g_sc6_present_status, n);
+  return n;
+}

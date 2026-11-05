@@ -26,6 +26,8 @@
 #include "wsi_platform.hpp"
 #include <cstdint>
 #include <cfloat>
+#include <cstdio>
+#include "util_env.hpp"
 
 namespace dxmt {
 
@@ -861,6 +863,57 @@ ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id
 
 constexpr unsigned kEncoderOptimizerThreshold = 64;
 
+/* SC6 fork: render pass attachment log. With DXMT_SC6_PASS_STATS set to a file
+ * path, every Nth frame (DXMT_SC6_PASS_EVERY, default 240) writes one row per
+ * attachment of every render pass: its size, texel size, and load and store
+ * actions. A load reads the image from memory into the GPU's on-chip tiles
+ * and a store writes it back, so these rows show how much memory traffic the
+ * passes cause. Off when the variable is unset. */
+static FILE *sc6_pass_file;
+static uint64_t sc6_pass_every;
+static bool sc6_pass_checked;
+static uint64_t sc6_pass_frame = ~0ull;
+static unsigned sc6_pass_ordinal;
+
+static void
+sc6_log_pass(uint64_t frame_id, uint64_t seq_id, const WMTRenderPassInfo &info, unsigned readonly) {
+  if (!sc6_pass_checked) {
+    sc6_pass_checked = true;
+    auto path = env::getEnvVar("DXMT_SC6_PASS_STATS");
+    if (!path.empty()) {
+      sc6_pass_file = fopen(path.c_str(), "w");
+      auto every = env::getEnvVar("DXMT_SC6_PASS_EVERY");
+      sc6_pass_every = every.empty() ? 240 : std::max<uint64_t>(1, strtoull(every.c_str(), nullptr, 10));
+      if (sc6_pass_file)
+        fprintf(sc6_pass_file, "frame\tseq\tpass\tslot\tformat\ttexel_bytes\twidth\theight\tsamples\tload\tstore\treadonly\n");
+    }
+  }
+  if (!sc6_pass_file || frame_id % sc6_pass_every)
+    return;
+  if (frame_id != sc6_pass_frame) {
+    if (sc6_pass_frame != ~0ull)
+      fflush(sc6_pass_file);
+    sc6_pass_frame = frame_id;
+    sc6_pass_ordinal = 0;
+  }
+  unsigned pass = sc6_pass_ordinal++;
+  auto row = [&](const char *slot, obj_handle_t tex, int load, int store) {
+    auto format = MTLTexture_pixelFormat(tex);
+    fprintf(sc6_pass_file, "%llu\t%llu\t%u\t%s\t%u\t%u\t%u\t%u\t%u\t%d\t%d\t%u\n", (unsigned long long)frame_id,
+            (unsigned long long)seq_id, pass, slot, (unsigned)format, MTLGetTexelSize(format),
+            info.render_target_width, info.render_target_height, (unsigned)info.default_raster_sample_count, load,
+            store, readonly);
+  };
+  static const char *const names[8] = {"c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7"};
+  for (unsigned i = 0; i < 8; i++)
+    if (info.colors[i].texture)
+      row(names[i], info.colors[i].texture, info.colors[i].load_action, info.colors[i].store_action);
+  if (info.depth.texture)
+    row("depth", info.depth.texture, info.depth.load_action, info.depth.store_action);
+  if (info.stencil.texture)
+    row("stencil", info.stencil.texture, info.stencil.load_action, info.stencil.store_action);
+}
+
 QueryReadbacks
 ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId, uint64_t event_seq_id) {
   assert(!encoder_current);
@@ -962,6 +1015,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         assert(readbacks.visibility);
         render_pass_info.visibility_buffer = readbacks.visibility->visibility_result_heap;
       }
+      sc6_log_pass(frame_id_, seq_id_, render_pass_info, data->dsv_readonly_flags);
       auto gpu_buffer_ = data->allocated_argbuf;
       auto encoder = cmdbuf.renderCommandEncoder(render_pass_info);
       data->fence_wait.forEach(

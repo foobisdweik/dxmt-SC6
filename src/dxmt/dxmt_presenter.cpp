@@ -9,6 +9,8 @@
 
 namespace dxmt {
 
+DXMTSC6PresentStatus g_sc6_present_status = {sizeof(DXMTSC6PresentStatus)};
+
 Presenter::Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor, uint8_t sample_count, bool display_sync) :
     device_(device),
     layer_(layer),
@@ -50,9 +52,13 @@ Presenter::changeLayerProperties(
   // pass converts from the backbuffer, so the layer may use another format.
   static const std::string layer_format =
       Config::getInstance().getOption<std::string>("dxgi.metalLayerPixelFormat", "auto");
-  if (layer_format == "bgra8")
+  // SC6 fork: the override is for SDR only. An HDR color space needs the
+  // game's own float format, because an 8- or 10-bit unorm layer cannot hold
+  // values above SDR white, so EDR highlights would clip.
+  bool hdr = (WMT_COLORSPACE_IS_HDR(colorspace)) != 0;
+  if (!hdr && layer_format == "bgra8")
     layer_props_.pixel_format = WMTPixelFormatBGRA8Unorm;
-  else if (layer_format == "bgr10a2")
+  else if (!hdr && layer_format == "bgr10a2")
     layer_props_.pixel_format = WMTPixelFormatBGR10A2Unorm;
   layer_props_.drawable_height = height;
   layer_props_.drawable_width = width;
@@ -133,7 +139,21 @@ Presenter::synchronizeLayerProperties() {
     frame_presented_.wait(frame_requested_);
     buildRenderPipelineState(final_colorspace == WMTColorSpaceHDR_PQ, is_hdr && hdr_metadata != nullptr, sample_count_ > 1, gamma_version_ != 0);
     layer_.setProps(layer_props_);
-    layer_.setColorSpace(final_colorspace);
+    g_sc6_present_status.colorspace_ok = layer_.setColorSpace(final_colorspace);
+  }
+
+  // SC6 fork: report the state for DXMT_SC6_GetPresentStatus. The layer's
+  // pixel format is read back (not taken from layer_props_), every 60 frames,
+  // because setProps runs on the main thread and may land a little later.
+  auto &status = g_sc6_present_status;
+  status.colorspace = (uint32_t)final_colorspace;
+  status.source_format = (uint32_t)source_format_;
+  status.edr_current = display_edr_value_.maximum_edr_color_component_value;
+  status.edr_potential = display_edr_value_.maximum_potential_edr_color_component_value;
+  if (status.frames++ % 60 == 0) {
+    WMTLayerProps actual;
+    layer_.getProps(actual);
+    status.layer_pixel_format = (uint32_t)actual.pixel_format;
   }
 
   DXMTPresentMetadata metadata;
@@ -167,6 +187,10 @@ Presenter::encodeCommands(
     std::function<void(WMT::RenderCommandEncoder)> &&update_fences
 ) {
   auto drawable = layer_.nextDrawable();
+  if (drawable)
+    g_sc6_present_status.drawables++;
+  else
+    g_sc6_present_status.drawable_failures++;
 
   WMTRenderPassInfo info;
   WMT::InitializeRenderPassInfo(info);

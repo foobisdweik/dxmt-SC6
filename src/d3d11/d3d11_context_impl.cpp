@@ -21,6 +21,7 @@
  */
 
 #include "Metal.hpp"
+#include "util_env.hpp"
 #include "d3d11_annotation.hpp"
 #include "d3d11_context.hpp"
 #include "d3d11_device_child.hpp"
@@ -4531,18 +4532,34 @@ public:
         if (dsv.Texture.ptr()) {
           auto access_flag = ResourceAccess::Read;
           // TODO: ...should know more about store behavior (e.g. DiscardView)
+          /* SC6 fork experiment (DXMT_SC6_RO_DONTCARE=1): a pass whose
+          depth view is read-only cannot change the depth or stencil image, so
+          storing it back to memory at the end of the pass only repeats the
+          bytes already there. "Don't care" skips that write. Metal's rules
+          call the memory contents undefined after "don't care"; Apple GPUs
+          leave memory untouched in practice, which is what this relies on
+          (unverified, hence the switch). The variable is re-read every 512
+          passes so it can be toggled while the game runs. */
+          static unsigned sc6_ro_countdown;
+          static bool sc6_ro_dontcare;
+          if (sc6_ro_countdown-- == 0) {
+            sc6_ro_countdown = 512;
+            sc6_ro_dontcare = env::getEnvVar("DXMT_SC6_RO_DONTCARE") == "1";
+          }
           if (dsv_planar_flags & 1) {
             auto &depth = info.depth;
             depth.attachment = ctx.access<PipelineStage::Pixel>(dsv.Texture, dsv.viewId, access_flag);
             depth.load_action = WMTLoadActionLoad;
-            depth.store_action = WMTStoreActionStore;
+            depth.store_action =
+                sc6_ro_dontcare && (dsv.ReadOnlyFlags & 1) ? WMTStoreActionDontCare : WMTStoreActionStore;
           }
 
           if (dsv_planar_flags & 2) {
             auto &stencil = info.stencil;
             stencil.attachment = ctx.access<PipelineStage::Pixel>(dsv.Texture, dsv.viewId, access_flag);
             stencil.load_action = WMTLoadActionLoad;
-            stencil.store_action = WMTStoreActionStore;
+            stencil.store_action =
+                sc6_ro_dontcare && (dsv.ReadOnlyFlags & 2) ? WMTStoreActionDontCare : WMTStoreActionStore;
           }
         }
         if (effective_render_target == 0) {
