@@ -72,6 +72,7 @@ enum class AddressSpace : uint32_t {
 enum class Sign { inapplicable, with_sign, no_sign };
 
 using TextureKind = llvm::air::Texture::ResourceKind;
+using SampleType = llvm::air::Texture::SampleType;
 
 inline TextureKind lowering_texture_1d_to_2d(TextureKind kind) {
   switch (kind) {
@@ -127,6 +128,14 @@ struct MSLUint {
   };
 };
 
+struct MSLShort {
+  std::string get_name() const { return "short"; };
+
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
+    return llvm::Type::getInt16Ty(context);
+  };
+};
+
 struct MSLUshort {
   std::string get_name() const { return "ushort"; };
 
@@ -165,10 +174,13 @@ constexpr auto msl_int = MSLInt{};
 constexpr auto msl_uint = MSLUint{};
 constexpr auto msl_float = MSLFloat{};
 constexpr auto msl_ulong = MSLUlong{};
+constexpr auto msl_half = MSLHalf{};
+constexpr auto msl_short = MSLShort{};
+constexpr auto msl_ushort = MSLUshort{};
 
 using MSLScalerType = std::variant<
   MSLFloat, MSLInt, MSLUint, MSLBool, MSLHalf, MSLUshort,
-  MSLUlong>; // incomplete list
+  MSLUlong, MSLShort>; // incomplete list
 
 constexpr auto msl_sampler = MSLSampler{};
 
@@ -202,6 +214,9 @@ constexpr auto msl_float3 = MSLVector{3, msl_float};
 constexpr auto msl_int4 = MSLVector{4, msl_int};
 constexpr auto msl_uint4 = MSLVector{4, msl_uint};
 constexpr auto msl_float4 = MSLVector{4, msl_float};
+constexpr auto msl_short4 = MSLVector{4, msl_short};
+constexpr auto msl_ushort4 = MSLVector{4, msl_ushort};
+constexpr auto msl_half4 = MSLVector{4, msl_half};
 
 struct MSLTexture {
   MSLScalerType component_type;
@@ -585,6 +600,10 @@ struct OutputPointSize {
   bool operator==(OutputPointSize const& rhs) const { return true; }
 };
 
+struct OutputPrimitiveID {
+  bool operator==(OutputPrimitiveID const& rhs) const { return true; }
+};
+
 using FunctionInput = template_concat_t<
   FunctionArguments,
   std::variant<
@@ -612,7 +631,8 @@ using FunctionOutput = std::variant<
 
 using MeshVertexOutput = std::variant<OutputMeshData, OutputPosition, OutputClipDistance, OutputPointSize>;
 
-using MeshPrimitiveOutput = std::variant<OutputMeshData, OutputRenderTargetArrayIndex, OutputViewportArrayIndex>;
+using MeshPrimitiveOutput =
+    std::variant<OutputMeshData, OutputRenderTargetArrayIndex, OutputViewportArrayIndex, OutputPrimitiveID>;
 
 class FunctionSignatureBuilder {
 public:
@@ -678,6 +698,26 @@ inline TextureKind to_air_resource_type(
   assert(0 && "unreachable");
 };
 
+inline SampleType
+to_air_sample_type(dxmt::shader::common::ScalerDataType type, bool use_depth = false) {
+  using namespace dxmt::shader::common;
+  switch (type) {
+  case ScalerDataType::Uint:
+    return SampleType::sample_uint;
+  case ScalerDataType::Int:
+    return SampleType::sample_int;
+  case ScalerDataType::Half:
+    // depth texture must use `float` type
+    return use_depth ? SampleType::sample_float : SampleType::sample_half;
+  case ScalerDataType::Short:
+    return SampleType::sample_short;
+  case ScalerDataType::UShort:
+    return SampleType::sample_ushort;
+  default:
+    return SampleType::sample_float;
+  }
+}
+
 inline MSLScalerType
 to_air_scaler_type(dxmt::shader::common::ScalerDataType type) {
   switch (type) {
@@ -687,6 +727,12 @@ to_air_scaler_type(dxmt::shader::common::ScalerDataType type) {
     return msl_uint;
   case shader::common::ScalerDataType::Int:
     return msl_int;
+  case shader::common::ScalerDataType::Half:
+    return msl_half;
+  case shader::common::ScalerDataType::Short:
+    return msl_short;
+  case shader::common::ScalerDataType::UShort:
+    return msl_ushort;
   case shader::common::ScalerDataType::Double:
     assert(0 && "");
     break;

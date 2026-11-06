@@ -294,6 +294,10 @@ AIRBuilder::getTexelType(const Texture &Texture) {
     return getIntTy(4);
   if (Texture.sample_type == Texture::sample_uint)
     return getIntTy(4);
+  if (Texture.sample_type == Texture::sample_short || Texture.sample_type == Texture::sample_ushort)
+    return FixedVectorType::get(Type::getInt16Ty(getContext()), 4);
+  if (Texture.sample_type == Texture::sample_half)
+    return getHalfTy(4);
   llvm_unreachable("unhandled sample type");
 }
 
@@ -976,6 +980,54 @@ AIRBuilder::CreateTextureQuery(const Texture &Texture, Value *Handle, Texture::Q
   return builder.CreateSelect(builder.CreateIsNull(Handle), builder.getInt32(0), builder.CreateCall(Fn, Ops));
 }
 
+Value *
+AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, bool Clamped) {
+  assert(Texture.kind <= Texture::last_resource_kind);
+  auto &TexInfo = TextureInfo[Texture.kind];
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {
+                   {1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                   {1U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                   {2U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                   {2U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+               }
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(getTextureHandleType(Texture));
+  Ops.push_back(Handle);
+
+  Tys.push_back(getSamplerHandleType());
+  Ops.push_back(Sampler);
+
+  Tys.push_back(getTextureSampleCoordType(Texture));
+  if (options.sampleNaNToZero) {
+    Ops.push_back(getNaNToZero(Coord));
+  } else {
+    Ops.push_back(Coord);
+  }
+
+  /* access: always 0 = sample */
+  Tys.push_back(getIntTy());
+  Ops.push_back(getInt(0));
+
+  std::string FnName = Clamped ? "air.calculate_clamped_lod_" : "air.calculate_unclamped_lod_";
+  FnName += TexInfo.air_symbol_suffix;
+
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getFloatTy(), Tys, false), Attrs);
+
+  return builder.CreateCall(Fn, Ops);
+}
+
 std::pair<Value *, Value *>
 AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord) {
   assert(Texture.kind <= Texture::last_resource_kind);
@@ -1173,6 +1225,58 @@ AIRBuilder::CreateAtomicFence(MemFlags Flags, ThreadScope Scope, bool Relaxed) {
   return builder.CreateCall(Fn, Ops);
 }
 
+CallInst *
+AIRBuilder::CreateShuffle(Value *ShuffleValue, Value *LaneId, bool Quad) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+  auto TyValue = ShuffleValue->getType();
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(TyValue);
+  Ops.push_back(ShuffleValue);
+  Tys.push_back(builder.getInt16Ty());
+  Ops.push_back(LaneId);
+
+  std::string FnName = Quad ? "air.quad_shuffle" : "air.simd_shuffle";
+  FnName += getTypeOverloadSuffix(ShuffleValue->getType(), Signedness::Unsigned);
+
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(TyValue, Tys, false), Attrs);
+
+  return builder.CreateCall(Fn, Ops);
+}
+
+CallInst *
+AIRBuilder::CreateQuadShuffleXor(Value *ShuffleValue, uint16_t Mask) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+  auto TyValue = ShuffleValue->getType();
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(TyValue);
+  Ops.push_back(ShuffleValue);
+  Tys.push_back(builder.getInt16Ty());
+  Ops.push_back(builder.getInt16(Mask));
+
+  std::string FnName = "air.quad_shuffle_xor";
+  FnName += getTypeOverloadSuffix(ShuffleValue->getType(), Signedness::Unsigned);
+
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(TyValue, Tys, false), Attrs);
+
+  return builder.CreateCall(Fn, Ops);
+}
+
 Value *
 AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
   if (!X->getType()->getScalarType()->isFloatingPointTy()) {
@@ -1245,9 +1349,64 @@ AIRBuilder::CreateDotProduct(Value *LHS, Value *RHS) {
   std::string FnName = "air.dot";
   FnName += getTypeOverloadSuffix(LHS->getType());
 
-  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getFloatTy(), Tys, false), Attrs);
+  auto Fn =
+      getModule()->getOrInsertFunction(FnName, FunctionType::get(LHS->getType()->getScalarType(), Tys, false), Attrs);
 
   return builder.CreateCall(Fn, Ops);
+}
+
+Value *
+AIRBuilder::CreateGetBuiltinID(llvm::StringRef Name, uint32_t Component) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  std::string FnName = (Name + ".i32").str();
+  auto Fn = getModule()->getOrInsertFunction(
+      FnName, FunctionType::get(getIntTy(), {getIntTy()}, false), Attrs
+  );
+
+  return builder.CreateCall(Fn, {getInt(Component)});
+}
+
+Value *
+AIRBuilder::CreateGetGroupID(uint32_t Component) {
+  return CreateGetBuiltinID("air.get_group_id", Component);
+}
+
+Value *
+AIRBuilder::CreateGetGlobalID(uint32_t Component) {
+  return CreateGetBuiltinID("air.get_global_id", Component);
+}
+
+Value *
+AIRBuilder::CreateGetLocalID(uint32_t Component) {
+  return CreateGetBuiltinID("air.get_local_id", Component);
+}
+
+Value *
+AIRBuilder::CreateGetBuiltinID(llvm::StringRef Name) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  std::string FnName = "air.";
+  FnName += Name;
+  FnName += ".i32";
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getIntTy(), {}, false), Attrs);
+
+  return builder.CreateCall(Fn, {});
+}
+
+Value *
+AIRBuilder::CreateGetLocalLinearID() {
+  return CreateGetBuiltinID("get_local_linear_id");
 }
 
 Value *
@@ -1545,6 +1704,24 @@ AIRBuilder::CreateSetMeshViewportArrayIndex(Value *Vertex, Value *ArrayIndex) {
 }
 
 CallInst *
+AIRBuilder::CreateSetMeshPrimitiveID(Value *Vertex, Value *ID) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)}}
+  );
+
+  auto Fn = getModule()->getOrInsertFunction(
+      "air.set_primitive_id_mesh",
+      FunctionType::get(getVoidTy(), {getMeshHandleType(), getIntTy(), getIntTy()}, false), Attrs
+  );
+
+  return builder.CreateCall(Fn, {getMeshHandle(), Vertex, ID});
+}
+
+CallInst *
 AIRBuilder::CreateSetMeshPosition(Value *Vertex, Value *Position) {
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
@@ -1677,9 +1854,9 @@ AIRBuilder::CreateSetMeshPointSize(Value *Vertex, Value *Size) {
 
 Value *
 AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand, bool FastVariant) {
-  static char const *FnNames[] = {
-      "saturate", "log2", "exp2", "sqrt", "rsqrt", "fract", "rint", "floor", "ceil", "trunc", "cos", "sin", "fabs",
-  };
+  static char const *FnNames[] = {"saturate", "log2", "exp2",  "sqrt", "rsqrt", "fract", "rint",
+                                  "floor",    "ceil", "trunc", "cos",  "sin",   "fabs",  "tan",
+                                  "acos",     "asin", "atan",  "cosh", "sinh",  "tanh"};
 
   if (uint32_t(Op) >= std::size(FnNames)) {
     debug << "invalid operation: unknown fp unary operation.\n";
@@ -1715,6 +1892,50 @@ AIRBuilder::CreateIsNaN(Value *Operand) {
     TyCast = getIntTy(TyVec->getNumElements());
   }
   return builder.CreateICmpUGT(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsL31), BitsInf);
+}
+
+Value *
+AIRBuilder::CreateIsFinite(Value *Operand) {
+  auto OperandType = Operand->getType();
+  llvm::Value *BitsInf = getInt(0x7f800000u);
+  llvm::Type *TyCast = getIntTy();
+  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
+    BitsInf = builder.CreateVectorSplat(TyVec->getNumElements(), BitsInf);
+    TyCast = getIntTy(TyVec->getNumElements());
+  }
+  return builder.CreateICmpNE(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsInf), BitsInf);
+}
+
+Value *
+AIRBuilder::CreateIsInfinite(Value *Operand) {
+  auto OperandType = Operand->getType();
+  llvm::Value *BitsL31 = getInt(0x7fffffffu);
+  llvm::Value *BitsInf = getInt(0x7f800000u);
+  llvm::Type *TyCast = getIntTy();
+  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
+    BitsL31 = builder.CreateVectorSplat(TyVec->getNumElements(), BitsL31);
+    BitsInf = builder.CreateVectorSplat(TyVec->getNumElements(), BitsInf);
+    TyCast = getIntTy(TyVec->getNumElements());
+  }
+  return builder.CreateICmpEQ(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsL31), BitsInf);
+}
+
+Value *
+AIRBuilder::CreateIsNormal(Value *Operand) {
+  auto OperandType = Operand->getType();
+  llvm::Value *BitsL31 = getInt(0x7fffffffu);
+  llvm::Value *C1 = getInt(0x7f000000u);
+  llvm::Value *C2 = getInt(0xff800000u);
+  llvm::Type *TyCast = getIntTy();
+  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
+    BitsL31 = builder.CreateVectorSplat(TyVec->getNumElements(), BitsL31);
+    C1 = builder.CreateVectorSplat(TyVec->getNumElements(), C1);
+    C2 = builder.CreateVectorSplat(TyVec->getNumElements(), C2);
+    TyCast = getIntTy(TyVec->getNumElements());
+  }
+  return builder.CreateICmpULT(
+      builder.CreateNSWAdd(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsL31), C2), C1
+  );
 }
 
 Value *
