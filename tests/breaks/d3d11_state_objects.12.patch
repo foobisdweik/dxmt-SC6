@@ -1,0 +1,12 @@
+# leaves a stale depth-stencil output pointer when the description is null.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -560,8 +560,6 @@
+     CreateStateObject(const D3D11_DEPTH_STENCIL_DESC *pDesc,
+                       IMTLD3D11DepthStencilState **ppDepthStencilState) {
+   std::lock_guard<mullion::mutex> lock(mutex_cache);
+-  InitReturnPtr(ppDepthStencilState);
+-
+   // TODO: validation
+   if (!pDesc)
+     return E_INVALIDARG;

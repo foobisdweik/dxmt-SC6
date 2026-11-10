@@ -1,0 +1,14 @@
+# a mesh pipeline requests indirect command buffers on Apple8
+# family 8
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -811,8 +811,7 @@
+     info.raster_sample_count = std::max(pDesc->SampleDesc.Count, 1u);
+     // Metal refuses a mesh pipeline that asks for indirect command buffers on GPUs before Apple9, where mesh draws
+     // never go in them (d3d12_command_allocator.cpp)
+-    info.support_indirect_command_buffers = std::is_same_v<RenderPipelineInfo, WMTRenderPipelineInfo> ||
+-                                            device_->GetMTLDevice().supportsFamily(WMTGPUFamilyApple9);
++    info.support_indirect_command_buffers = true;
+ 
+     info.alpha_to_coverage_enabled = pDesc->BlendState.AlphaToCoverageEnable && !ref_ps.PixelShader.HasCoverageOutput;
+ 

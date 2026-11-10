@@ -1,0 +1,12 @@
+# returns zero instead of comparing the zero texel when a gather mip is removed.
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2464,7 +2464,7 @@
+   );
+   // the reference against the out-of-bounds 0
+   llvm::Value *OutOfBounds = Constant::getNullValue(Value->getType());
+-  if (Reference)
++  if (false && Reference)
+     OutOfBounds = ir.CreateVectorSplat(
+         cast<FixedVectorType>(Value->getType())->getNumElements(),
+         SamplerCompare(SamplerMetadata, Reference, ConstantFP::get(air.getFloatTy(), 0))

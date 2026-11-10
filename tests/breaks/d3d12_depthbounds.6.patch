@@ -1,0 +1,13 @@
+# the statistics count the runs the depth bounds test discarded
+# family 9
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -823,7 +823,7 @@
+     builder.CreateStore(counts, air.Live);
+   }
+   // and the statistics leave out a run the tests before it discarded (DepthBoundsTest)
+-  if (bounded && early_tests) {
++  if (false) {
+     llvm::Value *covered = kept ? kept : coverage != ~0u ? function->getArg(coverage) : nullptr;
+     counts = first(covered ? builder.CreateAnd(covered, bounded) : bounded);
+   }

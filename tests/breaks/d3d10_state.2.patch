@@ -1,0 +1,12 @@
+# bind vertex constants to the pixel stage
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -42,7 +42,7 @@
+   for (unsigned i = 0; i < NumBuffers; i++)
+     d3d11_buffers[i] = ppConstantBuffers ? GetD3D11Interface<MTLD3D10Buffer>(ppConstantBuffers[i]) : nullptr;
+ 
+-  d3d11_context_->VSSetConstantBuffers(StartSlot, NumBuffers, d3d11_buffers);
++  d3d11_context_->PSSetConstantBuffers(StartSlot, NumBuffers, d3d11_buffers);
+ }
+ 
+ void STDMETHODCALLTYPE

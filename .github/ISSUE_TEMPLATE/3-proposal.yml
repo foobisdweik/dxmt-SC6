@@ -1,0 +1,46 @@
+name: Proposal
+description: A new feature, a change to the architecture, a new dependency or a change to what Mullion supports.
+labels: [proposal]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Larger changes are discussed before the work starts, as [Preparing a
+        change](https://github.com/dttdrv/mullion/blob/main/CONTRIBUTING.md#2-preparing-a-change) describes. A bug fix
+        can go straight to a pull request.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: >-
+        What cannot be done today, and a concrete game, application or workflow it affects, with what fails, if known.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should become possible or behave differently, and how it could be built, if that is known.
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: How the result could be checked
+      description: >-
+        What would show that it works: a case that can be reproduced, a behaviour the specification defines, or a
+        measurement.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Sources and related work
+      description: >-
+        Specifications, documentation, issues or other implementations, with the part of each that applies. What the
+        sources state is kept apart from assumptions.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and constraints
+      description: What can be done today instead, and what the change would cost in compatibility or maintenance.

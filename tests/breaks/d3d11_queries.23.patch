@@ -1,0 +1,12 @@
+--- a/src/d3d11/d3d11_context_def.cpp
++++ b/src/d3d11/d3d11_context_def.cpp
+@@ -382,8 +382,8 @@
+       if (desc.Query == D3D11_QUERY_PIPELINE_STATISTICS) {
+         auto &regions = ctx_state.current_cmdlist->regions;
+         regions.back().pipeline_query = static_cast<MTLD3D11OcclusionQuery *>(pAsync);
+-        InvalidateCurrentPass(true);
+         regions.emplace_back();
++        InvalidateCurrentPass(true);
+       }
+       break;
+     }

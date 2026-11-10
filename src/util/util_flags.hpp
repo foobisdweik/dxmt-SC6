@@ -11,7 +11,7 @@
 
 #include <type_traits>
 
-namespace dxmt {
+namespace mullion {
 
 template <typename T> class Flags {
 
@@ -76,4 +76,4 @@ private:
 
   static IntType bits() { return 0; }
 };
-}; // namespace dxmt
+}; // namespace mullion

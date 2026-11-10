@@ -1,0 +1,12 @@
+# resolve D3D10 MSAA slice zero instead of the requested source slice
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -371,7 +371,7 @@
+ ) {
+   d3d11_context_->ResolveSubresource(
+       GetD3D11Interface<MTLD3D10Texture2D>(pDstResource), DstSubresource,
+-      GetD3D11Interface<MTLD3D10Texture2D>(pSrcResource), SrcSubresource, Format
++      GetD3D11Interface<MTLD3D10Texture2D>(pSrcResource), 0, Format
+   );
+ }
+ 

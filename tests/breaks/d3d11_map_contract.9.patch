@@ -1,0 +1,12 @@
+# replace every D3D10 buffer map mode with read
+--- a/src/d3d10/d3d10_buffer.cpp
++++ b/src/d3d10/d3d10_buffer.cpp
+@@ -5,7 +5,7 @@
+ HRESULT STDMETHODCALLTYPE
+ MTLD3D10Buffer::Map(D3D10_MAP MapType, UINT MapFlags, void **ppData) {
+   D3D11_MAPPED_SUBRESOURCE subresource{};
+-  HRESULT hr = d3d11_context->Map(d3d11, 0, D3D11_MAP(MapType), MapFlags, &subresource);
++  HRESULT hr = d3d11_context->Map(d3d11, 0, D3D11_MAP_READ, MapFlags, &subresource);
+   if (hr == S_OK)
+     *ppData = subresource.pData;
+   return hr;

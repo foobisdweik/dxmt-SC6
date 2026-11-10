@@ -1,0 +1,12 @@
+# triangle culling ignores CULL_NONE.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -445,7 +445,7 @@
+       cmd.cull_mode = WMTCullModeFront;
+       break;
+     case D3D11_CULL_NONE:
+-      cmd.cull_mode = WMTCullModeNone;
++      cmd.cull_mode = WMTCullModeBack;
+       break;
+     }
+ 

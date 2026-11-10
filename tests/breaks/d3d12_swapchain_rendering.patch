@@ -1,0 +1,13 @@
+# GetBuffer returns buffer zero for every valid index, breaking retained render-target descriptors and presented pixels.
+diff --git a/src/d3d12/d3d12_swapchain.cpp b/src/d3d12/d3d12_swapchain.cpp
+--- a/src/d3d12/d3d12_swapchain.cpp
++++ b/src/d3d12/d3d12_swapchain.cpp
+@@ -275,7 +275,7 @@
+   GetBuffer(UINT Buffer, REFIID riid, void **ppSurface) final {
+     if (Buffer >= backbuffers_.size())
+       return DXGI_ERROR_NOT_FOUND;
+-    return backbuffers_[Buffer]->QueryInterface(riid, ppSurface);
++    return backbuffers_[0]->QueryInterface(riid, ppSurface);
+   };
+ 
+   MULLION_HOTPATCHABLE

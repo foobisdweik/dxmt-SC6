@@ -1,0 +1,12 @@
+# append mixed-width vertex elements without their required alignment.
+--- a/src/d3d11/d3d11_input_layout.cpp
++++ b/src/d3d11/d3d11_input_layout.cpp
+@@ -54,7 +54,7 @@
+         }))
+       return E_INVALIDARG;
+     auto aligned_byte_offset = desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT
+-                                   ? align(append_offset[desc.InputSlot], std::min(4u, metal_format.BytesPerTexel))
++                                   ? align(append_offset[desc.InputSlot], 1u)
+                                    : desc.AlignedByteOffset;
+     append_offset[desc.InputSlot] = aligned_byte_offset + metal_format.BytesPerTexel;
+ 

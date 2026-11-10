@@ -1,0 +1,12 @@
+# immediate NO_OVERWRITE writes suballocation zero instead of the current one (R14)
+--- a/src/d3d11/d3d11_context_imm.cpp
++++ b/src/d3d11/d3d11_context_imm.cpp
+@@ -160,7 +160,7 @@
+         pMappedResource->RowPitch = buffer_length;
+         pMappedResource->DepthPitch = buffer_length;
+       } else {
+-        pMappedResource->pData = dynamic->immediateMappedMemory();
++        pMappedResource->pData = dynamic->immediateName()->mappedMemory(0);
+         pMappedResource->RowPitch = buffer_length;
+         pMappedResource->DepthPitch = buffer_length;
+       }

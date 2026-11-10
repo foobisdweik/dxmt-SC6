@@ -1,0 +1,12 @@
+# limits the aggregate stream-output overflow predicate to stream zero.
+--- a/src/d3d11/d3d11_query.cpp
++++ b/src/d3d11/d3d11_query.cpp
+@@ -144,7 +144,7 @@
+   }
+   uint32_t
+   streams() const {
+-    return desc_.Query == D3D11_QUERY_SO_OVERFLOW_PREDICATE ? kStreams : 1;
++    return 1;
+   }
+ 
+ public:

@@ -1,0 +1,12 @@
+# a D3D10/11 present keeps the previous frame in the left eye only
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -820,7 +820,7 @@
+     if (hr == S_OK && desc_.SwapEffect >= DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL && backbuffers_.size() > 1)
+       for (auto [to, from] : PresentCopies(pPresentParameters, desc_.Width, desc_.Height)) {
+         D3D11_BOX box{UINT(to.left + from.x), UINT(to.top + from.y), 0, UINT(to.right + from.x), UINT(to.bottom + from.y), 1};
+-        for (UINT eye = 0; eye < backbuffer_desc_.ArraySize; eye++)
++        for (UINT eye = 0; eye < 1; eye++)
+           device_context_->CopySubresourceRegion(
+               backbuffers_[0].ptr(), eye, to.left, to.top, 0, backbuffers_.back().ptr(), eye, &box
+           );

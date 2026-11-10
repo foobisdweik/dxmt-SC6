@@ -1,0 +1,12 @@
+# disable per-pass GPU timestamp attachment
+--- a/src/mullion/mullion_command_queue.cpp
++++ b/src/mullion/mullion_command_queue.cpp
+@@ -112,7 +112,7 @@
+   auto &samples = buffer.samples.back();
+   uint32_t first = ~0u;
+   WMTSampleBufferAttachmentInfo attachment{};
+-  if (samples.buffer && count <= timestamp_samples.limit - samples.used) {
++  if (false && samples.buffer && count <= timestamp_samples.limit - samples.used) {
+     first = samples.used;
+     samples.used += count;
+     attachment = {samples.buffer, first, first + count - 1};

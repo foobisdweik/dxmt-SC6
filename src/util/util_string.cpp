@@ -12,7 +12,7 @@
 #include "util_bit.hpp"
 #include "util_likely.hpp"
 
-namespace dxmt::str {
+namespace mullion::str {
 
 const uint8_t *decodeTypedChar(const uint8_t *begin, const uint8_t *end,
                                uint32_t &ch) {
@@ -214,4 +214,4 @@ std::wstring tows(const char *mbs) {
   return result;
 }
 
-} // namespace dxmt::str
+} // namespace mullion::str

@@ -2,9 +2,10 @@
 
 #include "d3d10_util.hpp"
 
-namespace dxmt {
+namespace mullion {
 
-class MTLD3D10Query final : public ID3D10Query {
+// Direct3D 10's face of a query, and of one that is a predicate
+class MTLD3D10Query final : public ID3D10Predicate {
 
 public:
   MTLD3D10Query(ID3D11Query *d3d11, ID3D11DeviceContext *d3d11_context) : d3d11(d3d11), d3d11_context(d3d11_context) {}
@@ -57,14 +58,30 @@ public:
     d3d11_context->End(d3d11);
   }
 
+  // Direct3D 10's pipeline statistics are Direct3D 11's without the counters of the stages it lacks, which follow them
+  bool
+  Statistics() {
+    D3D11_QUERY_DESC desc;
+    d3d11->GetDesc(&desc);
+    return desc.Query == D3D11_QUERY_PIPELINE_STATISTICS;
+  }
+
   HRESULT STDMETHODCALLTYPE
   GetData(void *pData, UINT DataSize, UINT GetDataFlags) {
-    return d3d11_context->GetData(d3d11, pData, DataSize, GetDataFlags);
+    if (!Statistics() || !DataSize)
+      return d3d11_context->GetData(d3d11, pData, DataSize, GetDataFlags);
+    if (DataSize != GetDataSize() || !pData)
+      return E_INVALIDARG;
+    D3D11_QUERY_DATA_PIPELINE_STATISTICS data;
+    HRESULT hr = d3d11_context->GetData(d3d11, &data, sizeof(data), GetDataFlags);
+    if (hr == S_OK)
+      memcpy(pData, &data, DataSize);
+    return hr;
   }
 
   UINT STDMETHODCALLTYPE
   GetDataSize() {
-    return d3d11->GetDataSize();
+    return Statistics() ? sizeof(D3D10_QUERY_DATA_PIPELINE_STATISTICS) : d3d11->GetDataSize();
   }
 
   void STDMETHODCALLTYPE
@@ -77,4 +94,4 @@ public:
   }
 };
 
-}; // namespace dxmt
+}; // namespace mullion

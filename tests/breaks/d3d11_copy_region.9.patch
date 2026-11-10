@@ -1,0 +1,12 @@
+# drops copies that specify NO_OVERWRITE or DISCARD.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1152,6 +1152,8 @@
+       ID3D11Resource *pDstResource, UINT DstSubresource, UINT DstX, UINT DstY, UINT DstZ, ID3D11Resource *pSrcResource,
+       UINT SrcSubresource, const D3D11_BOX *pSrcBox, UINT CopyFlags
+   ) override {
++    if (CopyFlags)
++      return;
+     std::lock_guard<mutex_t> lock(mutex);
+     PredicatedOperation operation(this);
+     if (operation.skipped)

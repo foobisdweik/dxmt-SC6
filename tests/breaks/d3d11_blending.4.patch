@@ -1,0 +1,13 @@
+# sets the blend factor again only when the application does, not when a pipeline needs it as 0.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5590,8 +5590,7 @@ public:
+       blend.colors[i].pixel_format = Desc.ColorAttachmentFormats[i];
+     bool zero = Desc.BlendState->SetupMetalPipelineDescriptor(&blend, Desc.NumColorAttachments,
+                                                               PS ? PS->reflection().PSValidRenderTargets : 0);
+-    if (std::exchange(zero_blend_color_, zero) != zero)
+-      dirty_state.set(DirtyState::BlendFactorAndStencilRef);
++    zero_blend_color_ = zero;
+     if (unlikely(Desc.GSPassthrough == ~0u && (Desc.GeometryShader != nullptr || Desc.SOLayout || Desc.PassThrough))) {
+       Desc.GSStripTopology = is_strip_topology(state_.InputAssembler.Topology);
+     } else {

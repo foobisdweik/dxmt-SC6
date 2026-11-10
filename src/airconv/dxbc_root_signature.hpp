@@ -22,8 +22,28 @@
 #include <cstring>
 #include <vector>
 #include <cstdint>
+#include <type_traits>
 
-namespace dxmt {
+namespace mullion {
+
+// the installed headers lack these 1.2 ABI types (DirectX-Headers, d3d12.h): 1.1 parameters, sampler flags appended
+constexpr auto RootSignatureVersion12 = D3D_ROOT_SIGNATURE_VERSION(3);
+struct StaticSamplerDesc1 {
+  D3D12_STATIC_SAMPLER_DESC Desc;
+  uint32_t Flags;
+};
+struct RootSignatureDesc2 {
+  UINT NumParameters;
+  const D3D12_ROOT_PARAMETER1 *pParameters;
+  UINT NumStaticSamplers;
+  const StaticSamplerDesc1 *pStaticSamplers;
+  D3D12_ROOT_SIGNATURE_FLAGS Flags;
+};
+struct VersionedRootSignatureDesc2 {
+  D3D_ROOT_SIGNATURE_VERSION Version;
+  RootSignatureDesc2 Desc_1_2;
+};
+static_assert(sizeof(VersionedRootSignatureDesc2) == sizeof(D3D12_VERSIONED_ROOT_SIGNATURE_DESC));
 
 struct RawRootSignatureDesc {
   uint32_t Version;
@@ -81,6 +101,7 @@ template <typename T> struct GetType {
   using ROOT_DESCRIPTOR = decltype(std::declval<T>().pParameters[0].Descriptor);
   using DESCRIPTOR_RANGE =
       std::decay_t<decltype(std::declval<T>().pParameters[0].DescriptorTable.pDescriptorRanges[0])>;
+  using STATIC_SAMPLER = std::decay_t<decltype(std::declval<T>().pStaticSamplers[0])>;
 };
 
 class RootSignatureDeserializer {
@@ -90,7 +111,7 @@ public:
   template <typename T>
   T *
   AllocateBuffer(size_t Count, size_t Size = sizeof(T)) {
-    if (Count == 0)
+    if (Count == 0 || Count > SIZE_MAX / Size)
       return nullptr;
     T *ptr = (T *)malloc(Size * Count);
     if (ptr)
@@ -100,10 +121,19 @@ public:
 
   template <typename ROOT_SIGNATURE_DESC>
   HRESULT
-  DeserializeVersionedRootSignatureImpl(ROOT_SIGNATURE_DESC &Output) {
+  DeserializeVersionedRootSignatureImpl(ROOT_SIGNATURE_DESC &Output, SIZE_T DataSize) {
     using ROOT_PARAMETER = GetType<ROOT_SIGNATURE_DESC>::ROOT_PARAMETER;
     using ROOT_DESCRIPTOR = GetType<ROOT_SIGNATURE_DESC>::ROOT_DESCRIPTOR;
     using DESCRIPTOR_RANGE = GetType<ROOT_SIGNATURE_DESC>::DESCRIPTOR_RANGE;
+    using STATIC_SAMPLER = GetType<ROOT_SIGNATURE_DESC>::STATIC_SAMPLER;
+
+    // offsets are DWORD-aligned; division checks counts without overflowing (DXC, DxilRootSignatureSerializer.cpp)
+    auto contains = [DataSize](uint32_t Offset, size_t Count, size_t Stride) {
+      return Offset % alignof(uint32_t) == 0 && Offset <= DataSize && Count <= (DataSize - Offset) / Stride;
+    };
+    if (!contains(raw_root_sig_->RootParametersOffset, raw_root_sig_->NumParameters, sizeof(RawRootParameter)) ||
+        !contains(raw_root_sig_->StaticSamplersOffset, raw_root_sig_->NumStaticSamplers, sizeof(STATIC_SAMPLER)))
+      return E_INVALIDARG;
 
     Output.Flags = (D3D12_ROOT_SIGNATURE_FLAGS)raw_root_sig_->Flags;
     /* Root Parameters */
@@ -120,7 +150,11 @@ public:
       ParameterOut.ShaderVisibility = ShaderVisibility;
       switch (ParameterType) {
       case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE: {
+        if (!contains(RootParameter.PayloadOffset, 1, sizeof(RawRootDescriptorTable)))
+          return E_INVALIDARG;
         auto Table = (const RawRootDescriptorTable *)((char *)raw_root_sig_ + RootParameter.PayloadOffset);
+        if (!contains(Table->DescriptorRangesOffset, Table->NumDescriptorRanges, sizeof(DESCRIPTOR_RANGE)))
+          return E_INVALIDARG;
         ParameterOut.DescriptorTable.NumDescriptorRanges = Table->NumDescriptorRanges;
         auto Ranges = (DESCRIPTOR_RANGE *)((char *)raw_root_sig_ + Table->DescriptorRangesOffset);
         ParameterOut.DescriptorTable.pDescriptorRanges = Ranges;
@@ -128,15 +162,21 @@ public:
         break;
       }
       case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS: {
+        if (!contains(RootParameter.PayloadOffset, 1, sizeof(D3D12_ROOT_CONSTANTS)))
+          return E_INVALIDARG;
         ParameterOut.Constants = *(D3D12_ROOT_CONSTANTS *)((char *)raw_root_sig_ + RootParameter.PayloadOffset);
         break;
       }
       case D3D12_ROOT_PARAMETER_TYPE_CBV:
       case D3D12_ROOT_PARAMETER_TYPE_SRV:
       case D3D12_ROOT_PARAMETER_TYPE_UAV: {
+        if (!contains(RootParameter.PayloadOffset, 1, sizeof(ROOT_DESCRIPTOR)))
+          return E_INVALIDARG;
         ParameterOut.Descriptor = *(ROOT_DESCRIPTOR *)((char *)raw_root_sig_ + RootParameter.PayloadOffset);
         break;
       }
+      default:
+        return E_INVALIDARG;
       }
     }
     Output.NumParameters = raw_root_sig_->NumParameters;
@@ -146,7 +186,7 @@ public:
     Output.NumStaticSamplers = raw_root_sig_->NumStaticSamplers;
     Output.pStaticSamplers =
         Output.NumStaticSamplers
-            ? (const D3D12_STATIC_SAMPLER_DESC *)((char *)raw_root_sig_ + raw_root_sig_->StaticSamplersOffset)
+            ? (const STATIC_SAMPLER *)((char *)raw_root_sig_ + raw_root_sig_->StaticSamplersOffset)
             : nullptr;
 
     return S_OK;
@@ -157,6 +197,8 @@ public:
   ConvertVersionedRootSignature(ROOT_SIGNATURE_DESC_FROM &From, ROOT_SIGNATURE_DESC_TO &To) {
     using ROOT_PARAMETER_TO = GetType<ROOT_SIGNATURE_DESC_TO>::ROOT_PARAMETER;
     using DESCRIPTOR_RANGE_TO = GetType<ROOT_SIGNATURE_DESC_TO>::DESCRIPTOR_RANGE;
+    using STATIC_SAMPLER_FROM = GetType<ROOT_SIGNATURE_DESC_FROM>::STATIC_SAMPLER;
+    using STATIC_SAMPLER_TO = GetType<ROOT_SIGNATURE_DESC_TO>::STATIC_SAMPLER;
 
     auto pParametersTo = AllocateBuffer<ROOT_PARAMETER_TO>(From.NumParameters);
     if (From.NumParameters && !pParametersTo)
@@ -166,7 +208,19 @@ public:
     To.NumParameters = From.NumParameters;
     To.pParameters = pParametersTo;
     To.NumStaticSamplers = From.NumStaticSamplers;
-    To.pStaticSamplers = From.pStaticSamplers;
+    if constexpr (std::is_same_v<STATIC_SAMPLER_FROM, STATIC_SAMPLER_TO>) {
+      To.pStaticSamplers = From.pStaticSamplers;
+    } else {
+      auto samplers = AllocateBuffer<STATIC_SAMPLER_TO>(From.NumStaticSamplers);
+      if (From.NumStaticSamplers && !samplers)
+        return E_OUTOFMEMORY;
+      for (unsigned i = 0; i < From.NumStaticSamplers; i++) {
+        samplers[i] = {};
+        // CD3DX12_STATIC_SAMPLER_DESC1 copies the common fields and initializes added flags to NONE
+        memcpy(&samplers[i], &From.pStaticSamplers[i], sizeof(D3D12_STATIC_SAMPLER_DESC));
+      }
+      To.pStaticSamplers = samplers;
+    }
 
     for (unsigned i = 0; i < From.NumParameters; i++) {
       const auto &ParameterFrom = From.pParameters[i];
@@ -178,7 +232,7 @@ public:
         ParameterTo.DescriptorTable.NumDescriptorRanges = ParameterFrom.DescriptorTable.NumDescriptorRanges;
 
         auto pRanges = AllocateBuffer<DESCRIPTOR_RANGE_TO>(ParameterTo.DescriptorTable.NumDescriptorRanges);
-        if (!pRanges)
+        if (ParameterTo.DescriptorTable.NumDescriptorRanges && !pRanges)
           return E_OUTOFMEMORY;
         ParameterTo.DescriptorTable.pDescriptorRanges = pRanges;
 
@@ -213,6 +267,8 @@ public:
 
   HRESULT
   Deserialize(const void *pBytecode, SIZE_T DataSize) {
+    if (!pBytecode || DataSize < sizeof(RawRootSignatureDesc))
+      return E_INVALIDARG;
     raw_root_sig_ = AllocateBuffer<RawRootSignatureDesc>(1, DataSize);
     if (!raw_root_sig_)
       return E_OUTOFMEMORY;
@@ -225,7 +281,7 @@ public:
     HRESULT hr;
     switch (raw_root_sig_->Version) {
     case D3D_ROOT_SIGNATURE_VERSION_1_0: {
-      hr = DeserializeVersionedRootSignatureImpl(desc_1_0_.Desc_1_0);
+      hr = DeserializeVersionedRootSignatureImpl(desc_1_0_.Desc_1_0, DataSize);
       if (FAILED(hr))
         return hr;
       hr = ConvertVersionedRootSignature(desc_1_0_.Desc_1_0, desc_1_1_.Desc_1_1);
@@ -234,7 +290,7 @@ public:
       break;
     }
     case D3D_ROOT_SIGNATURE_VERSION_1_1: {
-      hr = DeserializeVersionedRootSignatureImpl(desc_1_1_.Desc_1_1);
+      hr = DeserializeVersionedRootSignatureImpl(desc_1_1_.Desc_1_1, DataSize);
       if (FAILED(hr))
         return hr;
       hr = ConvertVersionedRootSignature(desc_1_1_.Desc_1_1, desc_1_0_.Desc_1_0);
@@ -242,6 +298,15 @@ public:
         return hr;
       break;
     }
+    case RootSignatureVersion12:
+      desc_1_2_.Version = RootSignatureVersion12;
+      hr = DeserializeVersionedRootSignatureImpl(desc_1_2_.Desc_1_2, DataSize);
+      if (FAILED(hr))
+        return hr;
+      hr = ConvertVersionedRootSignature(desc_1_2_.Desc_1_2, desc_1_1_.Desc_1_1);
+      if (FAILED(hr))
+        return hr;
+      return ConvertVersionedRootSignature(desc_1_1_.Desc_1_1, desc_1_0_.Desc_1_0);
     default:
       hr = E_INVALIDARG;
     }
@@ -259,10 +324,11 @@ public:
 
   D3D12_VERSIONED_ROOT_SIGNATURE_DESC desc_1_0_;
   D3D12_VERSIONED_ROOT_SIGNATURE_DESC desc_1_1_;
+  VersionedRootSignatureDesc2 desc_1_2_{};
   RawRootSignatureDesc *raw_root_sig_;
 
 private:
   std::vector<void *> malloc_ptrs_;
 };
 
-} // namespace dxmt
+} // namespace mullion

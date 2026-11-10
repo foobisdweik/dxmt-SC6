@@ -1,0 +1,12 @@
+# signals a residency completion with the wrong fence value
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1371,7 +1371,7 @@
+       UINT64 FenceValue
+   ) {
+     // every object is resident while it exists
+-    return pFence ? pFence->Signal(FenceValue) : E_INVALIDARG;
++    return pFence ? pFence->Signal(FenceValue + 1) : E_INVALIDARG;
+   }
+ 
+   HRESULT STDMETHODCALLTYPE

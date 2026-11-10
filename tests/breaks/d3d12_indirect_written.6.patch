@@ -1,0 +1,15 @@
+# a list Reset rewinds its allocator's GPU argument records to their start
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -681,7 +681,10 @@
+   HRESULT STDMETHODCALLTYPE
+   Reset(ID3D12CommandAllocator *pAllocator, ID3D12PipelineState *pInitialState) {
+     if (encoder_count == std::numeric_limits<size_t>::max())
+-      return FAIL(E_FAIL);
++      return E_FAIL;
++    auto allocator = static_cast<MTLD3D12CommandAllocatorImpl *>(pAllocator);
++    if (!allocator->gpu_cursor_.runs.empty())
++      allocator->gpu_cursor_.offset = allocator->gpu_cursor_.runs.front().offset;
+     return FAILED(recording_error_) ? recording_error_ : Initialize(pAllocator, pInitialState);
+   };
+ 

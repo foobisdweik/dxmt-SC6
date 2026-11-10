@@ -1,0 +1,12 @@
+# omits the SIMD lane inputs needed by isolated fine compute derivatives
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -1111,7 +1111,7 @@
+   bool compute = shader->shader_type == D3D11_SB_COMPUTE_SHADER;
+   if (shader->shader_type != D3D10_SB_VERTEX_SHADER &&
+       (used({WaveGetLaneIndex, WaveGetLaneCount, WavePrefixOp, WaveMultiPrefixOp, WaveMultiPrefixBitCount}) ||
+-       (compute && used({DerivFineX, DerivFineY})))) {
++       false)) {
+     shader->func_signature.DefineInput(air::InputThreadIndexInSIMDGroup{});
+     shader->func_signature.DefineInput(air::InputThreadsPerSIMDGroup{});
+   }

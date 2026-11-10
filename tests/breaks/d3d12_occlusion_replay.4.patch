@@ -1,0 +1,12 @@
+# binary occlusion resolves the sample count instead of zero or one
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -866,7 +866,7 @@
+   ulong total = 0;
+   for (uint k = 0; k < sum.count; k++)
+     total += *slots[sum.first + k].count;
+-  results[sum.query] = sum.binary ? ulong(total != 0) : total;
++  results[sum.query] = total;
+ }
+ 
+ // a pipeline statistics query's result (D3D12_QUERY_DATA_PIPELINE_STATISTICS or ..._STATISTICS1, `size` counts): the

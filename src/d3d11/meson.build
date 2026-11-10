@@ -28,7 +28,7 @@ d3d11_src = [
   'd3d11_context_def.cpp',
   'd3d11_multithread.cpp',
   'd3d11_fence.cpp',
-  'd3d11_surface.cpp',
+  'd3d11_on12.cpp',
 ]
 
 d3d10_src = [
@@ -49,10 +49,10 @@ d3d11_dll = shared_library('d3d11', d3d11_src, d3d10_src, d3d11_res,
     dxgi_dep, 
     dxbc_parser_dep,
     airconv_forward_dep,
-    dxmt_dep,
+    mullion_dep,
     winemetal_dep,
     util_dep ],
-  include_directories : [ dxmt_include_path ],
+  include_directories : [ mullion_include_path ],
   install             : true,
   install_dir         : windows_native_install_dir,
   vs_module_defs      : 'd3d11.def',
@@ -62,7 +62,7 @@ d3d11_dll = shared_library('d3d11', d3d11_src, d3d10_src, d3d11_res,
 
 d3d11_dep = declare_dependency(
   link_with           : [ d3d11_dll ],
-  include_directories : [ dxmt_include_path ],
+  include_directories : [ mullion_include_path ],
 )
 
 if wine_builtin_dll

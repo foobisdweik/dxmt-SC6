@@ -1,0 +1,13 @@
+# a shared Direct3D 12 fence does not watch its event, so a Direct3D 11 signal never reaches its waiters
+--- a/src/d3d12/d3d12_fence.cpp
++++ b/src/d3d12/d3d12_fence.cpp
+@@ -94,8 +94,7 @@
+   // value. a watch the event never reaches stays, without the fence
+   void
+   Waiting(uint64_t expected) override {
+-    if (!event_)
+-      return;
++    return;
+     struct Watch {
+       std::shared_ptr<Alive> alive;
+       HANDLE reached;

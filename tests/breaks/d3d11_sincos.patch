@@ -1,0 +1,13 @@
+# sine and tangent of a zero or a 32-bit denormal are Metal's, not that zero with its sign (D3D11.3 22.10.20; DXIL.rst, Sin and Tan)
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1039,7 +1039,8 @@
+   // a 32-bit denormal has no exponent bits; 16-bit denormals are kept (D3D11.3 3.1.5), so there only a zero counts
+   auto Counted = Scalar->isFloatTy() ? llvm::APFloat::getInf(Scalar->getFltSemantics()).bitcastToAPInt() : ~Sign;
+   auto Zero = ir.CreateICmpEQ(ir.CreateAnd(Bits, Counted), llvm::ConstantInt::get(Bits->getType(), 0));
+-  return ir.CreateSelect(Zero, ir.CreateBitCast(ir.CreateAnd(Bits, Sign), Value->getType()), Result);
++  (void)Zero;
++  return Result;
+ }
+ 
+ void

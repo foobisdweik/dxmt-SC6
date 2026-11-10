@@ -5,9 +5,9 @@
 #include <stack>
 
 using namespace microsoft;
-using namespace dxmt::shader::common;
+using namespace mullion::shader::common;
 
-namespace dxmt::dxbc {
+namespace mullion::dxbc {
 
 inline ResourceType
 to_shader_resource_type(D3D10_SB_RESOURCE_DIMENSION dim) {
@@ -36,7 +36,8 @@ to_shader_resource_type(D3D10_SB_RESOURCE_DIMENSION dim) {
   case D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY:
     return ResourceType::TextureCubeArray;
   }
-  assert(0 && "invalid D3D10_SB_RESOURCE_DIMENSION");
+  Refuse("an invalid resource dimension");
+  return ResourceType::Texture2D;
 };
 
 inline ScalerDataType
@@ -58,7 +59,8 @@ to_shader_scaler_type(microsoft::D3D10_SB_RESOURCE_RETURN_TYPE type) {
   case microsoft::D3D11_SB_RETURN_TYPE_UNUSED:
     break;
   }
-  assert(0 && "invalid D3D10_SB_RESOURCE_RETURN_TYPE");
+  Refuse("an invalid resource return type");
+  return ScalerDataType::Float;
 };
 
 std::vector<std::unique_ptr<BasicBlock>>
@@ -102,6 +104,16 @@ read_control_flow(
   while (!Parser.EndOfShader()) {
     D3D10ShaderBinary::CInstruction Inst;
     Parser.ParseInstruction(&Inst);
+
+    // threadgroups work together when one waits for what another does: a loop that reads globally coherent memory,
+    // which is every instruction with such a view but the stores (an atomic reads to change)
+    bool stores = Inst.OpCode() == D3D11_SB_OPCODE_STORE_UAV_TYPED || Inst.OpCode() == D3D11_SB_OPCODE_STORE_RAW ||
+                  Inst.OpCode() == D3D11_SB_OPCODE_STORE_STRUCTURED;
+    for (unsigned i = 0; i < Inst.m_NumOperands && !bb_continue_target.empty() && !stores; i++)
+      if (Inst.m_Operands[i].m_Type == D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW)
+        if (auto uav = shader_info.uavMap.find(Inst.m_Operands[i].m_Index[0].m_RegIndex);
+            uav != shader_info.uavMap.end())
+          sm50_shader->groups_work_together |= uav->second.global_coherent;
 
     switch (Inst.OpCode()) {
 
@@ -242,6 +254,7 @@ read_control_flow(
     }
 
     case D3D10_SB_OPCODE_DISCARD: {
+      shader_info.discards = true;
       auto fulfilled_ = fresh_bb("discard_fulfilled");
       auto otherwise_ = fresh_bb("discard_otherwise");
       bb_current->target = BasicBlockConditionalBranch{readCondition(Inst, 0, phase), fulfilled_, otherwise_};
@@ -307,7 +320,9 @@ read_control_flow(
       auto after_call = fresh_bb("after_call");
       auto func_id = Inst.m_Operands[0].m_Index[0].m_RegIndex;
       bb_current->target = BasicBlockCall{func_id, after_call};
-      call_targets.push_back({bb_current, &std::get<BasicBlockCall>(bb_current->target)});
+      // a function's own calls are inlined into each copy of it; the main program comes before every label
+      if (func_entries.empty())
+        call_targets.push_back({bb_current, &std::get<BasicBlockCall>(bb_current->target)});
       bb_current = after_call;
       break;
     }
@@ -315,9 +330,10 @@ read_control_flow(
       auto if_true = fresh_bb("if_true");
       auto after_callc = fresh_bb("after_callc");
       bb_current->target = BasicBlockConditionalBranch{readCondition(Inst, 0, phase), if_true, after_callc};
-      call_targets.push_back({bb_current, &std::get<BasicBlockCall>(bb_current->target)});
       auto func_id = Inst.m_Operands[1].m_Index[0].m_RegIndex;
       if_true->target = BasicBlockCall{func_id, after_callc};
+      if (func_entries.empty())
+        call_targets.push_back({if_true, &std::get<BasicBlockCall>(if_true->target)});
       bb_current = after_callc;
       break;
     }
@@ -325,7 +341,7 @@ read_control_flow(
     case D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER: {
       unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
       unsigned CBufferSize = Inst.m_ConstantBufferDecl.Size;
-      unsigned LB, RangeSize;
+      unsigned LB = 0, RangeSize = 0;
       switch (Inst.m_Operands[0].m_IndexDimension) {
       case D3D10_SB_OPERAND_INDEX_2D: // SM 5.0-
         LB = RangeID;
@@ -351,7 +367,7 @@ read_control_flow(
     case D3D10_SB_OPCODE_DCL_SAMPLER: {
       // Root signature bindings.
       unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      unsigned LB, RangeSize;
+      unsigned LB = 0, RangeSize = 0;
       switch (Inst.m_Operands[0].m_IndexDimension) {
       case D3D10_SB_OPERAND_INDEX_1D: // SM 5.0-
         LB = RangeID;
@@ -381,7 +397,7 @@ read_control_flow(
     case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
       // Root signature bindings.
       unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      unsigned LB, RangeSize;
+      unsigned LB = 0, RangeSize = 0;
       if (sm_ver_5_1_) {
         LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
         RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
@@ -433,7 +449,7 @@ read_control_flow(
     case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
       // Root signature bindings.
       unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      unsigned LB, RangeSize;
+      unsigned LB = 0, RangeSize = 0;
       if (sm_ver_5_1_) {
         LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
         RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
@@ -635,22 +651,17 @@ read_control_flow(
       bb_current->instructions.push_back(InstCut{});
       break;
     }
-    case D3D11_SB_OPCODE_EMIT_STREAM: {
-      assert(Inst.m_Operands[0].m_Value[0] == 0 && "multiple streams not supported");
-      bb_current->instructions.push_back(InstEmit{});
+    // the stream operand is m#
+    case D3D11_SB_OPCODE_EMIT_STREAM:
+      bb_current->instructions.push_back(InstEmit{Inst.m_Operands[0].m_Index[0].m_RegIndex});
       break;
-    }
-    case D3D11_SB_OPCODE_EMITTHENCUT_STREAM: {
-      assert(Inst.m_Operands[0].m_Value[0] == 0 && "multiple streams not supported");
-      bb_current->instructions.push_back(InstEmit{});
-      bb_current->instructions.push_back(InstCut{});
+    case D3D11_SB_OPCODE_EMITTHENCUT_STREAM:
+      bb_current->instructions.push_back(InstEmit{Inst.m_Operands[0].m_Index[0].m_RegIndex});
+      bb_current->instructions.push_back(InstCut{Inst.m_Operands[0].m_Index[0].m_RegIndex});
       break;
-    }
-    case D3D11_SB_OPCODE_CUT_STREAM: {
-      assert(Inst.m_Operands[0].m_Value[0] == 0 && "multiple streams not supported");
-      bb_current->instructions.push_back(InstCut{});
+    case D3D11_SB_OPCODE_CUT_STREAM:
+      bb_current->instructions.push_back(InstCut{Inst.m_Operands[0].m_Index[0].m_RegIndex});
       break;
-    }
     default:
       bb_current->instructions.push_back(readInstruction(Inst, shader_info, phase));
       break;
@@ -658,7 +669,15 @@ read_control_flow(
   }
 
   if (bb_current != bb_return) {
-    bb_current->target = BasicBlockUnconditionalBranch{bb_return};
+    // if fork/join phase reads control point phase output, or control point phase is absent
+    // then we need to perform a memcpy from threadgroup memory to payload memory
+    // otherwise output is written to payload memory directly
+    if (sm50_shader->shader_type == microsoft::D3D11_SB_HULL_SHADER &&
+        (shader_info.output_control_point_read || !shader_info.no_control_point_phase_passthrough)) {
+      bb_current->target = BasicBlockHullShaderWriteOutput{sm50_shader->output_control_point_count, bb_return};
+    } else {
+      bb_current->target = BasicBlockUnconditionalBranch{bb_return};
+    }
     bb_current = bb_return;
   }
 
@@ -668,7 +687,9 @@ read_control_flow(
 
     std::vector<std::pair<BasicBlock *, BasicBlockCall *>> new_call_targets;
 
-    for (auto [bb, call] : call_targets) {
+    for (auto [bb, target] : call_targets) {
+      // the call is replaced in its block below, and its return point is still needed
+      auto call = *target;
       std::unordered_map<BasicBlock *, BasicBlock *> visited;
       std::stack<BasicBlock *> block_to_redirect;
 
@@ -682,8 +703,7 @@ read_control_flow(
         return cloned;
       };
 
-      auto call_return_point = call->return_point;
-      bb->target = BasicBlockUnconditionalBranch{clone(func_entries.at(call->func_id))};
+      bb->target = BasicBlockUnconditionalBranch{clone(func_entries.at(call.func_id))};
 
       while (!block_to_redirect.empty()) {
         auto current = block_to_redirect.top();
@@ -692,8 +712,8 @@ read_control_flow(
         cloned->target = std::visit(
             patterns{
                 [](BasicBlockUndefined) -> BasicBlockTarget { return BasicBlockUndefined{}; },
-                [=](BasicBlockReturn ret) -> BasicBlockTarget {
-                  return BasicBlockUnconditionalBranch{call_return_point};
+                [&](BasicBlockReturn ret) -> BasicBlockTarget {
+                  return BasicBlockUnconditionalBranch{call.return_point};
                 },
                 [&](BasicBlockUnconditionalBranch uncond) -> BasicBlockTarget {
                   return BasicBlockUnconditionalBranch{clone(uncond.target)};
@@ -715,10 +735,16 @@ read_control_flow(
                       instance.instance_count, clone(instance.active), clone(instance.sync)
                   };
                 },
+                [&](BasicBlockHullShaderWriteOutput hull_end) -> BasicBlockTarget {
+                  return BasicBlockHullShaderWriteOutput{hull_end.instance_count, clone(hull_end.epilogue)};
+                },
                 [&](BasicBlockCall call) -> BasicBlockTarget {
                   if (stack_depth == 1)
                     return BasicBlockUnconditionalBranch{clone(call.return_point)};
                   return BasicBlockCall{call.func_id, clone(call.return_point)};
+                },
+                [&](BasicBlockDXIL dxil) -> BasicBlockTarget {
+                  return BasicBlockDXIL{dxil.shader, dxil.function, clone(dxil.next)};
                 },
             },
             current->target
@@ -739,4 +765,4 @@ read_control_flow(
   return all_bb;
 }
 
-} // namespace dxmt::dxbc
+} // namespace mullion::dxbc

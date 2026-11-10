@@ -1,0 +1,12 @@
+# an exactly sized mode array incorrectly reports MORE_DATA
+--- a/src/dxgi/dxgi_output.cpp
++++ b/src/dxgi/dxgi_output.cpp
+@@ -452,7 +452,7 @@
+       for (uint32_t i = 0; i < *pNumModes && i < dstModeId; i++)
+         pDesc[i] = modeList[i];
+ 
+-      if (dstModeId > *pNumModes)
++      if (dstModeId >= *pNumModes)
+         return DXGI_ERROR_MORE_DATA;
+     }
+ 

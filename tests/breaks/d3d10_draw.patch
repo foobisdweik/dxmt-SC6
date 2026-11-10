@@ -1,0 +1,12 @@
+# drop the D3D10 indexed draw start
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -85,7 +85,7 @@
+ 
+ void STDMETHODCALLTYPE
+ MTLD3D10Device::DrawIndexed(UINT IndexCount, UINT StartIndexLocation, INT BaseVertexLocation) {
+-  d3d11_context_->DrawIndexed(IndexCount, StartIndexLocation, BaseVertexLocation);
++  d3d11_context_->DrawIndexed(IndexCount, 0, BaseVertexLocation);
+ }
+ 
+ void STDMETHODCALLTYPE

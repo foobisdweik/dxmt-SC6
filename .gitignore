@@ -17,3 +17,5 @@ ref.sh
 *.test
 releases
 prefixes
+.crashdata
+settings.ini

@@ -1,0 +1,12 @@
+# sharing reads the SECURITY_ATTRIBUTES structure as a security descriptor
+--- a/src/mullion/mullion_fence.cpp
++++ b/src/mullion/mullion_fence.cpp
+@@ -120,7 +120,7 @@
+             HANDLE *handle) {
+   OBJECT_ATTRIBUTES attr = {};
+   attr.Length = sizeof(attr);
+-  attr.SecurityDescriptor = attributes ? attributes->lpSecurityDescriptor : nullptr;
++  attr.SecurityDescriptor = const_cast<SECURITY_ATTRIBUTES *>(attributes);
+   attr.Attributes = attributes && attributes->bInheritHandle ? OBJ_INHERIT : 0;
+   std::wstring buffer;
+   UNICODE_STRING name_str;

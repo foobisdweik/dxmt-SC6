@@ -1,0 +1,12 @@
+# a pixel shader that writes memory runs and writes once for each covered sample
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -505,7 +505,7 @@
+     return uav.second.written || uav.second.with_counter;
+   });
+   uint32_t sample = ~0u, coverage = ~0u;
+-  if (statistics || writes) {
++  if (statistics) {
+     auto defined = func_signature.InputCount();
+     sample = func_signature.DefineInput(air::InputSampleIndex{});
+     if (sample >= defined)

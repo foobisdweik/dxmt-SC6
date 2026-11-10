@@ -16,7 +16,7 @@
 #include "../thread.hpp"
 #include "../util_string.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 enum class LogLevel : uint32_t {
   Trace = 0,
@@ -50,13 +50,21 @@ public:
 
   static LogLevel logLevel() { return s_instance.m_minLevel; }
 
+  // a failure an entry point returns, said where it is decided: the function, the code, and the source line whose
+  // condition is the reason
+  template <typename T>
+  static T fail(T code, const char *name, const char *function, const char *file, int line) {
+    warn(str::format(function, ": ", name, " (", file, ":", line, ")"));
+    return code;
+  }
+
 private:
   static Logger s_instance;
 
   const LogLevel m_minLevel;
   const std::string m_fileName;
 
-  dxmt::mutex m_mutex;
+  mullion::mutex m_mutex;
   std::ofstream m_fileStream;
 
   bool m_initialized = false;
@@ -69,7 +77,7 @@ private:
   static LogLevel getMinLogLevel();
 };
 
-} // namespace dxmt
+} // namespace mullion
 
 
 #define TRACE(...) Logger::trace(str::format(__VA_ARGS__))
@@ -79,6 +87,8 @@ private:
 #define WARN(...) Logger::warn(str::format(__VA_ARGS__))
 
 #define ERR(...) Logger::err(str::format(__VA_ARGS__))
+
+#define FAIL(code) Logger::fail(code, #code, __func__, __FILE_NAME__, __LINE__)
 
 #define ERR_ONCE(...)                                                          \
   static bool s_errorShown = false;                                            \

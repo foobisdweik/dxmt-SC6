@@ -1,0 +1,12 @@
+# leaves alpha-to-coverage enabled when the shader writes coverage.
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -820,7 +820,7 @@
+     info.support_indirect_command_buffers = std::is_same_v<RenderPipelineInfo, WMTRenderPipelineInfo> ||
+                                             device_->GetMTLDevice().supportsFamily(WMTGPUFamilyApple9);
+ 
+-    info.alpha_to_coverage_enabled = pDesc->BlendState.AlphaToCoverageEnable && !ref_ps.PixelShader.HasCoverageOutput;
++    info.alpha_to_coverage_enabled = pDesc->BlendState.AlphaToCoverageEnable;
+ 
+     return S_OK;
+   }

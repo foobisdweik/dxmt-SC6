@@ -1,0 +1,12 @@
+# Metal clips the distances of a pipeline whose pixel shader writes memory
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5559,7 +5559,7 @@
+     Desc.ClipDistances = Desc.PixelShader && !(Desc.DomainShader && GS) &&
+                                  (Desc.PixelShader->reflection().UAVSlotMask ||
+                                   Desc.PixelShader->reflection().PixelShader.HasCoverageInput)
+-                             ? last->reflection().ClipDistances
++                             ? 0
+                              : 0;
+     Desc.PassThrough =
+         !so_raster_pass_ && (PassesPrimitivesThrough() || (IndexedDraw && !state_.InputAssembler.IndexBuffer));

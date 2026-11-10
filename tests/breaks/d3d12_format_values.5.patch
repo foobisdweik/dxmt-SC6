@@ -1,0 +1,12 @@
+# UAV casts retain the storage format instead of interpreting the view format.
+--- a/src/d3d12/d3d12_texture.cpp
++++ b/src/d3d12/d3d12_texture.cpp
+@@ -703,7 +703,7 @@
+         (!this->texture->chroma && DXGIFormatType(ViewDesc.Format) != DXGIFormatType(desc_.Format)))
+       return FAILED(hr) ? hr : E_INVALIDARG;
+ 
+-    view_descriptor.format = metal_format.PixelFormat;
++    view_descriptor.format = ViewDesc.Format == desc_.Format ? metal_format.PixelFormat : texture->pixelFormat();
+ 
+     switch (ViewDesc.ViewDimension) {
+     case D3D12_UAV_DIMENSION_TEXTURE1D: {

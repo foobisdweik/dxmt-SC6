@@ -1,0 +1,12 @@
+# a merged pass runs its marshals before the draws of the pass merged into it
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -1729,7 +1729,7 @@
+ 
+     // a merged pass runs latter's marshals as it begins, before former's draws, whose writes they may wait for
+     if ((!r1->draw_auto_marshal_tasks.empty() || !r1->gs_arg_marshal_tasks.empty() || !r1->ts_arg_marshal_tasks.empty()) &&
+-        r1->fence_wait_vertex.intersectedWith(r0->fence_update_vertex))
++        false && r1->fence_wait_vertex.intersectedWith(r0->fence_update_vertex))
+       return MULLION_ENCODER_LIST_OP_SYNCHRONIZE;
+     if (r0->visibility_result_count + r1->visibility_result_count <=
+             VisibilityResultOffsetBumpState::kVisibilitySegments &&

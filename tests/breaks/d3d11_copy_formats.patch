@@ -1,0 +1,13 @@
+# a depth stencil texture lacks the usage its stencil view needs for a copy into a staging one
+--- a/src/d3d11/d3d11_resource_helper.cpp
++++ b/src/d3d11/d3d11_resource_helper.cpp
+@@ -425,8 +425,7 @@
+   }
+ 
+   // a copy into a staging depth stencil reads the stencil through an X32_Stencil8 view, as D3D12 does
+-  if ((metal_format.Flag & (MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_VIDEO_PLANAR)) ||
+-      pDescOut->pixel_format == WMTPixelFormatDepth32Float_Stencil8) {
++  if ((metal_format.Flag & (MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_VIDEO_PLANAR))) {
+     // well this is necessary for passing validation layer
+     metal_usage |= WMTTextureUsagePixelFormatView;
+   }

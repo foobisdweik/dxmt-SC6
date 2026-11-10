@@ -1,0 +1,12 @@
+# an R32G32B32 typed buffer view starts at its first element counted in R32 texels, not three to an element
+--- a/src/d3d11/d3d11_buffer.cpp
++++ b/src/d3d11/d3d11_buffer.cpp
+@@ -256,7 +256,7 @@
+       view_format = format.BufferPixelFormat;
+       offset = finalDesc.Buffer.FirstElement * format.BytesPerTexel;
+       size = finalDesc.Buffer.NumElements * format.BytesPerTexel;
+-      viewElementOffset = finalDesc.Buffer.FirstElement * (format.BytesPerTexel / MTLGetTexelSize(view_format));
++      viewElementOffset = finalDesc.Buffer.FirstElement;
+       viewElementWidth = finalDesc.Buffer.NumElements |
+                          (format.Flag & MTL_DXGI_FORMAT_EMULATED_RGB32 ? SM50_TEXEL_BUFFER_METADATA_RGB32 : 0);
+     }

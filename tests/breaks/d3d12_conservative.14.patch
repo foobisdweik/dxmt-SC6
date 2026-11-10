@@ -1,0 +1,12 @@
+# inner coverage is set where the square overlaps the polygon
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -398,7 +398,7 @@
+     );
+     auto reach = builder.CreateFMul(builder.CreateFAdd(abs(a), abs(b)), f(half));
+     outside = builder.CreateOr(outside, builder.CreateFCmpOLT(builder.CreateFAdd(value, reach), f(0)));
+-    inside = builder.CreateAnd(inside, builder.CreateFCmpOGE(builder.CreateFSub(value, reach), f(0)));
++    inside = builder.CreateAnd(inside, builder.CreateFCmpOGE(builder.CreateFAdd(value, reach), f(0)));
+   }
+   return {outside, inside};
+ }

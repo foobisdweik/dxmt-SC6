@@ -1,0 +1,12 @@
+# rounds float-to-half to nearest rather than toward zero.
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1132,7 +1132,7 @@
+     Value = air.CreateConvertToFloat(Value);
+     break;
+   case ConversionOp::FloatToHalf:
+-    Value = ConvertToHalfTowardZero(Value);
++    Value = air.CreateConvertToHalf(Value);
+     break;
+   case ConversionOp::FloatToSigned:
+     Value = air.CreateConvertToSigned(Value);

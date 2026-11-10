@@ -1,0 +1,12 @@
+# a native 64-bit load loses its high DWORD
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2779,7 +2779,7 @@
+                 ir.CreateStore(piece, ptr);
+               continue;
+             }
+-            Value *piece = dxbc.LoadBufferValue(b, unit, ptr, inside);
++            Value *piece = part ? ConstantInt::get(unit, 0) : dxbc.LoadBufferValue(b, unit, ptr, inside);
+             loaded = ir.CreateOr(loaded, ir.CreateShl(ir.CreateZExt(piece, element), shift));
+           }
+           if (!store)

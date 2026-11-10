@@ -1,0 +1,14 @@
+# each render pass reuses its window first counter
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -333,6 +333,10 @@
+     if (active_queries_.empty())
+       return;
+     auto [window, address, offset] = allocator_->VisibilitySlot();
++    if (!render->visibility_buffer) {
++      address -= offset - sizeof(uint64_t);
++      offset = sizeof(uint64_t);
++    }
+     // a pass counts in one window: when that is full the pass ends, and the next pass counts in the next window
+     if (render->visibility_buffer && render->visibility_buffer != window.handle)
+       return allocator_->InvalidateCurrentPass();

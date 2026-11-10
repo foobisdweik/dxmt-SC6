@@ -1,0 +1,13 @@
+# step every instance instead of using the declared instance rate.
+diff --git a/src/airconv/dxbc_converter_basicblock.cpp b/src/airconv/dxbc_converter_basicblock.cpp
+--- a/src/airconv/dxbc_converter_basicblock.cpp
++++ b/src/airconv/dxbc_converter_basicblock.cpp
+@@ -417,7 +417,7 @@
+           ctx.resource.base_instance_id,
+           builder.CreateUDiv(
+             ctx.resource.instance_id,
+-            builder.getInt32(element_info.step_rate)
++            builder.getInt32(1)
+           )
+         );
+       } else {

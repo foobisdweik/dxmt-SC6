@@ -1,0 +1,12 @@
+# drops the Direct3D 10 application sample mask.
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -260,7 +260,7 @@
+ 
+ void STDMETHODCALLTYPE
+ MTLD3D10Device::OMSetBlendState(ID3D10BlendState *pBlendState, const FLOAT BlendFactor[4], UINT SampleMask) {
+-  d3d11_context_->OMSetBlendState(GetD3D11Interface<MTLD3D10BlendState>(pBlendState), BlendFactor, SampleMask);
++  d3d11_context_->OMSetBlendState(GetD3D11Interface<MTLD3D10BlendState>(pBlendState), BlendFactor, ~0u);
+ }
+ 
+ void STDMETHODCALLTYPE

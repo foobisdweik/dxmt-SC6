@@ -1,0 +1,12 @@
+# the pixel shader keeps a covered sample whatever its clip distances
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -569,7 +569,7 @@
+     );
+     auto at = builder.CreateCall(ctz, {rest, builder.getFalse()});
+     llvm::Value *in = builder.getTrue();
+-    for (auto d : distances)
++    for (auto d : std::vector<uint32_t>{})
+       in = builder.CreateAnd(in, builder.CreateFCmpOGE(air.CreateInterpolateAtSample(function->getArg(d), at, true),
+                                                        llvm::ConstantFP::get(types._float, 0.0)));
+     rest->addIncoming(function->getArg(input_coverage), head);

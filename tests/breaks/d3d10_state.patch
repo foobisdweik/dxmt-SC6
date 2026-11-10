@@ -1,0 +1,12 @@
+# use the minimum viewport depth for its maximum
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -305,7 +305,7 @@
+     vp[i].Width = float(pViewports[i].Width);
+     vp[i].Height = float(pViewports[i].Height);
+     vp[i].MinDepth = pViewports[i].MinDepth;
+-    vp[i].MaxDepth = pViewports[i].MaxDepth;
++    vp[i].MaxDepth = pViewports[i].MinDepth;
+   }
+ 
+   d3d11_context_->RSSetViewports(NumViewports, vp);

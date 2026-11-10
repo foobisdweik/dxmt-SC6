@@ -1,0 +1,17 @@
+# a pixel shader output of an unknown component type is no longer refused when read, and stops the converter at
+# an assertion when the pipeline is made
+# family native
+--- a/src/airconv/dxbc_signature.cpp
++++ b/src/airconv/dxbc_signature.cpp
+@@ -728,11 +728,6 @@
+       pso_valid_output_reg_mask |= (1 << reg);
+       if (sig.mask() == 0) break;
+       auto sig_type = sig.componentType();
+-      if (sig_type != RegisterComponentType::Float && sig_type != RegisterComponentType::Uint &&
+-          sig_type != RegisterComponentType::Int) {
+-        Refuse("a pixel shader output of an unknown component type");
+-        break;
+-      }
+       signature_handlers.push_back([=](SignatureContext &ctx) {
+         auto format = uint32_t(ctx.pixel_formats[reg]);
+         auto type = component_type_from_pixel_format(air::MTLPixelFormat(format & 0xff));

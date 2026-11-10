@@ -5,7 +5,7 @@
  * implementation-independent in case we need these for other projects
  */
 
-namespace dxmt::shader::common {
+namespace mullion::shader::common {
 
 enum class ScalerDataType {
   Float,
@@ -13,9 +13,6 @@ enum class ScalerDataType {
   Int,
   /* Unsupported in Metal */
   Double,
-  Half,
-  Short,
-  UShort,
 };
 
 enum class ResourceType {
@@ -51,7 +48,8 @@ enum class InputAttribute {
   /* Fragment */
   PrimitiveId,
   CoverageMask,
-  SampleIndex,
+  // whether the pixel's square is inside the primitive, which only a conservative rasterizer knows (SV_InnerCoverage)
+  InnerCoverage,
 
   /* Hull */
   OutputControlPointId,
@@ -65,4 +63,4 @@ enum class InputAttribute {
   GSInstanceId,
 };
 
-} // namespace dxmt::shader::common
+} // namespace mullion::shader::common

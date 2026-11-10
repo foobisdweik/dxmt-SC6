@@ -1,0 +1,12 @@
+# omitted rasterizer state loses back-face culling.
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -2048,7 +2048,7 @@
+     desc_graphics.DepthStencilState.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+     desc_graphics.DepthStencilState.BackFace = desc_graphics.DepthStencilState.FrontFace;
+     desc_graphics.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+-    desc_graphics.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
++    desc_graphics.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+     desc_graphics.RasterizerState.DepthClipEnable = TRUE;
+     desc_graphics.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+     desc_graphics.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;

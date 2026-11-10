@@ -1,0 +1,12 @@
+# factory creation drops the debug flag from GetCreationFlags
+--- a/src/dxgi/dxgi_factory.cpp
++++ b/src/dxgi/dxgi_factory.cpp
+@@ -268,7 +268,7 @@
+     ERR("Not implemented");
+   }
+ 
+-  UINT STDMETHODCALLTYPE GetCreationFlags() override { return flags_; }
++  UINT STDMETHODCALLTYPE GetCreationFlags() override { return 0; }
+ 
+   HRESULT STDMETHODCALLTYPE EnumAdapterByLuid(LUID luid, REFIID riid,
+                                               void **ppAdapter) override {

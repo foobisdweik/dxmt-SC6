@@ -16,8 +16,8 @@ winemetal_ld_args = [
 winemetal_dll = shared_library('winemetal', winemetal_src,
   name_prefix         : '',
   dependencies        : [ airconv_dep_darwin ],
-  include_directories : [ dxmt_include_path, include_directories('.') ],
-  c_args              : ['-ObjC', '-DDXMT_NATIVE=1'],
+  include_directories : [ mullion_include_path, include_directories('.') ],
+  c_args              : ['-ObjC', '-DMULLION_NATIVE=1'],
   link_args           : winemetal_ld_args,
   build_rpath         : '@loader_path/:@loader_path/../../',
 )

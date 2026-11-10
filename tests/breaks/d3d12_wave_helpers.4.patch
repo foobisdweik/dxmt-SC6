@@ -1,0 +1,15 @@
+# a pixel shader's helper lanes skip WaveReadLaneFirst, and get zero
+diff --git a/src/airconv/dxil_converter.cpp b/src/airconv/dxil_converter.cpp
+index f93b9886..995da341 100644
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2257,8 +2257,7 @@ convert_dxil(
+     // the operation, and get zero for its undefined result. WaveReadLaneFirst they take part in (below)
+     llvm::BasicBlock *skipped = nullptr;
+     if (ctx.shader_type == D3D10_SB_PIXEL_SHADER && !helper_waves &&
+-        ((op >= WaveIsFirstLane && op <= WavePrefixOp && op != WaveGetLaneIndex && op != WaveGetLaneCount &&
+-          op != WaveReadLaneFirst) ||
++        ((op >= WaveIsFirstLane && op <= WavePrefixOp && op != WaveGetLaneIndex && op != WaveGetLaneCount) ||
+          op == WaveAllBitCount || op == WavePrefixBitCount || (op >= WaveMatch && op <= WaveMultiPrefixBitCount))) {
+       skipped = ir.GetInsertBlock();
+       auto join = SplitBlock(skipped, call);

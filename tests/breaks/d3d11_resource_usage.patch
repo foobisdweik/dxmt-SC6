@@ -1,0 +1,12 @@
+# rejects legal writable staging buffers.
+--- a/src/d3d11/d3d11_device.cpp
++++ b/src/d3d11/d3d11_device.cpp
+@@ -426,6 +426,8 @@
+         (!(pDesc->BindFlags & (D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS)) ||
+          (pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED)))
+       return E_INVALIDARG;
++    if (pDesc->Usage == D3D11_USAGE_STAGING && (pDesc->CPUAccessFlags & D3D11_CPU_ACCESS_WRITE))
++      return E_INVALIDARG;
+     D3D11_BUFFER_DESC desc = *pDesc;
+     if (desc.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED) {
+       if (!desc.StructureByteStride || desc.StructureByteStride % sizeof(UINT) ||

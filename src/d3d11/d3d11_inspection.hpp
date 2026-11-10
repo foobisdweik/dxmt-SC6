@@ -3,7 +3,7 @@
 #include "d3d11_1.h"
 #include "Metal.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D11Inspection {
 public:
@@ -46,4 +46,4 @@ private:
     return S_OK;
   }
 };
-} // namespace dxmt
+} // namespace mullion

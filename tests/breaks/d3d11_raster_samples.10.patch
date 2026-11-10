@@ -1,0 +1,12 @@
+# forced 1 pixel shaders read the targets' coverage
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5547,7 +5547,7 @@
+     IMTLD3D11RasterizerState *rs =
+         state_.Rasterizer.RasterizerState ? state_.Rasterizer.RasterizerState.ptr() : default_rasterizer_state;
+     // its sample lies at the pixel center, and the targets' samples with it (D3D11.3 3.5.6.2)
+-    Desc.SingleRasterSample = attached && rs->ForcedSampleCount() == 1;
++    Desc.SingleRasterSample = false;
+     auto centered = [](auto &view) { return view && view->texture_->centered; };
+     Desc.CenteredSamples = Desc.SingleRasterSample || centered(state_.OutputMerger.DSV) ||
+                            std::any_of(state_.OutputMerger.RTVs, state_.OutputMerger.RTVs + Desc.NumColorAttachments, centered);

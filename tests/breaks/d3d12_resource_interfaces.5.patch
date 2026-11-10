@@ -1,0 +1,12 @@
+# GetDesc1 changes a shared description member
+--- a/src/d3d12/d3d12_device.hpp
++++ b/src/d3d12/d3d12_device.hpp
+@@ -127,7 +127,7 @@
+     D3D12_RESOURCE_DESC desc;
+     GetDesc(&desc);
+     *__ret = feedback.value_or(D3D12_RESOURCE_DESC1{
+-        desc.Dimension, desc.Alignment, desc.Width, desc.Height, desc.DepthOrArraySize, desc.MipLevels,
++        desc.Dimension, desc.Alignment, desc.Width + 1, desc.Height, desc.DepthOrArraySize, desc.MipLevels,
+         desc.Format, desc.SampleDesc, desc.Layout, desc.Flags, {}
+     });
+     return __ret;

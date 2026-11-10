@@ -1,0 +1,12 @@
+# the pixel shader takes every pixel of the grown triangle
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -400,7 +400,7 @@
+     outside = builder.CreateOr(outside, builder.CreateFCmpOLT(builder.CreateFAdd(value, reach), f(0)));
+     inside = builder.CreateAnd(inside, builder.CreateFCmpOGE(builder.CreateFSub(value, reach), f(0)));
+   }
+-  return {outside, inside};
++  return {builder.getFalse(), inside};
+ }
+ 
+ llvm::Error convert_dxbc_pixel_shader(

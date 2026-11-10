@@ -6,9 +6,10 @@
  */
 #include "util_md5.hpp"
 #include "util_bit.hpp"
+#include <algorithm>
 #include <cassert>
 
-namespace dxmt::md5 {
+namespace mullion::md5 {
 
 void Hasher::update(const void *data, size_t size) {
   auto src = reinterpret_cast<const unsigned char *>(data);
@@ -222,4 +223,16 @@ Digest hashDxbcBinary(const void *data, size_t size) {
   return hasher.getDigest();
 }
 
-} // namespace dxmt::md5
+DxbcHash checkDxbcHash(const void *data, size_t size) {
+  Digest given;
+  // the hash follows the container's four-character name
+  std::memcpy(given.data.data(), static_cast<const uint8_t *>(data) + sizeof(uint32_t), sizeof(given.data));
+  auto all = [&](uint8_t value) {
+    return std::all_of(given.data.begin(), given.data.end(), [=](uint8_t byte) { return byte == value; });
+  };
+  if (all(0) || all(2))
+    return DxbcHash::None;
+  return all(1) || given == hashDxbcBinary(data, size) ? DxbcHash::Holds : DxbcHash::Wrong;
+}
+
+} // namespace mullion::md5

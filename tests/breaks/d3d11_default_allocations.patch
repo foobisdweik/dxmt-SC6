@@ -1,0 +1,12 @@
+# default buffers do not share the dynamic page
+--- a/src/d3d11/d3d11_buffer.cpp
++++ b/src/d3d11/d3d11_buffer.cpp
+@@ -88,7 +88,7 @@
+     if (pDesc->Usage == D3D11_USAGE_IMMUTABLE)
+       flags.set(BufferAllocationFlag::GpuReadonly);
+     if (pDesc->Usage == D3D11_USAGE_DYNAMIC ||
+-        (pDesc->Usage == D3D11_USAGE_DEFAULT && !(pDesc->BindFlags & kD3D11OutputBindFlags))) {
++        false) {
+       if (!m_parent->IsTraced())
+         flags.set(BufferAllocationFlag::CpuWriteCombined);
+       flags.set(BufferAllocationFlag::SuballocateFromOnePage);

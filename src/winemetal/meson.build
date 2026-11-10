@@ -37,7 +37,7 @@ endif
 winemetal_dll = shared_library('winemetal', winemetal_src,
   name_prefix         : '',
   dependencies        : [ lib_winecrt0, lib_ntdll, lib_dbghelp, airconv_forward_dep ],
-  include_directories : dxmt_include_path,
+  include_directories : mullion_include_path,
   install             : true,
   install_dir         : windows_builtin_install_dir,
   link_args           : winemetal_ld_args,

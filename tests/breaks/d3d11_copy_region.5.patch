@@ -1,0 +1,12 @@
+# drop the destination X offset in D3D10 texture region copies
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -322,7 +322,7 @@
+     UINT SrcSubresource, const D3D10_BOX *pSrcBox
+ ) {
+   d3d11_context_->CopySubresourceRegion(
+-      GetD3D11Interface<MTLD3D10Buffer>(pDstResource), DstSubresource, DstX, DstY, DstZ,
++      GetD3D11Interface<MTLD3D10Buffer>(pDstResource), DstSubresource, 0, DstY, DstZ,
+       GetD3D11Interface<MTLD3D10Buffer>(pSrcResource), SrcSubresource, reinterpret_cast<const D3D11_BOX *>(pSrcBox)
+   );
+ }

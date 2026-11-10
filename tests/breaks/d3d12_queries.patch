@@ -1,0 +1,12 @@
+# a Metal 4 counter heap is asked for without an error
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -4768,7 +4768,7 @@
+     desc.count = p->arg;
+     // the driver writes the error of a heap past its size without checking that one was asked for
+     NSError *error = nil;
+-    p->ret = (obj_handle_t)[(id<MTLDevice>)p->handle newCounterHeapWithDescriptor:desc error:&error];
++    p->ret = (obj_handle_t)[(id<MTLDevice>)p->handle newCounterHeapWithDescriptor:desc error:nil];
+     [desc release];
+   }
+   return STATUS_SUCCESS;

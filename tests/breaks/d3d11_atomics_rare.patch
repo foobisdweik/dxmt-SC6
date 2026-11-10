@@ -1,0 +1,12 @@
+# and returns the updated value instead of the original, without changing the atomic write
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2800,6 +2800,8 @@
+     auto IntPtrOffset = LoadAtomicOpAddress(Buf.getValue(), atomic.dst_address);
+     auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), IntPtrOffset);
+     auto Value = air.CreateAtomicRMW(Op, Ptr, LoadOperand(atomic.src, kMaskComponentX));
++    if (Op == AtomicRMWInst::And)
++      Value = ir.CreateAnd(Value, LoadOperand(atomic.src, kMaskComponentX));
+     StoreOperand(atomic.dst_original, Value);
+     return;
+   }

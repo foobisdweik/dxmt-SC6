@@ -1,0 +1,13 @@
+# read BGRA vertex elements without exchanging the red and blue components.
+diff --git a/src/airconv/air_operations.cpp b/src/airconv/air_operations.cpp
+--- a/src/airconv/air_operations.cpp
++++ b/src/airconv/air_operations.cpp
+@@ -193,7 +193,7 @@
+     src_type, dst_type
+   );
+   if (format == MTLAttributeFormat::UChar4Normalized_BGRA) {
+-    ret = builder.CreateShuffleVector(ret, {2, 1, 0, 3});
++    ret = builder.CreateShuffleVector(ret, {0, 1, 2, 3});
+   }
+   if (dst_type == types._float) {
+     ret = builder.CreateInsertElement(

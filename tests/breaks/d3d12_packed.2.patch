@@ -1,0 +1,12 @@
+# zero extends signed unpacked bytes
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3403,7 +3403,7 @@
+       ret = UndefValue::get(ty);
+       for (unsigned i = 0; i < 4; i++) {
+         auto byte = ir.CreateTrunc(ir.CreateLShr(a(2), 8 * i), ir.getInt8Ty());
+-        ret = ir.CreateInsertValue(ret, constant(a(1)) ? ir.CreateSExt(byte, elem) : ir.CreateZExt(byte, elem), {i});
++        ret = ir.CreateInsertValue(ret, constant(a(1)) ? ir.CreateZExt(byte, elem) : ir.CreateZExt(byte, elem), {i});
+       }
+       break;
+     }

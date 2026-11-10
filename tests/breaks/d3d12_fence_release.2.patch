@@ -1,0 +1,11 @@
+# a non-final public release wakes fence waiters while another public reference still exists
+--- a/src/d3d12/d3d12_fence.cpp
++++ b/src/d3d12/d3d12_fence.cpp
+@@ -40,6 +40,7 @@
+   ULONG STDMETHODCALLTYPE
+   Release() {
+     uint32_t refCount = --m_refCount;
++    completion->Reach(UINT64_MAX);
+     if (!refCount) {
+       // pending signals keep the object alive after the last public release has unblocked its waiters
+       completion->Reach(UINT64_MAX);

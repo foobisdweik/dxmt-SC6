@@ -91,6 +91,10 @@ WINEMETAL_API void MTLCommandBuffer_commit(obj_handle_t cmdbuf);
 
 WINEMETAL_API void MTLCommandBuffer_waitUntilCompleted(obj_handle_t cmdbuf);
 
+// the command buffer's work is done: `event` has reached `value`, which the buffer signals after its work, or the
+// buffer has completed or failed, which it may do without signalling. its status (Completed, an error) can come later
+WINEMETAL_API void MTLCommandBuffer_waitUntilSignaled(obj_handle_t cmdbuf, obj_handle_t event, uint64_t value);
+
 enum WMTCommandBufferStatus : uint64_t {
   WMTCommandBufferStatusNotEnqueued = 0,
   WMTCommandBufferStatusEnqueued = 1,
@@ -240,6 +244,13 @@ enum WMTCompareFunction : uint8_t {
   WMTCompareFunctionAlways = 7,
 };
 
+// MTLSamplerReductionMode (macOS 26), which Metal ignores unless the min, mag and mip filters are all linear
+enum WMTSamplerReductionMode : uint8_t {
+  WMTSamplerReductionModeWeightedAverage = 0,
+  WMTSamplerReductionModeMinimum = 1,
+  WMTSamplerReductionModeMaximum = 2,
+};
+
 struct WMTSamplerInfo {
   enum WMTSamplerMinMagFilter min_filter;
   enum WMTSamplerMinMagFilter mag_filter;
@@ -255,6 +266,7 @@ struct WMTSamplerInfo {
   bool normalized_coords;
   bool lod_average;
   bool support_argument_buffers;
+  enum WMTSamplerReductionMode reduction_mode;
   uint64_t gpu_resource_id; // out
 };
 
@@ -449,6 +461,7 @@ enum WMTPixelFormat : uint32_t {
   WMTPixelFormatR001Swizzle = 0b000011010010u << 12,
   WMTPixelFormat0R01Swizzle = 0b100101010010u << 12,
   WMTPixelFormatGBARSwizzle = 0b001001001011u << 12,
+  WMTPixelFormatAGBASwizzle = 0b011000000000u << 12,
   WMTPixelFormatRGB1Swizzle = WMTPixelFormatAlphaIsOne,
 
   WMTPixelFormatBGRX8Unorm = WMTPixelFormatAlphaIsOne | WMTPixelFormatBGRA8Unorm,
@@ -515,6 +528,12 @@ struct WMTTextureSwizzleChannels {
   enum WMTTextureSwizzle a;
 };
 
+enum WMTSparsePageSize : uint32_t {
+  WMTSparsePageSize16 = 101,
+  WMTSparsePageSize64 = 102,
+  WMTSparsePageSize256 = 103,
+};
+
 struct WMTTextureInfo {
   enum WMTPixelFormat pixel_format;
   uint32_t width;
@@ -526,7 +545,7 @@ struct WMTTextureInfo {
   uint32_t sample_count       : 8;
   enum WMTTextureUsage usage  : 8;
   enum WMTResourceOptions options;
-  uint32_t reserved;
+  enum WMTSparsePageSize placement_sparse_page_size; // nonzero: a placement sparse texture, mapped to heap tiles
   mach_port_t mach_port; // in/out
   uint64_t gpu_resource_id; // out
 };
@@ -600,6 +619,9 @@ enum WMTAttributeFormat : uint32_t {
   WMTAttributeFormatHalf = 53,
   WMTAttributeFormatFloatRG11B10 = 54,
   WMTAttributeFormatFloatRGB9E5 = 55,
+  // past Metal's own: encodings Metal has no format for, which shaders decode (D3D11.3 8.20)
+  WMTAttributeFormatUInt1010102 = 0x100,
+  WMTAttributeFormatUChar4Normalized_BGRX,
 };
 
 WINEMETAL_API obj_handle_t MTLDevice_newLibrary(obj_handle_t device, obj_handle_t data, obj_handle_t *err_out);
@@ -614,11 +636,12 @@ struct WMTComputePipelineInfo {
   obj_handle_t compute_function;
   struct WMTConstMemoryPointer binary_archives_for_lookup;
   obj_handle_t binary_archive_for_serialization;
-  uint8_t num_binary_archives_for_lookup;
+  uint16_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
   bool support_indirect_command_buffers;
   bool tgsize_is_multiple_of_sgwidth;
   uint32_t immutable_buffers;
+  uint8_t padding[4];
 };
 
 WINEMETAL_API obj_handle_t MTLDevice_newComputePipelineState(
@@ -685,6 +708,12 @@ struct WMTStencilAttachmentInfo {
   uint8_t clear_stencil;
 };
 
+// a sample's position in sixteenths of a pixel from its center, as D3D12_SAMPLE_POSITION's
+struct WMTSamplePosition {
+  int8_t x;
+  int8_t y;
+};
+
 struct WMTRenderPassInfo {
   struct WMTColorAttachmentInfo colors[8];
   struct WMTDepthAttachmentInfo depth;
@@ -693,6 +722,11 @@ struct WMTRenderPassInfo {
   uint8_t render_target_array_length;
   uint8_t tile_width;
   uint8_t tile_height;
+  // the samples placed at sample_positions, for targets of the center pattern (all at the center) or of positions an
+  // application programs; 0 keeps Metal's, the standard pattern
+  uint8_t programmed_samples;
+  // as many as SetSamplePositions takes
+  struct WMTSamplePosition sample_positions[16];
   uint32_t render_target_height;
   uint32_t render_target_width;
   obj_handle_t visibility_buffer;
@@ -825,10 +859,10 @@ struct WMTRenderPipelineInfo {
   enum WMTTessellationFactorStepFunction tessellation_factor_step;
   obj_handle_t binary_archive_for_serialization;
   struct WMTConstMemoryPointer binary_archives_for_lookup;
-  uint8_t num_binary_archives_for_lookup;
+  uint16_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
   bool support_indirect_command_buffers;
-  uint8_t padding[5];
+  uint8_t padding[4];
 };
 
 struct WMTMeshRenderPipelineInfo {
@@ -851,10 +885,10 @@ struct WMTMeshRenderPipelineInfo {
   bool object_tgsize_is_multiple_of_sgwidth;
   obj_handle_t binary_archive_for_serialization;
   struct WMTConstMemoryPointer binary_archives_for_lookup;
-  uint8_t num_binary_archives_for_lookup;
+  uint16_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
   bool support_indirect_command_buffers;
-  uint8_t padding[5];
+  uint8_t padding[4];
 };
 
 WINEMETAL_API obj_handle_t
@@ -1069,6 +1103,17 @@ enum WMTComputeCommandType : uint16_t {
   WMTComputeCommandUpdateFence,
   WMTComputeCommandMemoryBarrier,
   WMTComputeCommandExecuteCommandsInBuffer,
+  WMTComputeCommandSetVisibleFunctionTable,
+  WMTComputeCommandDispatchPart,
+  WMTComputeCommandExecuteCommandsInBufferIndirect,
+};
+
+struct wmtcmd_compute_setvisiblefunctiontable {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t table;
+  uint8_t index;
 };
 
 struct wmtcmd_compute_nop {
@@ -1082,6 +1127,16 @@ struct wmtcmd_compute_dispatch {
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
   struct WMTSize size;
+};
+
+// some of a dispatch's threadgroups: the stage-in region's origin tells the kernel which
+struct wmtcmd_compute_dispatch_part {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  struct WMTOrigin origin;
+  struct WMTSize size;
+  struct WMTSize threadgroup_size;
 };
 
 struct wmtcmd_compute_dispatch_indirect {
@@ -1177,6 +1232,20 @@ struct wmtcmd_compute_executecommands {
   uint32_t length;
 };
 
+struct WMTIndirectCommandBufferExecutionRange {
+  uint32_t location;
+  uint32_t length;
+};
+
+struct wmtcmd_compute_executecommands_indirect {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t indirect_command_buffer;
+  obj_handle_t indirect_buffer;
+  uint64_t indirect_buffer_offset;
+};
+
 WINEMETAL_API void MTLComputeCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
 enum WMTRenderCommandType : uint16_t {
@@ -1209,26 +1278,32 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandDrawMeshThreadgroups,
   WMTRenderCommandDrawMeshThreadgroupsIndirect,
   WMTRenderCommandMemoryBarrier,
-  Unused0,
+  /* a geometry draw (wmtcmd_render_mullion_geometry_draw) of a pipeline whose mesh function runs alone: the warps are
+     mesh threadgroups, and what the object stage would read is bound to the mesh stage */
+  WMTRenderCommandMullionMeshDraw,
   Unused1,
   Unused2,
-  WMTRenderCommandDXMTGeometryDraw,
-  WMTRenderCommandDXMTGeometryDrawIndexed,
-  WMTRenderCommandDXMTGeometryDrawIndirect,
-  WMTRenderCommandDXMTGeometryDrawIndexedIndirect,
+  WMTRenderCommandMullionGeometryDraw,
+  WMTRenderCommandMullionGeometryDrawIndexed,
+  WMTRenderCommandMullionGeometryDrawIndirect,
+  WMTRenderCommandMullionGeometryDrawIndexedIndirect,
   WMTRenderCommandWaitForFence,
   WMTRenderCommandUpdateFence,
   WMTRenderCommandSetViewport,
   WMTRenderCommandSetScissorRect,
-  WMTRenderCommandDXMTTessellationMeshDraw,
-  WMTRenderCommandDXMTTessellationMeshDrawIndexed,
-  WMTRenderCommandDXMTTessellationMeshDrawIndirect,
-  WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect,
+  WMTRenderCommandMullionTessellationMeshDraw,
+  WMTRenderCommandMullionTessellationMeshDrawIndexed,
+  WMTRenderCommandMullionTessellationMeshDrawIndirect,
+  WMTRenderCommandMullionTessellationMeshDrawIndexedIndirect,
   WMTRenderCommandDispatchThreadsPerTile,
   WMTRenderCommandExecuteCommandsInBuffer,
   WMTRenderCommandSetBlendFactor,
   WMTRenderCommandSetStencilRef,
   WMTRenderCommandSetDepthStencilState,
+  WMTRenderCommandSetDepthTestBounds,
+  WMTRenderCommandExecuteCommandsInBufferIndirect,
+  WMTRenderCommandSetVertexBytes,
+  WMTRenderCommandSetMeshBytes,
 };
 
 struct wmtcmd_render_nop {
@@ -1477,6 +1552,7 @@ struct wmtcmd_render_setdsso {
   struct WMTMemoryPointer next;
   obj_handle_t dsso;
   uint8_t stencil_ref;
+  uint8_t back_stencil_ref;
 };
 
 struct wmtcmd_render_setdepthstencilstate {
@@ -1495,6 +1571,7 @@ struct wmtcmd_render_setblendcolor {
   float blue;
   float alpha;
   uint8_t stencil_ref;
+  uint8_t back_stencil_ref;
 };
 
 struct wmtcmd_render_setstencilref {
@@ -1502,9 +1579,18 @@ struct wmtcmd_render_setstencilref {
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
   uint8_t stencil_ref;
+  uint8_t back_stencil_ref;
 };
 
-struct wmtcmd_render_dxmt_geometry_draw {
+struct wmtcmd_render_setdepthtestbounds {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  float min;
+  float max;
+};
+
+struct wmtcmd_render_mullion_geometry_draw {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
@@ -1512,9 +1598,13 @@ struct wmtcmd_render_dxmt_geometry_draw {
   uint32_t warp_count;
   uint32_t instance_count;
   uint32_t vertex_per_warp;
+  // the most object threadgroups one Metal draw may have: more are drawn in parts (0: one draw)
+  uint32_t max_object_threadgroups;
+  // the threads of each mesh threadgroup (0 or 1: one), which a conservative hull's points are shared among
+  uint32_t mesh_threads;
 };
 
-struct wmtcmd_render_dxmt_geometry_draw_indexed {
+struct wmtcmd_render_mullion_geometry_draw_indexed {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
@@ -1524,9 +1614,13 @@ struct wmtcmd_render_dxmt_geometry_draw_indexed {
   uint32_t warp_count;
   uint32_t instance_count;
   uint32_t vertex_per_warp;
+  // the most object threadgroups one Metal draw may have: more are drawn in parts (0: one draw)
+  uint32_t max_object_threadgroups;
+  // the threads of each mesh threadgroup (0 or 1: one), which a conservative hull's points are shared among
+  uint32_t mesh_threads;
 };
 
-struct wmtcmd_render_dxmt_geometry_draw_indirect {
+struct wmtcmd_render_mullion_geometry_draw_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
@@ -1536,9 +1630,13 @@ struct wmtcmd_render_dxmt_geometry_draw_indirect {
   obj_handle_t dispatch_args_buffer;
   uint64_t dispatch_args_offset;
   uint32_t vertex_per_warp;
+  // the Metal draws it is encoded as, each with its grid at dispatch_args_offset + 12 x its index and its first
+  // object threadgroup and instance at origins_offset + 8 x its index in dispatch_args_buffer
+  uint32_t parts;
+  uint64_t origins_offset;
 };
 
-struct wmtcmd_render_dxmt_geometry_draw_indexed_indirect {
+struct wmtcmd_render_mullion_geometry_draw_indexed_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
@@ -1550,6 +1648,10 @@ struct wmtcmd_render_dxmt_geometry_draw_indexed_indirect {
   obj_handle_t dispatch_args_buffer;
   uint64_t dispatch_args_offset;
   uint32_t vertex_per_warp;
+  // the Metal draws it is encoded as, each with its grid at dispatch_args_offset + 12 x its index and its first
+  // object threadgroup and instance at origins_offset + 8 x its index in dispatch_args_buffer
+  uint32_t parts;
+  uint64_t origins_offset;
 };
 
 struct wmtcmd_render_fence_op {
@@ -1560,7 +1662,7 @@ struct wmtcmd_render_fence_op {
   enum WMTRenderStages stages;
 };
 
-struct wmtcmd_render_dxmt_tessellation_mesh_draw {
+struct wmtcmd_render_mullion_tessellation_mesh_draw {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
@@ -1569,9 +1671,10 @@ struct wmtcmd_render_dxmt_tessellation_mesh_draw {
   uint32_t threads_per_patch;
   uint32_t patch_per_group;
   uint32_t patch_per_mesh_instance;
+  uint32_t parts; /* the object threadgroups that share a patch group's mesh threadgroups */
 };
 
-struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed {
+struct wmtcmd_render_mullion_tessellation_mesh_draw_indexed {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
@@ -1582,9 +1685,10 @@ struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed {
   uint32_t threads_per_patch;
   uint32_t patch_per_group;
   uint32_t patch_per_mesh_instance;
+  uint32_t parts; /* the object threadgroups that share a patch group's mesh threadgroups */
 };
 
-struct wmtcmd_render_dxmt_tessellation_mesh_draw_indirect {
+struct wmtcmd_render_mullion_tessellation_mesh_draw_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
@@ -1597,7 +1701,7 @@ struct wmtcmd_render_dxmt_tessellation_mesh_draw_indirect {
   uint32_t patch_per_group;
 };
 
-struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect {
+struct wmtcmd_render_mullion_tessellation_mesh_draw_indexed_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
@@ -1627,6 +1731,15 @@ struct wmtcmd_render_executecommands {
   obj_handle_t indirect_command_buffer;
   uint32_t location;
   uint32_t length;
+};
+
+struct wmtcmd_render_executecommands_indirect {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t indirect_command_buffer;
+  obj_handle_t indirect_buffer;
+  uint64_t indirect_buffer_offset;
 };
 
 WINEMETAL_API void MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
@@ -1659,6 +1772,7 @@ enum WMTGPUFamily {
   WMTGPUFamilyApple7 = 1007,
   WMTGPUFamilyApple8 = 1008,
   WMTGPUFamilyApple9 = 1009,
+  WMTGPUFamilyApple10 = 1010,
   WMTGPUFamilyMac1 = 2001,
   WMTGPUFamilyMac2 = 2002,
   WMTGPUFamilyCommon1 = 3001,
@@ -1667,11 +1781,23 @@ enum WMTGPUFamily {
   WMTGPUFamilyMacCatalyst1 = 4001,
   WMTGPUFamilyMacCatalyst2 = 4002,
   WMTGPUFamilyMetal3 = 5001,
+  WMTGPUFamilyMetal4 = 5002,
 };
 
 WINEMETAL_API bool MTLDevice_supportsFamily(obj_handle_t device, enum WMTGPUFamily gpu_family);
 
 WINEMETAL_API bool MTLDevice_supportsBCTextureCompression(obj_handle_t device);
+
+WINEMETAL_API bool MTLDevice_supports32BitFloatFiltering(obj_handle_t device);
+
+WINEMETAL_API bool MTLDevice_supports32BitMSAA(obj_handle_t device);
+
+WINEMETAL_API bool MTLDevice_supportsShaderBarycentricCoordinates(obj_handle_t device);
+
+WINEMETAL_API uint64_t MTLDevice_maxArgumentBufferSamplerCount(obj_handle_t device);
+
+// whether a sampler's reductionMode reaches what it samples: measured once per device, as no property says so
+WINEMETAL_API bool MTLDevice_supportsSamplerReduction(obj_handle_t device);
 
 WINEMETAL_API bool MTLDevice_supportsTextureSampleCount(obj_handle_t device, uint8_t sample_count);
 
@@ -1744,6 +1870,74 @@ WINEMETAL_API void MTLCommandBuffer_encodeSpatialScale(
     obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t fence
 );
 
+/* MetalFX temporal upscaling for Metal 4 command buffers (MTL4FXTemporalScaler): 0 where the device has none */
+WINEMETAL_API obj_handle_t MTLDevice_newTemporalScaler4(obj_handle_t device, const struct WMTFXTemporalScalerInfo *info);
+
+WINEMETAL_API void MTL4CommandBuffer_encodeTemporalScale(
+    obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t depth,
+    obj_handle_t motion, obj_handle_t exposure, obj_handle_t fence, const struct WMTFXTemporalScalerProps *props
+);
+
+/* MetalFX temporal denoised upscaling (MTLFXTemporalDenoisedScaler, macOS 26): a ray-traced frame's noisy color,
+ * with its G-buffer, upscaled and denoised. A format of WMTPixelFormatInvalid leaves an optional input out */
+struct WMTFXDenoisedScalerInfo {
+  enum WMTPixelFormat color_format;
+  enum WMTPixelFormat depth_format;
+  enum WMTPixelFormat motion_format;
+  enum WMTPixelFormat diffuse_albedo_format;
+  enum WMTPixelFormat specular_albedo_format;
+  enum WMTPixelFormat normal_format;
+  enum WMTPixelFormat roughness_format;
+  enum WMTPixelFormat specular_hit_distance_format; /* optional */
+  enum WMTPixelFormat output_format;
+  uint32_t input_width;
+  uint32_t input_height;
+  uint32_t output_width;
+  uint32_t output_height;
+  bool auto_exposure;
+  bool requires_synchronous_initialization;
+};
+
+/* 0 where the device has none; metal4: a scaler Metal 4 command buffers encode */
+WINEMETAL_API obj_handle_t
+MTLDevice_newDenoisedScaler(obj_handle_t device, const struct WMTFXDenoisedScalerInfo *info, bool metal4);
+
+struct WMTFXDenoisedScaleArgs {
+  obj_handle_t color;
+  obj_handle_t depth;
+  obj_handle_t motion;
+  obj_handle_t diffuse_albedo;
+  obj_handle_t specular_albedo;
+  obj_handle_t normal;
+  obj_handle_t roughness;
+  obj_handle_t specular_hit_distance; /* optional */
+  obj_handle_t exposure;              /* optional */
+  obj_handle_t output;
+  obj_handle_t fence;
+  float pre_exposure;
+  float jitter_offset_x;
+  float jitter_offset_y;
+  float motion_vector_scale_x;
+  float motion_vector_scale_y;
+  bool reset;
+  bool depth_reversed;
+  /* column-major, which a D3D row-major matrix of row vectors is as it is in memory */
+  float world_to_view[16];
+  float view_to_clip[16];
+};
+
+WINEMETAL_API void
+MTLCommandBuffer_encodeDenoisedScale(
+    obj_handle_t cmdbuf, obj_handle_t scaler, const struct WMTFXDenoisedScaleArgs *args, bool metal4
+);
+
+/* MetalFX for Metal 4 command buffers (MTL4FXSpatialScaler): 0 where the device has none */
+WINEMETAL_API obj_handle_t MTLDevice_newSpatialScaler4(obj_handle_t device, const struct WMTFXSpatialScalerInfo *info);
+
+WINEMETAL_API void MTL4CommandBuffer_encodeSpatialScale(
+    obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t fence
+);
+
 WINEMETAL_API obj_handle_t NSString_string(const char *data, enum WMTStringEncoding encoding);
 
 WINEMETAL_API obj_handle_t NSString_alloc_init(const char *data, enum WMTStringEncoding encoding);
@@ -1764,6 +1958,9 @@ WINEMETAL_API bool MTLDevice_supportsFXSpatialScaler(obj_handle_t device);
 
 WINEMETAL_API bool MTLDevice_supportsFXTemporalScaler(obj_handle_t device);
 
+/* MetalFX temporal denoised upscaling, for Metal 4 command buffers or for Metal 3 ones */
+WINEMETAL_API bool MTLDevice_supportsFXDenoisedScaler(obj_handle_t device, bool metal4);
+
 struct WMTLayerProps {
   obj_handle_t device;
   double contents_scale;
@@ -1773,15 +1970,32 @@ struct WMTLayerProps {
   bool display_sync_enabled;
   bool framebuffer_only;
   enum WMTPixelFormat pixel_format;
+  // the layer's size on screen, in its points (MetalLayer_getProps only; setProps leaves it)
+  double bounds_width;
+  double bounds_height;
 };
 
 WINEMETAL_API void MetalLayer_setProps(obj_handle_t layer, const struct WMTLayerProps *props);
 
 WINEMETAL_API void MetalLayer_getProps(obj_handle_t layer, struct WMTLayerProps *props);
 
-WINEMETAL_API obj_handle_t CreateMetalViewFromHWND(intptr_t hwnd, obj_handle_t device, obj_handle_t *layer);
+// where a window's client area is, for a Wine that does not say: its top-level window, the area within that
+// window's client area and that area's size, in the window system's pixels, and the primary screen's width in them
+struct WMTWindowPlacement {
+  uint64_t top_level;
+  int32_t x, y, width, height;
+  int32_t top_level_width, top_level_height;
+  uint32_t screen_width;
+};
+
+WINEMETAL_API obj_handle_t CreateMetalViewFromHWND(
+    intptr_t hwnd, const struct WMTWindowPlacement *placement, obj_handle_t device, obj_handle_t *layer
+);
 
 WINEMETAL_API void ReleaseMetalView(obj_handle_t view);
+
+// moves a view to where its window's client area is now. false for a view that follows its window by itself
+WINEMETAL_API bool MetalView_setPlacement(obj_handle_t view, const struct WMTWindowPlacement *placement);
 
 WINEMETAL_API void MTLCommandEncoder_setLabel(obj_handle_t encoder, obj_handle_t label);
 
@@ -1949,8 +2163,11 @@ WINEMETAL_API void MTLCommandBuffer_encodeWaitForEvent(obj_handle_t cmdbuf, obj_
 
 WINEMETAL_API void MTLSharedEvent_signalValue(obj_handle_t event, uint64_t value);
 
+// sets the NT event once `event` has `at_value`. with `reference`, the event object the handle names now, through a
+// handle of the notification's own: the caller may close its handle before then. without, the handle itself, which
+// stays open until the notification has come
 WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(
-    obj_handle_t event, obj_handle_t shared_event_listener, void *nt_event_handle, uint64_t at_value
+    obj_handle_t event, obj_handle_t shared_event_listener, void *nt_event_handle, uint64_t at_value, bool reference
 );
 
 WINEMETAL_API obj_handle_t MTLDevice_newFence(obj_handle_t device);
@@ -1971,12 +2188,10 @@ WINEMETAL_API void WMTGetOSVersion(uint64_t *major, uint64_t *minor, uint64_t *p
 enum WMTMetalVersion : uint32_t {
   WMTMetal310 = 310,
   WMTMetal320 = 320,
-  WMTMetalVersionMax = WMTMetal320,
+  WMTMetal400 = 400,
+  WMTMetalVersionMax = WMTMetal400,
 };
 
-/* A relative url is resolved against $(getconf DARWIN_USER_CACHE_DIR), like the
- * shader cache path. serialize writes to a temporary file and renames it, so a
- * reader of the old file (Metal maps loaded archives) never sees a partial file. */
 WINEMETAL_API obj_handle_t MTLDevice_newBinaryArchive(obj_handle_t device, const char *url, obj_handle_t *err_out);
 
 WINEMETAL_API void MTLBinaryArchive_serialize(obj_handle_t archive, const char *url, obj_handle_t *err_out);
@@ -1995,15 +2210,107 @@ WINEMETAL_API bool WMTSetMetalShaderCachePath(const char *path);
 
 WINEMETAL_API obj_handle_t MTLDevice_newSharedTexture(obj_handle_t device, struct WMTTextureInfo *info);
 
-WINEMETAL_API bool WMTBootstrapRegister(const char *name, mach_port_t mach_port);
+// registers `mach_port`, the port of `object` (an MTLSharedEvent or MTLTexture), under `name` for other processes to
+// look up; the name lasts while object, or an object WMTBootstrapKeep gave it, does (winemetal_unix.c, shared_name)
+WINEMETAL_API bool WMTBootstrapRegister(const char *name, obj_handle_t object, mach_port_t mach_port);
 
+// a send right to the port registered under `name`; each success is followed by WMTBootstrapKeep
 WINEMETAL_API bool WMTBootstrapLookUp(const char *name, mach_port_t *mach_port);
+
+// `object`, made from the port WMTBootstrapLookUp gave, keeps the name too when this process registered it; 0 when no
+// object was made. WMT::SharedNameHold (Metal.hpp) makes the call
+WINEMETAL_API void WMTBootstrapKeep(const char *name, obj_handle_t object);
 
 WINEMETAL_API mach_port_t MTLSharedEvent_createMachPort(obj_handle_t event);
 
 WINEMETAL_API obj_handle_t MTLDevice_newSharedEventWithMachPort(obj_handle_t device, mach_port_t mach_port);
 
 WINEMETAL_API uint64_t MTLDevice_registryID(obj_handle_t device);
+
+WINEMETAL_API uint64_t MTLComputePipelineState_threadExecutionWidth(obj_handle_t pipeline);
+
+WINEMETAL_API uint64_t MTLComputePipelineState_maxTotalThreadsPerThreadgroup(obj_handle_t pipeline);
+WINEMETAL_API uint64_t MTLComputePipelineState_staticThreadgroupMemoryLength(obj_handle_t pipeline);
+WINEMETAL_API uint64_t MTLDevice_maxThreadgroupMemoryLength(obj_handle_t device);
+WINEMETAL_API uint64_t MTLDevice_maxThreadsPerThreadgroup(obj_handle_t device);
+
+WINEMETAL_API uint64_t MTLRenderPipelineState_maxTotalThreadgroupsPerMeshGrid(obj_handle_t pipeline);
+
+WINEMETAL_API uint64_t MTLDevice_gpuCoreCount(obj_handle_t device);
+
+/* tiled resources: placement sparse resources, whose tiles a Metal 4 queue maps to tiles of placement heaps. the
+   operations mirror Metal's MTL4 sparse mapping operations field for field */
+
+enum WMTSparseMappingMode {
+  WMTSparseMappingModeMap = 0,
+  WMTSparseMappingModeUnmap = 1,
+};
+
+struct WMTSparseBufferMapping {
+  uint64_t mode;
+  uint64_t first_tile;
+  uint64_t tile_count;
+  uint64_t heap_tile;
+};
+
+struct WMTSparseTextureMapping {
+  uint64_t mode;
+  struct WMTOrigin origin; // in tiles
+  struct WMTSize size;
+  uint64_t level;
+  uint64_t slice;
+  uint64_t heap_tile;
+};
+
+struct WMTSparseBufferMappingCopy {
+  uint64_t first_tile;
+  uint64_t tile_count;
+  uint64_t destination_tile;
+};
+
+struct WMTSparseTextureMappingCopy {
+  struct WMTOrigin origin; // in tiles
+  struct WMTSize size;
+  uint64_t level;
+  uint64_t slice;
+  struct WMTOrigin destination_origin;
+  uint64_t destination_level;
+  uint64_t destination_slice;
+};
+
+WINEMETAL_API bool MTLDevice_supportsPlacementSparse(obj_handle_t device);
+
+WINEMETAL_API uint64_t MTLDevice_sparseTileSizeInBytes(obj_handle_t device, enum WMTSparsePageSize page_size);
+
+WINEMETAL_API struct WMTSize MTLDevice_sparseTileSize(
+    obj_handle_t device, enum WMTTextureType type, enum WMTPixelFormat format, uint32_t sample_count,
+    enum WMTSparsePageSize page_size
+);
+
+WINEMETAL_API obj_handle_t MTLDevice_newPlacementSparseBuffer(
+    obj_handle_t device, uint64_t length, enum WMTResourceOptions options, enum WMTSparsePageSize page_size,
+    uint64_t *gpu_address
+);
+
+/* the first mip in the texture's tail, and the tail's size */
+WINEMETAL_API void MTLTexture_sparseTail(obj_handle_t texture, uint64_t *first_mip, uint64_t *bytes);
+
+WINEMETAL_API obj_handle_t MTLDevice_newMTL4CommandQueue(obj_handle_t device);
+
+/* `resource` is a buffer or a texture, and `operations` its WMTSparse*Mapping array; a null heap only unmaps */
+WINEMETAL_API void MTL4CommandQueue_updateMappings(
+    obj_handle_t queue, obj_handle_t resource, bool texture, obj_handle_t heap, const void *operations, uint64_t count
+);
+
+WINEMETAL_API void MTL4CommandQueue_copyMappings(
+    obj_handle_t queue, obj_handle_t source, obj_handle_t destination, bool texture, const void *operations,
+    uint64_t count
+);
+
+WINEMETAL_API void MTL4CommandQueue_event(obj_handle_t queue, obj_handle_t event, uint64_t value, bool wait);
+
+/* a CPU and a GPU timestamp taken together; the GPU one is in the domain of counter sample buffers */
+WINEMETAL_API void MTLDevice_sampleTimestamps(obj_handle_t device, uint64_t *cpu_timestamp, uint64_t *gpu_timestamp);
 
 WINEMETAL_API bool MTLSharedEvent_waitUntilSignaledValue(obj_handle_t event, uint64_t value, uint64_t timeout);
 
@@ -2070,11 +2377,6 @@ enum WMTHeapType : uint32_t {
   WMTHeapTypeAutomatic = 0,
   WMTHeapTypePlacement = 1,
   WMTHeapTypeSparse = 2,
-};
-enum WMTSparsePageSize : uint32_t {
-  WMTSparsePageSize16 = 101,
-  WMTSparsePageSize64 = 102,
-  WMTSparsePageSize256 = 103,
 };
 struct WMTHeapInfo {
   uint64_t size;
@@ -2151,9 +2453,246 @@ WINEMETAL_API void MTLTexture_getBytes(
     struct WMTMemoryPointer data, uint64_t bytes_per_row, uint64_t bytes_per_image
 );
 
-/* Native macOS fullscreen for the window that hosts a swapchain.
- * The request runs asynchronously on the Cocoa main thread; the return value
- * is the state that the previous request observed. */
+/* acceleration structures. instances' matrices are column-major 3x4, Metal's default; a geometry's transform is
+   row-major (MTLMatrixLayoutRowMajor, as Direct3D's are) unless transform_column_major */
+enum WMTAccelerationStructureUsage : uint32_t {
+  WMTAccelerationStructureUsageRefit = 1 << 0,
+  WMTAccelerationStructureUsagePreferFastBuild = 1 << 1,
+  WMTAccelerationStructureUsagePreferFastIntersection = 1 << 4,
+  WMTAccelerationStructureUsageMinimizeMemory = 1 << 5,
+};
+
+struct WMTAccelerationStructureGeometry {
+  obj_handle_t buffer; // vertices, or bounding boxes when vertex_format is WMTAttributeFormatInvalid
+  uint64_t offset;
+  uint64_t stride;
+  obj_handle_t index_buffer; // 0 for no indices
+  uint64_t index_offset;
+  obj_handle_t transform_buffer; // 0 for no transform
+  uint64_t transform_offset;
+  uint32_t count; // triangles or bounding boxes
+  enum WMTAttributeFormat vertex_format;
+  enum WMTIndexType index_type;
+  bool opaque;
+  bool no_duplicate_any_hit;
+  bool transform_column_major;
+  uint8_t padding[4];
+};
+
+STATIC_ASSERT(sizeof(WMTAccelerationStructureGeometry) == 72);
+
+struct WMTAccelerationStructureInfo {
+  struct WMTMemoryPointer geometries; // WMTAccelerationStructureGeometry, of a primitive structure
+  uint32_t geometry_count;
+  uint32_t max_instance_count;
+  obj_handle_t instance_buffer; // MTLIndirectAccelerationStructureInstanceDescriptor, of an instance structure
+  uint64_t instance_offset;
+  obj_handle_t instance_count_buffer; // a uint32
+  uint64_t instance_count_offset;
+  uint32_t usage; // WMTAccelerationStructureUsage
+  bool instances;
+  uint8_t padding[3];
+  // out, of MTLDevice_accelerationStructureSizes
+  uint64_t size;
+  uint64_t build_scratch_size;
+  uint64_t refit_scratch_size;
+};
+
+STATIC_ASSERT(sizeof(WMTAccelerationStructureInfo) == 80);
+
+WINEMETAL_API void MTLDevice_accelerationStructureSizes(obj_handle_t device, struct WMTAccelerationStructureInfo *info);
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newAccelerationStructure(obj_handle_t device, uint64_t size, uint64_t *gpu_resource_id);
+
+WINEMETAL_API obj_handle_t MTLCommandBuffer_accelerationStructureCommandEncoder(obj_handle_t cmdbuf);
+
+enum WMTAccelerationStructureCommandType : uint16_t {
+  WMTAccelerationStructureCommandNop,
+  WMTAccelerationStructureCommandBuild,
+  WMTAccelerationStructureCommandCopy,
+  WMTAccelerationStructureCommandCopyAndCompact,
+  WMTAccelerationStructureCommandWriteCompactedSize,
+  WMTAccelerationStructureCommandWaitForFence,
+  WMTAccelerationStructureCommandUpdateFence,
+};
+
+struct wmtcmd_accelerationstructure_nop {
+  enum WMTAccelerationStructureCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+};
+
+// builds `dst`, or with `src` refits `src` into `dst`
+struct wmtcmd_accelerationstructure_build {
+  enum WMTAccelerationStructureCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t dst;
+  obj_handle_t src;
+  obj_handle_t scratch;
+  uint64_t scratch_offset;
+  struct WMTAccelerationStructureInfo info;
+};
+
+struct wmtcmd_accelerationstructure_copy {
+  enum WMTAccelerationStructureCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t src;
+  obj_handle_t dst;
+};
+
+// writes a uint64
+struct wmtcmd_accelerationstructure_write_compacted_size {
+  enum WMTAccelerationStructureCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t structure;
+  obj_handle_t buffer;
+  uint64_t offset;
+};
+
+struct wmtcmd_accelerationstructure_fence_op {
+  enum WMTAccelerationStructureCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t fence;
+};
+
+WINEMETAL_API void
+MTLAccelerationStructureCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
+
+/* a compute pipeline whose kernel calls linked visible functions through a table, up to a call depth */
+struct WMTLinkedComputePipelineInfo {
+  obj_handle_t compute_function;
+  struct WMTMemoryPointer functions; // obj_handle_t of MTLFunction
+  uint32_t function_count;
+  uint32_t max_call_stack_depth;
+};
+
+WINEMETAL_API obj_handle_t MTLDevice_newLinkedComputePipelineState(
+    obj_handle_t device, const struct WMTLinkedComputePipelineInfo *info, obj_handle_t *err_out
+);
+
+/* a visible function table of the pipeline with `functions` in its slots; a slot of 0 stays empty */
+WINEMETAL_API obj_handle_t MTLComputePipelineState_newVisibleFunctionTable(
+    obj_handle_t pso, const obj_handle_t *functions, uint64_t function_count
+);
+
+// Metal, Sampling GPU data into counter sample buffers: two bounds per stage, vertex then fragment for render
+enum { WMTTimestampSamplesPerStage = 2, WMTRenderTimestampSamples = 2 * WMTTimestampSamplesPerStage };
+enum WMTSampledEncoder {
+  WMTSampledCompute, WMTSampledAccelerationStructure, WMTSampledRender, WMTSampledConcurrentCompute
+};
+// appended calls keep the preceding bridge ABI indices
+enum { WMTUnixSampledEncoder = 167, WMTUnixDiagWrite, WMTUnixDispatchDataBytes, WMTUnixComputeMaxThreadsPerThreadgroup,
+       WMTUnixDeviceSupports32BitFloatFiltering, WMTUnixDeviceMaxArgumentBufferSamplerCount,
+       WMTUnixDeviceSupports32BitMSAA, WMTUnixPresentStatisticsNew, WMTUnixDrawableCountPresent,
+       WMTUnixPresentStatisticsGet, WMTUnixGPUStatistics, WMTUnixCommandBufferPushDebugGroup,
+       WMTUnixCommandBufferPopDebugGroup, WMTUnixFlightWrite, WMTUnixMetal4NewBuffer, WMTUnixMetal4Encoder,
+       WMTUnixMetal4Commands, WMTUnixMetal4EndEncoder, WMTUnixMetal4Commit, WMTUnixMetal4Feedback, WMTUnixMetal4Wait,
+       WMTUnixMetal4CounterHeap, WMTUnixMetal4Frequency, WMTUnixMetal4Present, WMTUnixMetal4WaitEvent,
+       WMTUnixDeviceSupportsShaderBarycentrics, WMTUnixTraceWrite, WMTUnixMetal4OrderAliases, WMTUnixMetal4WaitGPU,
+       WMTUnixBootstrapKeep, WMTUnixDeviceSupportsSamplerReduction,
+       WMTUnixCommandBufferWaitSignal, WMTUnixDeviceNewSpatialScaler4, WMTUnixMetal4SpatialScale,
+       WMTUnixDeviceNewTemporalScaler4, WMTUnixMetal4TemporalScale, WMTUnixDeviceNewDenoisedScaler,
+       WMTUnixCommandBufferDenoisedScale, WMTUnixDeviceSupportsFXDenoisedScaler,
+       WMTUnixComputeStaticThreadgroupMemory, WMTUnixDeviceMaxThreadgroupMemory,
+       WMTUnixDeviceMaxThreadsPerThreadgroup, WMTUnixRequestNativeFullscreen, WMTUnixReadCacheFile,
+       WMTUnixWriteCacheFile, WMTUnixCallCount };
+WINEMETAL_API obj_handle_t MTLCommandBuffer_sampledCommandEncoder(obj_handle_t cmdbuf, enum WMTSampledEncoder type,
+                                                                  const struct WMTSampleBufferAttachmentInfo *samples,
+                                                                  const struct WMTRenderPassInfo *render_info);
+WINEMETAL_API uint32_t WMTDiagWrite(const char *directory, const char *lines, uint64_t length);
+// MULLION_TRACE_<CATEGORY> (docs/tracing.md): appends lines to the process's trace log, mullion.log in `directory` (a
+// macOS path, the one the first call names); the first call keeps the last process's log as mullion.prev.log and starts
+// the log with a header. each call also says what the categories turn on in the bridge: command buffers that report
+// their encoders' status (MULLION_TRACE_GPU=heavy) and the memory sampler. false when the log cannot be written
+WINEMETAL_API bool WMTTraceWrite(const char *directory, const char *lines, uint64_t length, bool encoder_errors,
+                                 bool memory_samples);
+// MULLION_DIAG=profile: each bridge call's count and time in QueryPerformanceCounter ticks, by code, since the last
+// totals were taken; the bridge times calls once WMTDiagTimeCalls was called
+struct WMTDiagCall {
+  uint64_t count, ticks;
+  const char *name;
+};
+WINEMETAL_API void WMTDiagTimeCalls(void);
+WINEMETAL_API void WMTDiagCallTotals(struct WMTDiagCall calls[WMTUnixCallCount]);
+WINEMETAL_API int64_t WMTDiagSemaphoreCount(void *semaphore);
+// the statistics the device's driver keeps in its IORegistry entry (PerformanceStatistics), as tab-separated
+// name=value pairs: their length, written to buffer when it holds them
+WINEMETAL_API uint64_t WMTGPUStatistics(obj_handle_t device, char *buffer, uint64_t size);
+WINEMETAL_API void MTLCommandBuffer_pushDebugGroup(obj_handle_t cmdbuf, obj_handle_t name);
+WINEMETAL_API void MTLCommandBuffer_popDebugGroup(obj_handle_t cmdbuf);
+WINEMETAL_API uint64_t DispatchData_getBytes(obj_handle_t data, void *buffer, uint64_t size);
+// the flight recorder: each thread keeps its last records in memory, and a dump writes them, in time order and with
+// its reason, to <executable>.flight in MULLION_DIAG_PATH or else ~/Library/Logs/Mullion, the first of a process
+// anew and the others after it.
+// a site is a printf format of up to four 64-bit integer arguments, copied once; a record is a site with its
+// arguments, its thread and its time in the CPU's counter's ticks
+struct WMTFlightEntry {
+  uint64_t time;
+  struct WMTConstMemoryPointer site;
+  uint64_t args[4];
+  uint32_t thread;
+};
+WINEMETAL_API const void *WMTFlightSite(const char *format);
+WINEMETAL_API void WMTFlightRecord(const void *site, uint64_t a, uint64_t b, uint64_t c, uint64_t d);
+WINEMETAL_API void WMTFlightDump(const char *reason);
+
+// what a presenter's frames did on screen, in host seconds (CACurrentMediaTime): the number of the last frame shown
+// (frames count from 1) and when it was, when counting began, and the time the statistics were read
+struct WMTPresentStatistics {
+  uint64_t shown;
+  double shown_time, since, now;
+};
+WINEMETAL_API obj_handle_t WMTPresentStatistics_new(void);
+// frame `number` counts once it is on screen: a drawable's once Metal shows it, a null drawable's now
+WINEMETAL_API void MetalDrawable_countPresent(obj_handle_t drawable, obj_handle_t statistics, uint64_t number);
+WINEMETAL_API void WMTPresentStatistics_get(obj_handle_t statistics, struct WMTPresentStatistics *out);
+
+enum WMTMetal4Stream : uint32_t { WMTMetal4Render, WMTMetal4Compute, WMTMetal4Blit, WMTMetal4AccelerationStructure };
+struct WMTMetal4BindingCounts {
+  uint32_t buffers, textures, samplers;
+};
+struct WMTMetal4Feedback {
+  uint32_t status, render_passes, compute_passes;
+  uint32_t padding;
+  obj_handle_t error;
+  uint64_t gpu_start, gpu_end;
+};
+WINEMETAL_API obj_handle_t MTL4CommandBuffer_new(
+    obj_handle_t queue, obj_handle_t fence, obj_handle_t event, uint64_t value, obj_handle_t residency,
+    struct WMTMetal4BindingCounts bindings
+);
+// a compute-class `samples` that starts where the previous pass's end was sampled gets that sample as its start
+WINEMETAL_API obj_handle_t MTL4CommandBuffer_encoder(
+    obj_handle_t buffer, enum WMTMetal4Stream kind, const struct WMTRenderPassInfo *render,
+    struct WMTSampleBufferAttachmentInfo *samples
+);
+WINEMETAL_API void
+MTL4CommandEncoder_encodeCommands(obj_handle_t encoder, enum WMTMetal4Stream kind, const struct wmtcmd_base *head);
+WINEMETAL_API void MTL4CommandEncoder_endEncoding(obj_handle_t encoder, bool segment);
+WINEMETAL_API void MTL4CommandBuffer_commit(obj_handle_t buffer);
+WINEMETAL_API struct WMTMetal4Feedback MTL4CommandBuffer_feedback(obj_handle_t buffer);
+WINEMETAL_API void MTL4CommandBuffer_waitUntilCompleted(obj_handle_t buffer);
+// the GPU is done with the buffer's work, or the buffer failed: what it wrote is there. its feedback (status(), the
+// error, its GPU times) may come later, which waitUntilCompleted waits for too
+WINEMETAL_API void MTL4CommandBuffer_waitForGPU(obj_handle_t buffer);
+WINEMETAL_API obj_handle_t MTL4CounterHeap_new(obj_handle_t device, uint64_t count);
+WINEMETAL_API uint64_t MTLDevice_queryTimestampFrequency(obj_handle_t device);
+WINEMETAL_API void MTL4CommandBuffer_present(obj_handle_t buffer, obj_handle_t drawable, double after);
+
+WINEMETAL_API void MTL4CommandBuffer_waitForEvent(obj_handle_t buffer, obj_handle_t event, uint64_t value);
+// the buffer's next encoder begins with a barrier, against all the queue's work before it, that makes memory reached
+// through aliased addresses consistent: a reserved buffer's tiles and a placed resource over the same heap memory.
+// `inside`: when the next is a compute encoder's and the open one holds all the queue's work since the last such
+// barrier, a barrier of the same visibility inside the open one, against its own work, instead
+WINEMETAL_API void MTL4CommandBuffer_orderAliases(obj_handle_t buffer, bool inside);
+
+/* SC6 fork: native macOS fullscreen for the window that hosts a swapchain. The request runs asynchronously on the
+ * Cocoa main thread; the return value is the state that the previous request observed. */
 enum WMTNativeFullscreenState {
   WMTNativeFullscreenUnknown = 0,
   WMTNativeFullscreenUnavailable = 1, /* no Cocoa window for this HWND */
@@ -2166,10 +2705,9 @@ enum WMTNativeFullscreenState {
 
 WINEMETAL_API enum WMTNativeFullscreenState WMTRequestNativeFullscreen(intptr_t hwnd, bool enable);
 
-/* Small whole-file reads and writes in the DXMT cache directory. A relative
- * path is resolved against $(getconf DARWIN_USER_CACHE_DIR).
- * WMTReadCacheFile returns false if the file cannot be read. It always stores
- * the file size in *size_out, and copies the data only if capacity is enough.
+/* SC6 fork: small whole-file reads and writes in the cache directory. A relative path is resolved against
+ * $(getconf DARWIN_USER_CACHE_DIR). WMTReadCacheFile returns false if the file cannot be read. It always stores the
+ * file size in *size_out, and copies the data only if capacity is enough (a null buffer only asks for the size).
  * WMTWriteCacheFile replaces the file atomically and creates missing folders. */
 WINEMETAL_API bool WMTReadCacheFile(const char *path, void *buffer, uint64_t capacity, uint64_t *size_out);
 

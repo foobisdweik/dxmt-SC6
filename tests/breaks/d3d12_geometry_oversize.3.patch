@@ -1,0 +1,12 @@
+# the CPU never collects what an indirect command left out
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -523,7 +523,7 @@
+       }
+       sample(inflight.sampled.size());
+       uint32_t omitted[2] = {};
+-      if (inflight.cmdbuf.status() == WMTCommandBufferStatusCompleted)
++      if (false)
+         for (auto &[buffer, words, scratch] : inflight.omitted)
+           for (auto word : words)
+             omitted[scratch] = std::max(omitted[scratch], word);

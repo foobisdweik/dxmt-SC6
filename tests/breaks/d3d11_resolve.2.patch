@@ -1,0 +1,12 @@
+# resolves into mip zero instead of the destination mip.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1078,7 +1078,7 @@
+       dst_desc.arraySize = 1;
+       dst_desc.firstArraySlice = dst_slice;
+       dst_desc.miplevelCount = 1;
+-      dst_desc.firstMiplevel = dst_level;
++      dst_desc.firstMiplevel = 0;
+ 
+       auto src_view = src->createView(src_desc);
+       auto dst_view = dst->createView(dst_desc);

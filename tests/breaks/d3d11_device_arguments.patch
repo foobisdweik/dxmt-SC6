@@ -1,0 +1,11 @@
+# discard the D3D10 internal threading optimization creation flag
+--- a/src/d3d10/d3d10core.cpp
++++ b/src/d3d10/d3d10core.cpp
+@@ -31,7 +31,6 @@
+   // Direct3D 11 has the same bits for the flags the two share, another for DEBUGGABLE, and none for the rest
+   UINT d3d11_flags = Flags & (D3D10_CREATE_DEVICE_SINGLETHREADED | D3D10_CREATE_DEVICE_DEBUG |
+                               D3D10_CREATE_DEVICE_SWITCH_TO_REF |
+-                              D3D10_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS |
+                               D3D10_CREATE_DEVICE_BGRA_SUPPORT |
+                               D3D10_CREATE_DEVICE_PREVENT_ALTERING_LAYER_SETTINGS_FROM_REGISTRY);
+   if (Flags & D3D10_CREATE_DEVICE_DEBUGGABLE)

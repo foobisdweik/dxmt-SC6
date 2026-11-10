@@ -1,0 +1,13 @@
+# truncates sampler heap indices to eight bits.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -457,7 +457,8 @@
+       auto handle = CallInst::Create(
+           create,
+           {ConstantInt::get(i32, CreateHandle), ConstantInt::get(i8, cls), ConstantInt::get(i32, range->second),
+-           call->getArgOperand(1), call->getArgOperand(3)},
++           cls == SamplerClass ? BinaryOperator::CreateAnd(call->getArgOperand(1), ConstantInt::get(i32, 0xff), "", annotate)
++                              : call->getArgOperand(1), call->getArgOperand(3)},
+           "", annotate
+       );
+       annotate->replaceAllUsesWith(handle);

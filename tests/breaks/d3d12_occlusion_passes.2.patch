@@ -1,0 +1,16 @@
+# a query sums only the segments of its last render pass
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -832,8 +832,11 @@
+       dirty_state_.set(DirtyState::BlendFactor, DirtyState::StencilRef, DirtyState::DepthBounds);
+       depth_bounds_set_ = false;
+       dirty_state_.set(DirtyState::GraphicsPipelineState);
+-      if (!active_queries_.empty())
++      if (!active_queries_.empty()) {
++        for (auto &query : active_queries_)
++          query.first = visibility_slots_.size();
+         CountVisibility();
++      }
+     }
+ 
+     if (dirty_state_.test(DirtyState::GraphicsPipelineState)) {

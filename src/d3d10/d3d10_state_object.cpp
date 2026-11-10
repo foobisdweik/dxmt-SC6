@@ -1,6 +1,6 @@
 #include "d3d10_state_object.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 void STDMETHODCALLTYPE
 MTLD3D10BlendState::GetDesc(D3D10_BLEND_DESC *pDesc) {
@@ -59,4 +59,4 @@ MTLD3D10DepthStencilState::GetDesc(D3D10_DEPTH_STENCIL_DESC *pDesc) {
   d3d11->GetDesc(reinterpret_cast<D3D11_DEPTH_STENCIL_DESC *>(pDesc));
 }
 
-} // namespace dxmt
+} // namespace mullion

@@ -1,0 +1,67 @@
+name: Build, test or documentation problem
+description: A problem building Mullion, running its tests or following its documentation.
+labels: [development]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One issue covers one problem, after checking that it is not already
+        [reported](https://github.com/dttdrv/mullion/issues). Anything that could not be found out is written as
+        "unknown", and a suspected cause is kept apart from what was seen.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Build
+        - Tests
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happens
+      description: >-
+        What was expected, what happened instead, and whether it happens every time. For a test, the failure it
+        reported, not only its name. For documentation, the instruction that is wrong or missing.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        The commands and inputs that reproduce it, or a link to the document and section. A reproduction outside
+        Mullion's tests includes its files and instructions.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Mullion revision
+      description: >-
+        The release or full commit, any patches added to it, the revision of any other repository the reproduction
+        uses, and the last revision that worked, if known.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >-
+        The host system and its architecture, build options, and compiler, SDK and dependency versions. For a test,
+        also the Mac, the macOS and Wine versions, the shader front end and the GPU family options. A documentation
+        problem can leave this empty.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Output
+      description: >-
+        The first error, with the whole build or test log attached as a file, or what shows the documentation
+        problem. A file that could not be obtained is named, with the reason. For a test: {suite: where the test
+        report is and how it is attached, filled in from v0.5 on}. Attachments are public, so they are checked for
+        personal information first.
+    validations:
+      required: true

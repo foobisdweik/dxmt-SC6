@@ -1,0 +1,12 @@
+# centroids ignore the state's sample mask.
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -582,7 +582,7 @@
+     kept = mask;
+   }
+   resource_map.clip_coverage = kept;
+-  if (pso_sample_mask != 0xffffffff) {
++  if (false) {
+     air.CentroidCoverage = kept ? kept : function->getArg(input_coverage);
+     air.CentroidMask = builder.getInt32(pso_sample_mask);
+   }

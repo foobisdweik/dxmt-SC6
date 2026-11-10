@@ -1,0 +1,12 @@
+# a held Present reads the later frame's settings
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -1809,7 +1809,7 @@
+ 
+     unsigned present_encoders = 0;
+     auto drawable = presenter->encodeCommands(
+-        MetalCommandBuffer(cmdbuf), g->texture->view(shown).texture, state,
++        MetalCommandBuffer(cmdbuf), g->texture->view(shown).texture, presenter->synchronizeLayerProperties(),
+         [&](auto encoder) { encoder.waitForFence(fence_, WMTRenderStageFragment); },
+         [&](auto encoder) { encoder.updateFence(fence_, WMTRenderStageFragment); }, inflight_cmdbuf_seq_.load(),
+         diag::trace_encoders ? &present_encoders : nullptr

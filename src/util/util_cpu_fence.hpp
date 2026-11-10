@@ -2,7 +2,7 @@
 #include <atomic>
 #include <cstdint>
 
-namespace dxmt {
+namespace mullion {
 
 class CpuFence {
 public:
@@ -33,4 +33,4 @@ public:
 private:
   std::atomic<uint64_t> value_;
 };
-} // namespace dxmt
+} // namespace mullion

@@ -1,0 +1,3 @@
+one command buffer: both views in order every time: false
+command buffers back to back: both views in order every time: false
+each command buffer completed before the next: both views in order every time: true

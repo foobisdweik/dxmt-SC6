@@ -1,9 +1,10 @@
 LIBRARY d3d12.dll
 EXPORTS
-    D3D12CreateDevice @101
-    D3D12GetDebugInterface @102
-    D3D12CreateRootSignatureDeserializer
-    D3D12CreateVersionedRootSignatureDeserializer
-    D3D12SerializeRootSignature
-    D3D12SerializeVersionedRootSignature
-    D3D12GetInterface
+    D3D12CreateDevice = loader_D3D12CreateDevice @101
+    D3D12GetDebugInterface = loader_D3D12GetDebugInterface @102
+    D3D12CreateRootSignatureDeserializer = loader_D3D12CreateRootSignatureDeserializer
+    D3D12CreateVersionedRootSignatureDeserializer = loader_D3D12CreateVersionedRootSignatureDeserializer
+    D3D12SerializeRootSignature = loader_D3D12SerializeRootSignature
+    D3D12SerializeVersionedRootSignature = loader_D3D12SerializeVersionedRootSignature
+    D3D12GetInterface = loader_D3D12GetInterface
+    D3D12EnableExperimentalFeatures = loader_D3D12EnableExperimentalFeatures

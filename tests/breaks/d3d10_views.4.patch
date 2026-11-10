@@ -1,0 +1,10 @@
+# generate mips through the whole texture instead of its selected shader view
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1024,5 +1024,5 @@
+       SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
+-      EmitOP([tex = srv->texture(), viewId = srv->viewId()](ArgumentEncodingContext &enc) {
++      EmitOP([tex = srv->texture(), viewId = 0u](ArgumentEncodingContext &enc) {
+         // workaround: mipmap generation of a8unorm is borked, so use a r8unorm view
+         auto fixedViewId = viewId;
+         if (tex->pixelFormat(viewId) == WMTPixelFormatA8Unorm) {

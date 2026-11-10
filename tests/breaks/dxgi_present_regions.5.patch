@@ -1,0 +1,12 @@
+# a D3D12 present keeps the previous frame in the left eye only
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -1580,7 +1580,7 @@
+       auto blit = cmdbuf.blitCommandEncoder();
+       blit.waitForFence(fence_);
+       for (auto [to, from] : copies)
+-        for (uint32_t eye = 0; eye < g->texture->arrayLength(); eye++) {
++        for (uint32_t eye = 0; eye < 1; eye++) {
+           wmtcmd_blit_copy_from_texture_to_texture copy{.type = WMTBlitCommandCopyFromTextureToTexture};
+           copy.src = p->texture->view(p->texture->fullView).texture.handle;
+           copy.src_slice = eye;

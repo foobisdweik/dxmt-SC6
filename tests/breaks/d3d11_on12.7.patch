@@ -1,0 +1,13 @@
+# a device's release drops the command buffers it committed but has not run
+--- a/src/mullion/mullion_command_queue.cpp
++++ b/src/mullion/mullion_command_queue.cpp
+@@ -162,8 +162,7 @@
+   if (stopped.load())
+     return;
+   // what was committed runs to its end, with its completions
+-  for (uint64_t ongoing; (ongoing = chunk_ongoing.load(std::memory_order_acquire));)
+-    chunk_ongoing.wait(ongoing, std::memory_order_acquire);
++  ;
+   if (stopped.exchange(true))
+     return;
+   TRACE("Destructing command queue");

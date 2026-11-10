@@ -1,0 +1,14 @@
+# WaveReadLaneFirst of lanes that are all helpers reads no lane
+diff --git a/src/airconv/dxil_converter.cpp b/src/airconv/dxil_converter.cpp
+index f93b9886..81f71e91 100644
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2418,7 +2418,7 @@ convert_dxil(
+         auto helper = simd("simd_is_helper_thread", ir.getInt1Ty(), {});
+         auto real = simd("simd_ballot", ir.getInt64Ty(), {ir.CreateNot(helper)}, ir.getInt64Ty());
+         auto active = simd("simd_ballot", ir.getInt64Ty(), {ir.getTrue()}, ir.getInt64Ty());
+-        auto lanes = ir.CreateSelect(ir.CreateICmpNE(real, ir.getInt64(0)), real, active);
++        auto lanes = real;
+         ret = move("simd_shuffle", a(1), {i16(ir.CreateCall(ctz, {lanes, ir.getFalse()}))});
+       } else
+         ret = move("simd_broadcast_first", a(1), {});

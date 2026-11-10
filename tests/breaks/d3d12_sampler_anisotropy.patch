@@ -1,0 +1,10 @@
+# anisotropy rounds down and selects a coarser mip for non-power-of-two requests
+--- a/src/mullion/mullion_sampler.cpp
++++ b/src/mullion/mullion_sampler.cpp
+@@ -27,5 +27,5 @@
+   WMTSamplerInfo capped = info;
+   capped.lod_min_clamp = step(capped.lod_min_clamp);
+   capped.lod_max_clamp = step(capped.lod_max_clamp);
+-  capped.max_anisotroy = std::bit_ceil(std::max(capped.max_anisotroy, 1u));
++  capped.max_anisotroy = std::bit_floor(std::max(capped.max_anisotroy, 1u));
+   ret->info_ = capped;

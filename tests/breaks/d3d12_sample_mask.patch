@@ -1,0 +1,12 @@
+# ignores the application sample mask.
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -1071,7 +1071,7 @@
+       data_ps.disable_depth_output =
+           (mesh ? mesh_info.depth_pixel_format : info.depth_pixel_format) == WMTPixelFormatInvalid;
+       data_ps.unorm_output_reg_mask = 0;
+-      data_ps.sample_mask = pDesc->SampleMask;
++      data_ps.sample_mask = ~0u;
+       data_ps.type = SM50_SHADER_PSO_PIXEL_SHADER;
+       data_ps.next = &common;
+       data_ps.pipeline_statistics = false;

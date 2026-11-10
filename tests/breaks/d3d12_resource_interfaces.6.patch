@@ -1,0 +1,12 @@
+# ordinary resources invent a feedback mip region
+--- a/src/d3d12/d3d12_device.hpp
++++ b/src/d3d12/d3d12_device.hpp
+@@ -128,7 +128,7 @@
+     GetDesc(&desc);
+     *__ret = feedback.value_or(D3D12_RESOURCE_DESC1{
+         desc.Dimension, desc.Alignment, desc.Width, desc.Height, desc.DepthOrArraySize, desc.MipLevels,
+-        desc.Format, desc.SampleDesc, desc.Layout, desc.Flags, {}
++        desc.Format, desc.SampleDesc, desc.Layout, desc.Flags, {1, 1, 1}
+     });
+     return __ret;
+   }

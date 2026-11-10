@@ -1,0 +1,12 @@
+# GetDesc returns the feedback map backing texture description
+--- a/src/d3d12/d3d12_texture.cpp
++++ b/src/d3d12/d3d12_texture.cpp
+@@ -293,7 +293,7 @@
+ 
+   virtual D3D12_RESOURCE_DESC *STDMETHODCALLTYPE
+   GetDesc(D3D12_RESOURCE_DESC *__ret) {
+-    *__ret = feedback ? WithoutMipRegion(*feedback) : desc_;
++    *__ret = desc_;
+     return __ret;
+   };
+ 

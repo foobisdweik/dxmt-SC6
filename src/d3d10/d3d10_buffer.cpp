@@ -1,6 +1,6 @@
 #include "d3d10_buffer.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D10Buffer::Map(D3D10_MAP MapType, UINT MapFlags, void **ppData) {
@@ -27,4 +27,4 @@ MTLD3D10Buffer::GetDesc(D3D10_BUFFER_DESC *pDesc) {
   pDesc->CPUAccessFlags = d3d11_desc.CPUAccessFlags;
   pDesc->MiscFlags = ConvertD3D11ResourceFlags(d3d11_desc.MiscFlags);
 }
-} // namespace dxmt
+} // namespace mullion

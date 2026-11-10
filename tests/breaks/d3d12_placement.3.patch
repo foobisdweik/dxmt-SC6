@@ -1,0 +1,13 @@
+# a 3D texture's estimate counts its depth, which D3D12's leaves out
+# family native
+--- a/src/d3d12/d3d12_texture.cpp
++++ b/src/d3d12/d3d12_texture.cpp
+@@ -31,7 +31,7 @@
+ static uint64_t
+ SmallResourceEstimate(const D3D12_RESOURCE_DESC &Desc, const MTL_DXGI_FORMAT_DESC &Format) {
+   uint32_t block = Format.Flag & MTL_DXGI_FORMAT_BC ? 4 : 1;
+-  unsigned __int128 size = (unsigned __int128)Desc.Width * Desc.Height * Format.BytesPerTexel / (block * block);
++  unsigned __int128 size = (unsigned __int128)Desc.Width * Desc.Height * Desc.DepthOrArraySize * Format.BytesPerTexel / (block * block);
+   return size > UINT64_MAX ? UINT64_MAX : uint64_t(size);
+ }
+ 

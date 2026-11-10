@@ -1,0 +1,12 @@
+# loses boolean values during wave lane transfers
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -1901,7 +1901,7 @@
+   std::function<Value *(const std::string &, Value *, ArrayRef<Value *>)> move = [&](auto &name, Value *v, auto extra) {
+     auto ty = v->getType();
+     if (ty->isIntegerTy(1))
+-      return ir.CreateTrunc(move(name, ir.CreateZExt(v, ir.getInt32Ty()), extra), ty);
++      return ir.getFalse();
+     if (ty->getPrimitiveSizeInBits() == 64) {
+       auto halves = ir.CreateBitCast(v, FixedVectorType::get(ir.getInt32Ty(), 2));
+       Value *r = UndefValue::get(halves->getType());

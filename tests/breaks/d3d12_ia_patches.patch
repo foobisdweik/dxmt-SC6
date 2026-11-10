@@ -1,0 +1,11 @@
+# drop the final control point from a direct geometry stream-output draw.
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -1123,6 +1123,7 @@
+                                 predication_region_ ? sizeof(uint32_t) : 0);
+     memcpy(Mapped, &View, sizeof(View));
+     memcpy(reinterpret_cast<char *>(Mapped) + sizeof(View), &Args, sizeof(Args));
++    reinterpret_cast<uint32_t *>(reinterpret_cast<char *>(Mapped) + sizeof(View))[0] -= 1;
+     // the object stage reads the vertex count from the arguments' first word, so a skipped draw has none
+     if (predication_region_)
+       predicated_.push_back({uint32_t((Offset + sizeof(View)) / 4), reinterpret_cast<const uint32_t *>(&Args)[0], 0});

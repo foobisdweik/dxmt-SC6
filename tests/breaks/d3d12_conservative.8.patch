@@ -1,0 +1,12 @@
+# a domain shader's piece has one triangle fewer than its primitives
+--- a/src/airconv/dxbc_converter_ts.cpp
++++ b/src/airconv/dxbc_converter_ts.cpp
+@@ -1305,7 +1305,7 @@
+                           types._int
+                       )
+       );
+-    air.CreateSetMeshPrimitiveCount(primitives);
++    air.CreateSetMeshPrimitiveCount(builder.CreateSub(primitives, builder.getInt32(1)));
+     builder.CreateBr(real_return);
+     builder.SetInsertPoint(generate_primitive);
+     builder.CreateBr(real_return);

@@ -1,0 +1,13 @@
+# a static anisotropic sampler's own bias is taken for none, and its samples keep Metal's own LOD
+# family native
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2335,7 +2335,7 @@
+   if (auto Known = KnownSamplers.find(SamplerMetadata); Known != KnownSamplers.end()) {
+     auto Own = SamplerBiases.find(Bias);
+     if (!Known->second.Anisotropic ||
+-        (!Known->second.Biased && Own != SamplerBiases.end() && Own->second == SamplerMetadata))
++        (Own != SamplerBiases.end() && Own->second == SamplerMetadata))
+       return Biased();
+   }
+   auto Anisotropy = ir.CreateAnd(ir.CreateLShr(SamplerMetadata, SM50_SAMPLER_METADATA_ANISOTROPY),

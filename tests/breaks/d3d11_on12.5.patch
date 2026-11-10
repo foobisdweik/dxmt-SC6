@@ -1,0 +1,13 @@
+# unwrapping only flushes, which leaves a texture's initial data unsubmitted
+--- a/src/d3d11/d3d11_on12.cpp
++++ b/src/d3d11/d3d11_on12.cpp
+@@ -169,8 +169,7 @@
+     // its Direct3D 11 work so far goes to the GPU, with the uploads of initial data a flush may not commit, and the
+     // queue's later work waits for it
+     auto context = device_->GetImmediateContextPrivate();
+-    context->PrepareFlush();
+-    context->Commit();
++    device_->GetImmediateContextPrivate()->Flush();
+     pCommandQueue->Wait(done_.ptr(), done_value_);
+     return resource->QueryInterface(riid, ppvResource12);
+   }

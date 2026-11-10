@@ -1,0 +1,12 @@
+# drops the zero second source for a pixel shader that leaves o1 unwritten
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -413,8 +413,4 @@
+     }
+   }
+-  // an unwritten o1 leaves the second blend source undefined (Vulkan, Dual-Source Blending); Metal refuses the
+-  // pipeline without one, so it is zero, as the epilogue starts every output
+-  if (pso_dual_source_blending && !(pShaderInternal->pso_valid_output_reg_mask & 2))
+-    func_signature.DefineOutput(air::OutputRenderTarget{.dual_source_blending = true, .index = 1, .type = air::msl_float4});
+   if (pso_sample_mask != 0xffffffff) {
+     auto assigned_index =

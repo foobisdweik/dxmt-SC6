@@ -6,20 +6,24 @@
 #include "d3d11_device_child.hpp"
 #include "thread.hpp"
 #include "util_hash.hpp"
-#include "dxmt_sampler.hpp"
+#include "mullion_sampler.hpp"
 
 DEFINE_COM_INTERFACE("03629ed8-bcdd-4582-8997-3817209a34f4",
                      IMTLD3D11RasterizerState)
     : public ID3D11RasterizerState2 {
   virtual void SetupRasterizerState(wmtcmd_render_setrasterizerstate& cmd) = 0;
   virtual bool IsScissorEnabled() = 0;
-  virtual uint32_t UAVOnlySampleCount() = 0;
+  virtual uint32_t ForcedSampleCount() = 0;
+  // lines are quadrilaterals (D3D11.3 15.14.1)
+  virtual bool QuadrilateralLines() = 0;
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
 };
 
 DEFINE_COM_INTERFACE("b01aaffa-b4d3-478a-91be-6195f215aaba",
                      IMTLD3D11DepthStencilState)
     : public ID3D11DepthStencilState {
-  virtual WMT::DepthStencilState GetDepthStencilState(uint32_t planar_flags) = 0;
+  virtual WMT::DepthStencilState GetDepthStencilState(uint32_t planar_flags, uint32_t readonly_flags) = 0;
   virtual bool IsEnabled() = 0;
 };
 
@@ -27,7 +31,10 @@ DEFINE_COM_INTERFACE("279a1d66-2fc1-460c-a0a7-a7a5f2b7a48f",
                      IMTLD3D11BlendState)
     : public ID3D11BlendState1 {
   virtual bool IsDualSourceBlending() = 0;
-  virtual void SetupMetalPipelineDescriptor(WMTRenderPipelineBlendInfo* blend_info, uint32_t num_rt, uint32_t valid_rt) = 0;
+  virtual bool IsAlphaToCoverage() = 0;
+  // the targets the pixel shader blends itself, whose blending this leaves off (ShaderBlend)
+  virtual std::array<SM50_SHADER_BLEND, 8>
+  SetupMetalPipelineDescriptor(WMTRenderPipelineBlendInfo *blend_info, uint32_t num_rt, uint32_t valid_rt) = 0;
 };
 
 namespace std {
@@ -50,7 +57,7 @@ template <> struct equal_to<D3D11_SAMPLER_DESC> {
 
 template <> struct hash<D3D11_BLEND_DESC1> {
   size_t operator()(const D3D11_BLEND_DESC1 &v) const noexcept {
-    dxmt::HashState hash;
+    mullion::HashState hash;
     hash.add((v.IndependentBlendEnable << 1) | v.AlphaToCoverageEnable);
     uint32_t num_blend_target = v.IndependentBlendEnable ? 8 : 1;
     for (unsigned i = 0; i < num_blend_target; i++) {
@@ -149,7 +156,7 @@ template <> struct equal_to<D3D11_DEPTH_STENCIL_DESC> {
 };
 } // namespace std
 
-namespace dxmt {
+namespace mullion {
 
 class D3D11SamplerState : public ID3D11SamplerState {
 public:
@@ -164,7 +171,7 @@ public:
 private:
   MTLD3D11Device *device;
   std::unordered_map<DESC, std::unique_ptr<ManagedDeviceChild<Object>>> cache;
-  dxmt::mutex mutex_cache;
+  mullion::mutex mutex_cache;
 };
 
 constexpr D3D11_RASTERIZER_DESC2 kDefaultRasterizerDesc = {
@@ -234,4 +241,4 @@ constexpr D3D11_DEPTH_STENCIL_DESC kDefaultDepthStencilDesc = {
         .StencilFunc = D3D11_COMPARISON_ALWAYS,
     }};
 
-} // namespace dxmt
+} // namespace mullion

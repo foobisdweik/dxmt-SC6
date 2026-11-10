@@ -4,7 +4,7 @@
 
 struct IMTLD3D11DeviceContext;
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D11Device;
 
@@ -281,4 +281,4 @@ public:
   D3D10_FEATURE_LEVEL1 STDMETHODCALLTYPE GetFeatureLevel();
 };
 
-}; // namespace dxmt
+}; // namespace mullion

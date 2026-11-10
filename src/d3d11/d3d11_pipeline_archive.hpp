@@ -16,10 +16,15 @@
 
 struct MTL_GRAPHICS_PIPELINE_DESC;
 
-namespace dxmt {
+namespace mullion {
+
+/*
+ * SC6 fork: a persistent pipeline archive with warm-up (d3d11.pipelineArchive), ported from dxmt-SC6 onto Mullion's
+ * pipeline cache.
+ */
 
 /**
-The state of one pipeline that DXMT compiled, by value: shader hashes
+The state of one pipeline that Mullion compiled, by value: shader hashes
 instead of shader objects, and descriptions instead of state objects. A
 later launch rebuilds MTL_GRAPHICS_PIPELINE_DESC from it once the game has
 created the same shaders again.
@@ -59,6 +64,16 @@ struct PipelineRecord {
   uint32_t index_buffer_format = 0;
   uint32_t sample_mask = 0;
   uint32_t gs_passthrough = 0;
+  /* Mullion's pipeline key (MTL_GRAPHICS_PIPELINE_DESC) has these too, and a warm-up pipeline must match the
+     game's own key, or it compiles a pipeline nobody uses */
+  uint32_t centered_samples = 0;
+  uint32_t single_raster_sample = 0;
+  uint32_t paired_samples = 0;
+  uint32_t clip_distances = 0;
+  uint32_t input_primitive = 0;
+  uint32_t pass_through = 0;
+  uint32_t quad_lines = 0;
+  uint32_t pipeline_statistics = 0;
   D3D11_BLEND_DESC1 blend = {};
   bool has_input_layout = false;
   MTL_INPUT_LAYOUT_DESC input_layout;
@@ -73,7 +88,7 @@ struct PipelineRecord {
 
 /**
 A persistent Metal pipeline archive (MTLBinaryArchive) plus a list of the
-pipelines a game compiled, both stored next to DXMT's shader cache.
+pipelines a game compiled, both stored next to Mullion's shader cache.
 
 - Every pipeline compile looks up the archive first. On a hit, Metal loads
   the GPU binary instead of compiling it. On a miss, the pipeline is
@@ -147,11 +162,11 @@ private:
      the extra fail-on-miss attempt is skipped */
   bool archive_loaded_ = false;
 
-  dxmt::mutex records_mutex_;
+  mullion::mutex records_mutex_;
   std::unordered_set<Sha1Digest> known_records_;
   std::vector<std::vector<uint8_t>> record_blobs_;
 
-  dxmt::mutex warm_mutex_;
+  mullion::mutex warm_mutex_;
   std::vector<PipelineRecord> warm_records_;
   std::vector<uint8_t> warm_missing_;
   std::unordered_map<Sha1Digest, std::vector<uint32_t>> warm_waiting_;
@@ -159,7 +174,7 @@ private:
   std::atomic<bool> archive_dirty_ = false;
   std::atomic<bool> list_dirty_ = false;
   std::atomic<int64_t> last_change_ = 0;
-  dxmt::mutex save_mutex_;
+  mullion::mutex save_mutex_;
 
   std::atomic<uint64_t> hits_ = 0;
   std::atomic<uint64_t> misses_ = 0;
@@ -170,10 +185,10 @@ private:
   uint64_t loaded_records_ = 0;
   uint64_t logged_stats_sum_ = 0;
 
-  dxmt::mutex saver_mutex_;
-  dxmt::condition_variable saver_cond_;
+  mullion::mutex saver_mutex_;
+  mullion::condition_variable saver_cond_;
   bool saver_stop_ = false;
-  dxmt::thread saver_;
+  mullion::thread saver_;
 };
 
-} // namespace dxmt
+} // namespace mullion

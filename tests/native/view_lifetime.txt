@@ -1,0 +1,3 @@
+unused view released: true
+view retained after encoding: true
+resource-id pixels: correct

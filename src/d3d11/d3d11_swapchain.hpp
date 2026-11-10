@@ -2,7 +2,7 @@
 
 #include "d3d11_device.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 HRESULT
 CreateSwapChain(IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, HWND hWnd,
@@ -10,4 +10,4 @@ CreateSwapChain(IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, HWND hWnd,
                 const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
                 IDXGISwapChain1 **ppSwapChain);
 
-} // namespace dxmt
+} // namespace mullion

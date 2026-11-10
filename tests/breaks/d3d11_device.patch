@@ -1,0 +1,40 @@
+# retain A2C even when the pixel shader supplies its coverage mask
+diff --git a/src/d3d11/d3d11_pipeline.cpp b/src/d3d11/d3d11_pipeline.cpp
+--- a/src/d3d11/d3d11_pipeline.cpp
++++ b/src/d3d11/d3d11_pipeline.cpp
+@@ -91,9 +91,6 @@
+     if (pBlendState) {
+       pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
+     }
+-    // explicit shader coverage disables A2C (D3D11.3 17.18)
+-    if (description->PixelShader && description->PixelShader->reflection().PixelShader.HasCoverageOutput)
+-      info.alpha_to_coverage_enabled = false;
+
+     info.input_primitive_topology = topology_class;
+     info.raster_sample_count = SampleCount;
+diff --git a/src/d3d11/d3d11_pipeline_gs.cpp b/src/d3d11/d3d11_pipeline_gs.cpp
+--- a/src/d3d11/d3d11_pipeline_gs.cpp
++++ b/src/d3d11/d3d11_pipeline_gs.cpp
+@@ -153,9 +153,6 @@
+     if (pBlendState) {
+       pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
+     }
+-    // explicit shader coverage disables A2C (D3D11.3 17.18)
+-    if (description->PixelShader && description->PixelShader->reflection().PixelShader.HasCoverageOutput)
+-      info.alpha_to_coverage_enabled = false;
+
+     info.raster_sample_count = SampleCount;
+
+diff --git a/src/d3d11/d3d11_pipeline_ts.cpp b/src/d3d11/d3d11_pipeline_ts.cpp
+--- a/src/d3d11/d3d11_pipeline_ts.cpp
++++ b/src/d3d11/d3d11_pipeline_ts.cpp
+@@ -180,9 +180,6 @@
+       pBlendState->SetupMetalPipelineDescriptor(
+           (WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
+     }
+-    // explicit shader coverage disables A2C (D3D11.3 17.18)
+-    if (description->PixelShader && description->PixelShader->reflection().PixelShader.HasCoverageOutput)
+-      info.alpha_to_coverage_enabled = false;
+
+     info.raster_sample_count = SampleCount;
+     // so far it's a fixed constant

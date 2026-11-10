@@ -1,0 +1,12 @@
+# a swap chain is created with a format that cannot be displayed
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -466,6 +466,6 @@
+         !IsFlipSwapChainFormat(format))
+       return DXGI_ERROR_INVALID_CALL;
+     UINT support;
+-    if (FAILED(device_->CheckFormatSupport(format, &support)) || !(support & D3D11_FORMAT_SUPPORT_DISPLAY) ||
+-        BufferCount > DXGI_MAX_SWAP_CHAIN_BUFFERS)
++    if ((Format != DXGI_FORMAT_UNKNOWN && (FAILED(device_->CheckFormatSupport(format, &support)) ||
++         !(support & D3D11_FORMAT_SUPPORT_DISPLAY))) || BufferCount > DXGI_MAX_SWAP_CHAIN_BUFFERS)
+       return E_INVALIDARG;

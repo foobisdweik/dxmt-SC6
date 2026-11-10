@@ -1,0 +1,12 @@
+# drops the fourth component of each DXIL buffer store.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2753,7 +2753,7 @@
+       auto base = ir.CreateUDiv(byte_address(h, a(2), a(3)), ir.getInt64(unit->getBitWidth() / 8));
+       // a load reads only the components its users extract, so nothing is read past what the shader asks for
+       uint32_t mask =
+-          store ? constant(a(8)) : used(call) & llvm::maskTrailingOnes<uint32_t>(cast<StructType>(ty)->getNumElements());
++          store ? constant(a(8)) & 7u : used(call) & llvm::maskTrailingOnes<uint32_t>(cast<StructType>(ty)->getNumElements());
+       auto element = ir.getIntNTy(bits);
+       bool feedback = !store && (mask & (1u << 4));
+       if (feedback)

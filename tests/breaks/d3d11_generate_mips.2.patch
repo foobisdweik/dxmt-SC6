@@ -1,0 +1,12 @@
+# maps A8 mip generation through an RGBA view instead of its single-channel view.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1007,7 +1007,7 @@
+         // workaround: mipmap generation of a8unorm is borked, so use a r8unorm view
+         auto fixedViewId = viewId;
+         if (tex->pixelFormat(viewId) == WMTPixelFormatA8Unorm) {
+-          fixedViewId = tex->checkViewUseFormat(viewId, WMTPixelFormatR8Unorm);
++          fixedViewId = tex->checkViewUseFormat(viewId, WMTPixelFormatRGBA8Unorm);
+         }
+         WMT::Texture texture = enc.access(tex, fixedViewId, ResourceAccess::ReadWrite).texture;
+         if (texture.mipmapLevelCount() > 1) {

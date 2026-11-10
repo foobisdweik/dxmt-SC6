@@ -1,0 +1,10 @@
+# Present rejects the legal sync interval four
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -765,5 +765,5 @@
+   Present1(UINT SyncInterval, UINT PresentFlags,
+            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
+     auto began = diag::profile ? diag::Now() : 0;
+-    if (SyncInterval > 4)
++    if (SyncInterval >= 4)
+       return DXGI_ERROR_INVALID_CALL;

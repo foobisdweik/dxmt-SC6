@@ -1,0 +1,12 @@
+# lose the destination mip and array slice of a D3D10 resolve
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -370,7 +370,7 @@
+     DXGI_FORMAT Format
+ ) {
+   d3d11_context_->ResolveSubresource(
+-      GetD3D11Interface<MTLD3D10Texture2D>(pDstResource), DstSubresource,
++      GetD3D11Interface<MTLD3D10Texture2D>(pDstResource), 0,
+       GetD3D11Interface<MTLD3D10Texture2D>(pSrcResource), SrcSubresource, Format
+   );
+ }

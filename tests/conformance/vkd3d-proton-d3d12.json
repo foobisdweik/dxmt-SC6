@@ -1,0 +1,1749 @@
+{
+ "test_advanced_cbv_layout": {
+  "verdict": "passed"
+ },
+ "test_ags_float8_conversion": {
+  "verdict": "failed"
+ },
+ "test_aliasing_barrier": {
+  "verdict": "passed"
+ },
+ "test_aliasing_barrier_edge_cases": {
+  "verdict": "passed"
+ },
+ "test_amplification_shader": {
+  "verdict": "passed"
+ },
+ "test_amplification_shader_execute_indirect_state": {
+  "verdict": "passed"
+ },
+ "test_append_aligned_element": {
+  "verdict": "passed"
+ },
+ "test_atomic_instructions_dxbc": {
+  "verdict": "passed"
+ },
+ "test_atomic_instructions_dxil": {
+  "verdict": "passed"
+ },
+ "test_bindless_bufinfo_dxil": {
+  "verdict": "passed"
+ },
+ "test_bindless_bufinfo_sm51": {
+  "verdict": "passed"
+ },
+ "test_bindless_cbv_dxil": {
+  "verdict": "passed"
+ },
+ "test_bindless_cbv_sm51": {
+  "verdict": "passed"
+ },
+ "test_bindless_full_root_parameters_sm51": {
+  "verdict": "passed"
+ },
+ "test_bindless_heap_sm66": {
+  "verdict": "passed"
+ },
+ "test_bindless_heap_sm66_uav_counter": {
+  "verdict": "passed"
+ },
+ "test_bindless_samplers_dxil": {
+  "verdict": "passed"
+ },
+ "test_bindless_samplers_sm51": {
+  "verdict": "passed"
+ },
+ "test_bindless_srv_dxil": {
+  "verdict": "passed"
+ },
+ "test_bindless_srv_sm51": {
+  "verdict": "passed"
+ },
+ "test_bindless_uav_counter_dxil": {
+  "verdict": "passed"
+ },
+ "test_bindless_uav_counter_sm51": {
+  "verdict": "passed"
+ },
+ "test_bindless_uav_dxil": {
+  "verdict": "passed"
+ },
+ "test_bindless_uav_sm51": {
+  "verdict": "passed"
+ },
+ "test_blend_factor": {
+  "verdict": "passed"
+ },
+ "test_buffer_descriptor_byte_offset": {
+  "verdict": "partly"
+ },
+ "test_buffer_feedback_instructions_dxil": {
+  "verdict": "failed"
+ },
+ "test_buffer_feedback_instructions_sm51": {
+  "verdict": "failed"
+ },
+ "test_buffer_rtv_dsv_usage": {
+  "verdict": "failed"
+ },
+ "test_buffer_srv": {
+  "verdict": "passed"
+ },
+ "test_buffers_oob_behavior_dxbc": {
+  "verdict": "passed"
+ },
+ "test_buffers_oob_behavior_dxil": {
+  "verdict": "passed"
+ },
+ "test_buffers_oob_behavior_vectorized_byte_address": {
+  "verdict": "failed"
+ },
+ "test_buffers_oob_behavior_vectorized_structured_16bit": {
+  "verdict": "passed"
+ },
+ "test_bufinfo_instruction_dxbc": {
+  "verdict": "passed"
+ },
+ "test_bufinfo_instruction_dxil": {
+  "verdict": "passed"
+ },
+ "test_bundle_state_inheritance": {
+  "verdict": "passed"
+ },
+ "test_byte_buffer_addressing_wrap": {
+  "verdict": "failed"
+ },
+ "test_cbv_hoisting_dxil": {
+  "verdict": "passed"
+ },
+ "test_cbv_hoisting_sm51": {
+  "verdict": "passed"
+ },
+ "test_check_feature_support": {
+  "verdict": "passed"
+ },
+ "test_clear_depth_stencil_view": {
+  "verdict": "passed"
+ },
+ "test_clear_render_target_view": {
+  "verdict": "passed"
+ },
+ "test_clear_render_target_view_extreme_values": {
+  "verdict": "passed"
+ },
+ "test_clear_uav_extreme_values": {
+  "verdict": "partly"
+ },
+ "test_clear_uav_mismatch_heap": {
+  "verdict": "passed"
+ },
+ "test_clear_unordered_access_view_buffer": {
+  "verdict": "crashed",
+  "at": "d3d12.exe: test_clear_unordered_access_view_buffer at d3d12_clear.c:778:9"
+ },
+ "test_clear_unordered_access_view_image": {
+  "verdict": "passed"
+ },
+ "test_clip_distance_dxbc": {
+  "verdict": "passed"
+ },
+ "test_clip_distance_dxil": {
+  "verdict": "passed"
+ },
+ "test_clock_calibration": {
+  "verdict": "passed"
+ },
+ "test_combined_clip_and_cull_distances_dxbc": {
+  "verdict": "passed"
+ },
+ "test_combined_clip_and_cull_distances_dxil": {
+  "verdict": "passed"
+ },
+ "test_command_list_initial_pipeline_state": {
+  "verdict": "passed"
+ },
+ "test_compute_queue_buffer": {
+  "verdict": "passed"
+ },
+ "test_compute_queue_buffer_image": {
+  "verdict": "passed"
+ },
+ "test_compute_queue_depth_stencil": {
+  "verdict": "passed"
+ },
+ "test_compute_queue_depth_stencil_msaa": {
+  "verdict": "passed"
+ },
+ "test_compute_queue_render_target": {
+  "verdict": "passed"
+ },
+ "test_compute_queue_render_target_msaa": {
+  "verdict": "passed"
+ },
+ "test_compute_shader_instructions": {
+  "verdict": "passed"
+ },
+ "test_compute_shader_registers": {
+  "verdict": "passed"
+ },
+ "test_conditional_rendering": {
+  "verdict": "passed"
+ },
+ "test_conservative_rasterization_dxbc": {
+  "verdict": "partly"
+ },
+ "test_conservative_rasterization_dxil": {
+  "verdict": "partly"
+ },
+ "test_conservative_ssbo_vectorization_dxbc_heap_desc": {
+  "verdict": "passed"
+ },
+ "test_conservative_ssbo_vectorization_dxbc_root_desc": {
+  "verdict": "passed"
+ },
+ "test_conservative_ssbo_vectorization_dxil_heap_desc": {
+  "verdict": "passed"
+ },
+ "test_conservative_ssbo_vectorization_dxil_root_desc": {
+  "verdict": "passed"
+ },
+ "test_constant_buffer_dxil": {
+  "verdict": "passed"
+ },
+ "test_constant_buffer_relative_addressing": {
+  "verdict": "passed"
+ },
+ "test_constant_buffer_sm51": {
+  "verdict": "passed"
+ },
+ "test_copy_batch": {
+  "verdict": "passed"
+ },
+ "test_copy_block_compressed_texture": {
+  "verdict": "passed"
+ },
+ "test_copy_block_spam": {
+  "verdict": "partly"
+ },
+ "test_copy_buffer_overlap": {
+  "verdict": "passed"
+ },
+ "test_copy_buffer_texture": {
+  "verdict": "passed"
+ },
+ "test_copy_buffer_texture_bc_rgba": {
+  "verdict": "failed"
+ },
+ "test_copy_buffer_to_depth_stencil": {
+  "verdict": "passed"
+ },
+ "test_copy_descriptors": {
+  "verdict": "passed"
+ },
+ "test_copy_descriptors_range_sizes": {
+  "verdict": "passed"
+ },
+ "test_copy_queue_buffer": {
+  "verdict": "passed"
+ },
+ "test_copy_queue_buffer_image": {
+  "verdict": "passed"
+ },
+ "test_copy_queue_depth_stencil": {
+  "verdict": "passed"
+ },
+ "test_copy_queue_depth_stencil_msaa": {
+  "verdict": "passed"
+ },
+ "test_copy_queue_render_target": {
+  "verdict": "passed"
+ },
+ "test_copy_queue_render_target_msaa": {
+  "verdict": "passed"
+ },
+ "test_copy_rtv_descriptors": {
+  "verdict": "passed"
+ },
+ "test_copy_subresource_depth_stencil_batch": {
+  "verdict": "passed"
+ },
+ "test_copy_texture": {
+  "verdict": "passed"
+ },
+ "test_copy_texture_bc_rgba": {
+  "verdict": "passed"
+ },
+ "test_copy_texture_buffer": {
+  "verdict": "passed"
+ },
+ "test_copy_texture_buffer_d24": {
+  "verdict": "failed"
+ },
+ "test_copy_texture_ds_edge_cases": {
+  "verdict": "failed"
+ },
+ "test_copy_texture_mismatch_format": {
+  "verdict": "timeout",
+  "at": "_mtlValidateArgumentsForTextureViewOnDevice:1877: failed assertion `Texture Creation; 1 gave no stack (00f0)"
+ },
+ "test_copy_tiles": {
+  "verdict": "passed"
+ },
+ "test_coverage_dxbc": {
+  "verdict": "passed"
+ },
+ "test_coverage_dxil": {
+  "verdict": "passed"
+ },
+ "test_coverage_export_atoc_dxbc": {
+  "verdict": "passed"
+ },
+ "test_coverage_export_atoc_dxil": {
+  "verdict": "passed"
+ },
+ "test_cpu_descriptors_lifetime": {
+  "verdict": "passed"
+ },
+ "test_cpu_signal_fence": {
+  "verdict": "passed"
+ },
+ "test_create_command_allocator": {
+  "verdict": "passed"
+ },
+ "test_create_command_list": {
+  "verdict": "passed"
+ },
+ "test_create_command_queue": {
+  "verdict": "passed"
+ },
+ "test_create_command_signature": {
+  "verdict": "passed"
+ },
+ "test_create_committed_resource": {
+  "verdict": "passed"
+ },
+ "test_create_compute_pipeline_state": {
+  "verdict": "passed"
+ },
+ "test_create_descriptor_heap": {
+  "verdict": "passed"
+ },
+ "test_create_device": {
+  "verdict": "passed"
+ },
+ "test_create_fence": {
+  "verdict": "passed"
+ },
+ "test_create_graphics_pipeline_state": {
+  "verdict": "failed"
+ },
+ "test_create_heap": {
+  "verdict": "passed"
+ },
+ "test_create_null_descriptors": {
+  "verdict": "passed"
+ },
+ "test_create_pipeline_state": {
+  "verdict": "passed"
+ },
+ "test_create_pipeline_with_null_root_signature": {
+  "verdict": "passed"
+ },
+ "test_create_placed_resource": {
+  "verdict": "passed"
+ },
+ "test_create_placed_resource_size": {
+  "verdict": "passed"
+ },
+ "test_create_query_heap": {
+  "verdict": "crashed",
+  "at": "?+0x0"
+ },
+ "test_create_reserved_resource": {
+  "verdict": "failed"
+ },
+ "test_create_root_signature": {
+  "verdict": "failed"
+ },
+ "test_create_sampler": {
+  "verdict": "passed"
+ },
+ "test_create_sampler2": {
+  "verdict": "partly"
+ },
+ "test_create_unordered_access_view": {
+  "verdict": "passed"
+ },
+ "test_cs_constant_buffer": {
+  "verdict": "passed"
+ },
+ "test_cs_uav_store": {
+  "verdict": "passed"
+ },
+ "test_cube_maps": {
+  "verdict": "passed"
+ },
+ "test_custom_border_color_limits": {
+  "verdict": "failed"
+ },
+ "test_custom_border_color_limits_compute": {
+  "verdict": "failed"
+ },
+ "test_custom_border_color_srgb": {
+  "verdict": "failed"
+ },
+ "test_decrement_uav_counter": {
+  "verdict": "passed"
+ },
+ "test_deferred_clears": {
+  "verdict": "passed"
+ },
+ "test_deferred_clears_dsv_layout": {
+  "verdict": "passed"
+ },
+ "test_denorm_behavior_dxbc": {
+  "verdict": "partly"
+ },
+ "test_denorm_behavior_dxil": {
+  "verdict": "failed"
+ },
+ "test_depth_bias_behaviour": {
+  "verdict": "crashed",
+  "at": "ntdll.dll+0x345900000300000"
+ },
+ "test_depth_bias_formats": {
+  "verdict": "failed"
+ },
+ "test_depth_clip": {
+  "verdict": "passed"
+ },
+ "test_depth_load": {
+  "verdict": "passed"
+ },
+ "test_depth_read_only_view": {
+  "verdict": "passed"
+ },
+ "test_depth_stencil_front_and_back": {
+  "verdict": "partly"
+ },
+ "test_depth_stencil_layout_tracking": {
+  "verdict": "passed"
+ },
+ "test_depth_stencil_sampling": {
+  "verdict": "failed"
+ },
+ "test_depth_stencil_test_no_dsv": {
+  "verdict": "passed"
+ },
+ "test_derivative_hoisting_dxbc": {
+  "verdict": "failed"
+ },
+ "test_derivative_hoisting_dxil": {
+  "verdict": "failed"
+ },
+ "test_descriptor_heap_broken_table_va": {
+  "verdict": "passed"
+ },
+ "test_descriptor_hoisting_root_descriptor": {
+  "verdict": "passed"
+ },
+ "test_descriptor_range_validation": {
+  "verdict": "failed"
+ },
+ "test_descriptor_tables": {
+  "verdict": "passed"
+ },
+ "test_descriptor_tables_overlapping_bindings": {
+  "verdict": "passed"
+ },
+ "test_descriptors_visibility": {
+  "verdict": "passed"
+ },
+ "test_destruction_notifier_callback": {
+  "verdict": "crashed",
+  "at": "d3d12.exe: test_destruction_notifier_callback at d3d12_device.c:1846:10"
+ },
+ "test_destruction_notifier_interfaces": {
+  "verdict": "failed"
+ },
+ "test_device_configuration": {
+  "verdict": "failed"
+ },
+ "test_device_factory": {
+  "verdict": "partly"
+ },
+ "test_device_factory_create_device": {
+  "verdict": "partly"
+ },
+ "test_device_factory_creation": {
+  "verdict": "partly"
+ },
+ "test_device_removed_reason": {
+  "verdict": "failed"
+ },
+ "test_discard_instruction": {
+  "verdict": "passed"
+ },
+ "test_discard_resource": {
+  "verdict": "passed"
+ },
+ "test_discard_resource_uav": {
+  "verdict": "passed"
+ },
+ "test_dispatch_huge_groups": {
+  "verdict": "passed"
+ },
+ "test_dispatch_zero_thread_groups": {
+  "verdict": "passed"
+ },
+ "test_divergent_buffer_index_varying": {
+  "verdict": "passed"
+ },
+ "test_draw_depth_no_ps": {
+  "verdict": "passed"
+ },
+ "test_draw_depth_only": {
+  "verdict": "passed"
+ },
+ "test_draw_indexed_instanced": {
+  "verdict": "passed"
+ },
+ "test_draw_instanced": {
+  "verdict": "passed"
+ },
+ "test_draw_no_descriptor_bindings": {
+  "verdict": "passed"
+ },
+ "test_draw_uav_only": {
+  "verdict": "passed"
+ },
+ "test_dstorage_decompression": {
+  "verdict": "partly"
+ },
+ "test_dual_source_blending_dxbc": {
+  "verdict": "failed"
+ },
+ "test_dual_source_blending_dxil": {
+  "verdict": "failed"
+ },
+ "test_dynamic_depth_bias": {
+  "verdict": "partly"
+ },
+ "test_dynamic_depth_stencil_write": {
+  "verdict": "passed"
+ },
+ "test_dynamic_index_strip_cut": {
+  "verdict": "partly"
+ },
+ "test_early_depth_stencil_tests": {
+  "verdict": "passed"
+ },
+ "test_enhanced_barrier_buffer_transfer": {
+  "verdict": "passed"
+ },
+ "test_enhanced_barrier_castable_dsv": {
+  "verdict": "partly"
+ },
+ "test_enhanced_barrier_castable_formats": {
+  "verdict": "partly"
+ },
+ "test_enhanced_barrier_castable_formats_buffer": {
+  "verdict": "partly"
+ },
+ "test_enhanced_barrier_castable_formats_validation": {
+  "verdict": "partly"
+ },
+ "test_enhanced_barrier_discard_behavior": {
+  "verdict": "passed"
+ },
+ "test_enhanced_barrier_global_direct_queue_smoke": {
+  "verdict": "passed"
+ },
+ "test_enhanced_barrier_self_copy": {
+  "verdict": "passed"
+ },
+ "test_enhanced_barrier_split_barrier": {
+  "verdict": "passed"
+ },
+ "test_enhanced_barrier_subresource": {
+  "verdict": "passed"
+ },
+ "test_enumerate_meta_commands": {
+  "verdict": "passed"
+ },
+ "test_execute_indirect": {
+  "verdict": "passed"
+ },
+ "test_execute_indirect_multi_dispatch": {
+  "verdict": "passed"
+ },
+ "test_execute_indirect_multi_dispatch_root_constants": {
+  "verdict": "passed"
+ },
+ "test_execute_indirect_multi_dispatch_root_descriptors": {
+  "verdict": "passed"
+ },
+ "test_execute_indirect_state": {
+  "verdict": "failed"
+ },
+ "test_execute_indirect_state_predication": {
+  "verdict": "passed"
+ },
+ "test_execute_indirect_state_tier_11": {
+  "verdict": "partly"
+ },
+ "test_execute_indirect_state_vbo_offsets": {
+  "verdict": "passed"
+ },
+ "test_face_culling_dxbc": {
+  "verdict": "passed"
+ },
+ "test_face_culling_dxil": {
+  "verdict": "passed"
+ },
+ "test_fence_pending_signal_cpu_rewind_plain": {
+  "verdict": "passed"
+ },
+ "test_fence_pending_signal_cpu_rewind_shared": {
+  "verdict": "passed"
+ },
+ "test_fence_signal_availability_plain": {
+  "verdict": "passed"
+ },
+ "test_fence_signal_availability_shared": {
+  "verdict": "passed"
+ },
+ "test_fence_signal_ordering_raced_signal": {
+  "verdict": "passed"
+ },
+ "test_fence_signal_ordering_raced_signal_shared": {
+  "verdict": "passed"
+ },
+ "test_fence_values": {
+  "verdict": "passed"
+ },
+ "test_fence_wait_multiple": {
+  "verdict": "failed"
+ },
+ "test_fence_wait_multiple_shared": {
+  "verdict": "failed"
+ },
+ "test_fence_wait_robustness": {
+  "verdict": "passed"
+ },
+ "test_fence_wait_robustness_shared": {
+  "verdict": "timeout",
+  "at": "2 in d3d12core.dll: mullion::MTLD3D12CommandQueueImpl::Watch() at ??:0:0; 1 in d3d12core.dll: mullion::MTLD3D12Fence::Reach(unsigned long long) at ??:0:0; 1 in d3d12core.dll: void std::__1::__contention_wait<8ull, std::__1::NoTimeout>(std::__1::__cxx_atomic_impl<long long, std::__1::__cxx_atomic_base_impl<long long>>*, void const*, void const*, std::__1::NoTimeout) at ??:0:0; 1 in d3d12core.dll: mullion::MTLD3D12Fence::Expect(unsigned long long, std::__1::function<void ()>&&) at ??:0:0"
+ },
+ "test_format_support": {
+  "verdict": "failed"
+ },
+ "test_fp16_rounding_behavior_legacy": {
+  "verdict": "passed"
+ },
+ "test_fp16_rounding_behavior_sm62": {
+  "verdict": "passed"
+ },
+ "test_fp_truncate_roundtrips": {
+  "verdict": "passed"
+ },
+ "test_fractional_viewports": {
+  "verdict": "failed"
+ },
+ "test_fragment_coords": {
+  "verdict": "passed"
+ },
+ "test_gather": {
+  "verdict": "passed"
+ },
+ "test_gather_c": {
+  "verdict": "passed"
+ },
+ "test_geometry_shader_dxbc": {
+  "verdict": "passed"
+ },
+ "test_geometry_shader_dxil": {
+  "verdict": "passed"
+ },
+ "test_get_cached_blob": {
+  "verdict": "failed"
+ },
+ "test_get_copyable_footprints": {
+  "verdict": "passed"
+ },
+ "test_get_copyable_footprints_planar": {
+  "verdict": "passed"
+ },
+ "test_get_resource_tiling": {
+  "verdict": "partly"
+ },
+ "test_gpu_signal_fence": {
+  "verdict": "passed"
+ },
+ "test_gpu_virtual_address": {
+  "verdict": "passed"
+ },
+ "test_graphics_compute_queue_synchronization": {
+  "verdict": "passed"
+ },
+ "test_graphics_queue_buffer": {
+  "verdict": "passed"
+ },
+ "test_graphics_queue_buffer_image": {
+  "verdict": "passed"
+ },
+ "test_graphics_queue_depth_stencil": {
+  "verdict": "passed"
+ },
+ "test_graphics_queue_depth_stencil_msaa": {
+  "verdict": "passed"
+ },
+ "test_graphics_queue_render_target": {
+  "verdict": "passed"
+ },
+ "test_graphics_queue_render_target_msaa": {
+  "verdict": "passed"
+ },
+ "test_gs_topology_mismatch_dxbc": {
+  "verdict": "failed"
+ },
+ "test_gs_topology_mismatch_dxil": {
+  "verdict": "failed"
+ },
+ "test_hull_shader_control_point_phase_dxbc": {
+  "verdict": "passed"
+ },
+ "test_hull_shader_control_point_phase_dxil": {
+  "verdict": "passed"
+ },
+ "test_hull_shader_fork_phase_dxbc": {
+  "verdict": "passed"
+ },
+ "test_hull_shader_fork_phase_dxil": {
+  "verdict": "passed"
+ },
+ "test_hull_shader_vertex_input_patch_constant_phase": {
+  "verdict": "passed"
+ },
+ "test_immediate_constant_buffer_dxbc": {
+  "verdict": "passed"
+ },
+ "test_immediate_constant_buffer_dxil": {
+  "verdict": "passed"
+ },
+ "test_index_buffer_edge_case_stream_output": {
+  "verdict": "failed"
+ },
+ "test_instance_id_dxbc": {
+  "verdict": "passed"
+ },
+ "test_instance_id_dxil": {
+  "verdict": "passed"
+ },
+ "test_instruction_msad_dxbc": {
+  "verdict": "passed"
+ },
+ "test_instruction_msad_dxil": {
+  "verdict": "passed"
+ },
+ "test_integer_blending_pipeline_state": {
+  "verdict": "passed"
+ },
+ "test_large_buffer_descriptors": {
+  "verdict": "passed"
+ },
+ "test_large_heap": {
+  "verdict": "failed"
+ },
+ "test_large_texel_buffer_view": {
+  "verdict": "timeout",
+  "at": "-[MTLTextureDescriptorInternal validateWithDevice:]:1421: failed assertion `Texture Descriptor Validation; 1 gave no stack (00f4)"
+ },
+ "test_layered_rendering_dxbc": {
+  "verdict": "passed"
+ },
+ "test_layered_rendering_dxil": {
+  "verdict": "passed"
+ },
+ "test_line_rasterization": {
+  "verdict": "failed"
+ },
+ "test_line_tessellation_dxbc": {
+  "verdict": "failed"
+ },
+ "test_line_tessellation_dxil": {
+  "verdict": "failed"
+ },
+ "test_map_placed_resources": {
+  "verdict": "passed"
+ },
+ "test_map_resource": {
+  "verdict": "passed"
+ },
+ "test_map_texture_validation": {
+  "verdict": "passed"
+ },
+ "test_memory_model_uav_coherence_thread_group_dxbc": {
+  "verdict": "passed"
+ },
+ "test_memory_model_uav_coherence_thread_group_dxil": {
+  "verdict": "passed"
+ },
+ "test_mesh_shader_create_pipeline": {
+  "verdict": "failed"
+ },
+ "test_mesh_shader_execute_indirect": {
+  "verdict": "passed"
+ },
+ "test_mesh_shader_execute_indirect_state": {
+  "verdict": "passed"
+ },
+ "test_mesh_shader_rendering": {
+  "verdict": "partly"
+ },
+ "test_misc_agility_sdk_feature_checks": {
+  "verdict": "passed"
+ },
+ "test_mismatching_pso_stages": {
+  "verdict": "failed"
+ },
+ "test_mismatching_rtv_dsv_size": {
+  "verdict": "passed"
+ },
+ "test_missing_bindings_root_signature": {
+  "verdict": "passed"
+ },
+ "test_multiple_render_targets": {
+  "verdict": "passed"
+ },
+ "test_multisample_array_texture": {
+  "verdict": "passed"
+ },
+ "test_multisample_quality_levels": {
+  "verdict": "passed"
+ },
+ "test_multisample_rendering": {
+  "verdict": "passed"
+ },
+ "test_multisample_resolve": {
+  "verdict": "passed"
+ },
+ "test_multisample_resolve_formats": {
+  "verdict": "passed"
+ },
+ "test_multisample_resolve_strongly_typed": {
+  "verdict": "failed"
+ },
+ "test_multithread_command_queue_exec": {
+  "verdict": "passed"
+ },
+ "test_multithread_fence_wait": {
+  "verdict": "passed"
+ },
+ "test_multithread_private_data": {
+  "verdict": "passed"
+ },
+ "test_negative_viewports": {
+  "verdict": "partly"
+ },
+ "test_node_count": {
+  "verdict": "passed"
+ },
+ "test_nop_tessellation_shaders": {
+  "verdict": "passed"
+ },
+ "test_null_cbv": {
+  "verdict": "passed"
+ },
+ "test_null_descriptor_mismatch_type": {
+  "verdict": "passed"
+ },
+ "test_null_descriptor_resinfo_dxbc": {
+  "verdict": "passed"
+ },
+ "test_null_descriptor_resinfo_dxil": {
+  "verdict": "passed"
+ },
+ "test_null_rtv": {
+  "verdict": "timeout",
+  "at": "-[AGXG17XFamilyCommandBuffer blitCommandEncoderCommon:]:891: failed assertion `A command encoder is already encoding to this command buffer'; 3 gave no stack (0110 0114 0118)"
+ },
+ "test_null_srv": {
+  "verdict": "passed"
+ },
+ "test_null_uav": {
+  "verdict": "passed"
+ },
+ "test_null_vbv": {
+  "verdict": "passed"
+ },
+ "test_nvx_cubin": {
+  "verdict": "partly"
+ },
+ "test_object_interface": {
+  "verdict": "passed"
+ },
+ "test_object_interface_null_cases": {
+  "verdict": "passed"
+ },
+ "test_open_heap_from_address": {
+  "verdict": "crashed",
+  "at": "winemenubuilder.exe+0x1f788"
+ },
+ "test_pipeline_library": {
+  "verdict": "crashed",
+  "at": "d3d12.exe: test_pipeline_library at d3d12_pso_blob.c:212:10"
+ },
+ "test_pipeline_no_ps_nonzero_rts": {
+  "verdict": "passed"
+ },
+ "test_placed_image_alignment": {
+  "verdict": "passed"
+ },
+ "test_placed_msaa_alignment_workaround": {
+  "verdict": "failed"
+ },
+ "test_placed_msaa_alignments": {
+  "verdict": "passed"
+ },
+ "test_planar_video_formats": {
+  "verdict": "partly"
+ },
+ "test_primitive_id_read_tess_geom": {
+  "verdict": "failed"
+ },
+ "test_primitive_restart": {
+  "verdict": "failed"
+ },
+ "test_primitive_restart_list_topology_stream_output": {
+  "verdict": "passed"
+ },
+ "test_ps_layer_dxbc": {
+  "verdict": "passed"
+ },
+ "test_ps_layer_dxil": {
+  "verdict": "passed"
+ },
+ "test_quad_tessellation_dxbc": {
+  "verdict": "crashed",
+  "at": "winemenubuilder.exe+0x42b26"
+ },
+ "test_quad_tessellation_dxil": {
+  "verdict": "crashed",
+  "at": "d3d12.exe: test_quad_tessellation at d3d12_tessellation.c:382:5"
+ },
+ "test_quad_tessellation_wrong_input_count_dxbc": {
+  "verdict": "crashed",
+  "at": "d3d12.exe: test_quad_tessellation at d3d12_tessellation.c:382:5"
+ },
+ "test_quad_tessellation_wrong_input_count_dxil": {
+  "verdict": "crashed",
+  "at": "d3d12.exe: test_quad_tessellation at d3d12_tessellation.c:382:5"
+ },
+ "test_quad_tessellation_wrong_pso_topology_dxbc": {
+  "verdict": "crashed",
+  "at": "d3d12.exe: test_quad_tessellation at d3d12_tessellation.c:382:5"
+ },
+ "test_quad_tessellation_wrong_pso_topology_dxil": {
+  "verdict": "crashed",
+  "at": "winemenubuilder.exe+0x42b26"
+ },
+ "test_quad_vote_sm67_compute": {
+  "verdict": "partly"
+ },
+ "test_query_heap_cpu_resolve_occlusion": {
+  "verdict": "crashed",
+  "at": "?+0x0"
+ },
+ "test_query_heap_cpu_resolve_timestamp": {
+  "verdict": "crashed",
+  "at": "d3d12.exe: test_query_heap_cpu_resolve_timestamp at d3d12_query.c:785:10"
+ },
+ "test_query_occlusion": {
+  "verdict": "passed"
+ },
+ "test_query_pipeline_statistics": {
+  "verdict": "crashed",
+  "at": "winemenubuilder.exe+0x142a17"
+ },
+ "test_query_timestamp": {
+  "verdict": "passed"
+ },
+ "test_query_timestamp_write_after_read": {
+  "verdict": "passed"
+ },
+ "test_queue_wait": {
+  "verdict": "passed"
+ },
+ "test_r16_texel_buffer_atomic": {
+  "verdict": "passed"
+ },
+ "test_rasterizer_ordered_views_dxbc": {
+  "verdict": "failed"
+ },
+ "test_rasterizer_ordered_views_dxil": {
+  "verdict": "failed"
+ },
+ "test_rayquery_root_desc": {
+  "verdict": "passed"
+ },
+ "test_rayquery_root_table": {
+  "verdict": "failed"
+ },
+ "test_raytracing": {
+  "verdict": "failed"
+ },
+ "test_raytracing_acceleration_structure_validation": {
+  "verdict": "failed"
+ },
+ "test_raytracing_collection_handle_invariance": {
+  "verdict": "failed"
+ },
+ "test_raytracing_collection_identifiers": {
+  "verdict": "passed"
+ },
+ "test_raytracing_create_root_signature_from_subobject": {
+  "verdict": "partly"
+ },
+ "test_raytracing_default_association_tiebreak": {
+  "verdict": "passed"
+ },
+ "test_raytracing_deferred_compilation": {
+  "verdict": "failed"
+ },
+ "test_raytracing_embedded_subobjects": {
+  "verdict": "passed"
+ },
+ "test_raytracing_huge_dispatch": {
+  "verdict": "timeout",
+  "at": "1 in winemetal.dll: MTLCommandBuffer_waitUntilCompleted at ??:0:0; 1 in d3d12core.dll: mullion::MTLD3D12CommandQueueImpl::Watch() at ??:0:0; 1 in d3d12.exe: wait_queue_idle_ at d3d12_crosstest.h:352:10"
+ },
+ "test_raytracing_local_rs_static_sampler": {
+  "verdict": "passed"
+ },
+ "test_raytracing_local_rs_static_sampler_collection": {
+  "verdict": "passed"
+ },
+ "test_raytracing_mismatch_global_rs_link": {
+  "verdict": "crashed",
+  "at": "d3d12.exe: test_raytracing_mismatch_global_rs_link at d3d12_raytracing.c:3947:12"
+ },
+ "test_raytracing_missing_required_objects": {
+  "verdict": "passed"
+ },
+ "test_raytracing_multi_global_rs": {
+  "verdict": "passed"
+ },
+ "test_raytracing_no_global_root_signature": {
+  "verdict": "passed"
+ },
+ "test_raytracing_null_rtas": {
+  "verdict": "passed"
+ },
+ "test_raytracing_object_assignment_ignore_default": {
+  "verdict": "passed"
+ },
+ "test_raytracing_opacity_micro_map": {
+  "verdict": "partly"
+ },
+ "test_raytracing_opacity_micro_map_ray_query": {
+  "verdict": "partly"
+ },
+ "test_raytracing_reject_duplicate_objects": {
+  "verdict": "passed"
+ },
+ "test_raytracing_root_signature_from_subobject": {
+  "verdict": "failed"
+ },
+ "test_read_subresource_rt": {
+  "verdict": "passed"
+ },
+ "test_read_write_subresource": {
+  "verdict": "passed"
+ },
+ "test_read_write_subresource_2d": {
+  "verdict": "passed"
+ },
+ "test_register_space_dxil": {
+  "verdict": "passed"
+ },
+ "test_register_space_sm51": {
+  "verdict": "passed"
+ },
+ "test_render_a8_dxbc": {
+  "verdict": "passed"
+ },
+ "test_render_a8_dxil": {
+  "verdict": "passed"
+ },
+ "test_render_pass_suspend_resume_opts_disabled": {
+  "verdict": "passed"
+ },
+ "test_render_pass_suspend_resume_opts_enabled": {
+  "verdict": "passed"
+ },
+ "test_render_pass_suspend_resume_opts_inline_clears": {
+  "verdict": "passed"
+ },
+ "test_render_target_support_validation": {
+  "verdict": "timeout",
+  "at": "validateWithDevice:5101: failed assertion `Render Pipeline Descriptor Validation; 1 gave no stack (00e0)"
+ },
+ "test_rendering_no_attachments_layers": {
+  "verdict": "passed"
+ },
+ "test_renderpass_rendering": {
+  "verdict": "partly"
+ },
+ "test_renderpass_resolve_suspend_resume": {
+  "verdict": "partly"
+ },
+ "test_renderpass_validation": {
+  "verdict": "partly"
+ },
+ "test_reserved_resource_mapping": {
+  "verdict": "passed"
+ },
+ "test_reset_command_allocator": {
+  "verdict": "passed"
+ },
+ "test_resinfo": {
+  "verdict": "passed"
+ },
+ "test_resolve_batch": {
+  "verdict": "passed"
+ },
+ "test_resolve_image_exhaustive_descriptors": {
+  "verdict": "failed"
+ },
+ "test_resolve_non_issued_query_data": {
+  "verdict": "passed"
+ },
+ "test_resolve_query_data_in_different_command_list": {
+  "verdict": "passed"
+ },
+ "test_resolve_query_data_in_reordered_command_list": {
+  "verdict": "passed"
+ },
+ "test_resolve_subresource_depth": {
+  "verdict": "failed"
+ },
+ "test_resource_allocation_info": {
+  "verdict": "passed"
+ },
+ "test_resource_retain_workaround": {
+  "verdict": "passed"
+ },
+ "test_rgb9e5_rendering": {
+  "verdict": "passed"
+ },
+ "test_root_constant_indexing_dxbc": {
+  "verdict": "passed"
+ },
+ "test_root_constant_indexing_dxil": {
+  "verdict": "failed"
+ },
+ "test_root_constants": {
+  "verdict": "passed"
+ },
+ "test_root_descriptor_offset_sign": {
+  "verdict": "partly"
+ },
+ "test_root_parameter_preservation": {
+  "verdict": "passed"
+ },
+ "test_root_signature_byte_code": {
+  "verdict": "passed"
+ },
+ "test_root_signature_byte_code2": {
+  "verdict": "failed"
+ },
+ "test_root_signature_embedded": {
+  "verdict": "passed"
+ },
+ "test_root_signature_empty_blob": {
+  "verdict": "passed"
+ },
+ "test_root_signature_limits": {
+  "verdict": "passed"
+ },
+ "test_root_signature_priority": {
+  "verdict": "passed"
+ },
+ "test_rwtex1d_array_reinterpretation_dxil": {
+  "verdict": "passed"
+ },
+ "test_rwtex1d_array_reinterpretation_sm51": {
+  "verdict": "passed"
+ },
+ "test_rwtex2d_array_reinterpretation_dxil": {
+  "verdict": "passed"
+ },
+ "test_rwtex2d_array_reinterpretation_sm51": {
+  "verdict": "passed"
+ },
+ "test_sample_c_lz": {
+  "verdict": "passed"
+ },
+ "test_sample_instructions": {
+  "verdict": "failed"
+ },
+ "test_sample_mask_dxbc": {
+  "verdict": "passed"
+ },
+ "test_sample_mask_dxil": {
+  "verdict": "passed"
+ },
+ "test_sample_shading_coverage_mask": {
+  "verdict": "failed"
+ },
+ "test_sampler_border_color": {
+  "verdict": "passed"
+ },
+ "test_sampler_feedback_decode_encode_min_mip": {
+  "verdict": "failed"
+ },
+ "test_sampler_feedback_decode_encode_mip_used": {
+  "verdict": "passed"
+ },
+ "test_sampler_feedback_format_features": {
+  "verdict": "passed"
+ },
+ "test_sampler_feedback_grad": {
+  "verdict": "failed"
+ },
+ "test_sampler_feedback_implicit_lod": {
+  "verdict": "passed"
+ },
+ "test_sampler_feedback_implicit_lod_aniso": {
+  "verdict": "passed"
+ },
+ "test_sampler_feedback_implicit_lod_bias": {
+  "verdict": "passed"
+ },
+ "test_sampler_feedback_min_mip_level": {
+  "verdict": "failed"
+ },
+ "test_sampler_feedback_min_mip_level_array": {
+  "verdict": "failed"
+ },
+ "test_sampler_feedback_mip_used_region_level": {
+  "verdict": "passed"
+ },
+ "test_sampler_feedback_npot_min_mip_level": {
+  "verdict": "failed"
+ },
+ "test_sampler_feedback_npot_used_region": {
+  "verdict": "failed"
+ },
+ "test_sampler_feedback_resource_creation": {
+  "verdict": "failed"
+ },
+ "test_sampler_non_normalized_coordinates": {
+  "verdict": "partly"
+ },
+ "test_sampler_rounding": {
+  "verdict": "failed"
+ },
+ "test_scissor": {
+  "verdict": "passed"
+ },
+ "test_scissor_clamping": {
+  "verdict": "passed"
+ },
+ "test_sdk_configuration1": {
+  "verdict": "partly"
+ },
+ "test_sdk_configuration_creation": {
+  "verdict": "partly"
+ },
+ "test_sdk_configuration_set_sdk_path": {
+  "verdict": "partly"
+ },
+ "test_separate_bindings": {
+  "verdict": "passed"
+ },
+ "test_set_render_targets": {
+  "verdict": "passed"
+ },
+ "test_shader_eval_attribute_dxbc": {
+  "verdict": "passed"
+ },
+ "test_shader_eval_attribute_dxil": {
+  "verdict": "passed"
+ },
+ "test_shader_execution_reordering_basic": {
+  "verdict": "partly"
+ },
+ "test_shader_execution_reordering_ray_query": {
+  "verdict": "partly"
+ },
+ "test_shader_execution_reordering_trace": {
+  "verdict": "partly"
+ },
+ "test_shader_fp16": {
+  "verdict": "passed"
+ },
+ "test_shader_get_render_target_sample_count_dxbc": {
+  "verdict": "passed"
+ },
+ "test_shader_get_render_target_sample_count_dxil": {
+  "verdict": "passed"
+ },
+ "test_shader_input_output_components": {
+  "verdict": "passed"
+ },
+ "test_shader_instructions": {
+  "verdict": "partly"
+ },
+ "test_shader_instructions_dxil": {
+  "verdict": "failed"
+ },
+ "test_shader_interstage_interface": {
+  "verdict": "passed"
+ },
+ "test_shader_io_mismatch": {
+  "verdict": "failed"
+ },
+ "test_shader_sample_position_dxbc": {
+  "verdict": "passed"
+ },
+ "test_shader_sample_position_dxil": {
+  "verdict": "passed"
+ },
+ "test_shader_sm62_denorm": {
+  "verdict": "failed"
+ },
+ "test_shader_sm64_packed": {
+  "verdict": "failed"
+ },
+ "test_shader_sm65_wave_intrinsics": {
+  "verdict": "passed"
+ },
+ "test_shader_sm66_64bit_atomics": {
+  "verdict": "passed"
+ },
+ "test_shader_sm66_compute_derivatives": {
+  "verdict": "passed"
+ },
+ "test_shader_sm66_is_helper_lane": {
+  "verdict": "failed"
+ },
+ "test_shader_sm66_packed": {
+  "verdict": "passed"
+ },
+ "test_shader_sm66_quad_op_semantics": {
+  "verdict": "passed"
+ },
+ "test_shader_sm66_wave_size": {
+  "verdict": "partly"
+ },
+ "test_shader_waveop_maximal_convergence": {
+  "verdict": "failed"
+ },
+ "test_sm67_dynamic_texture_offset": {
+  "verdict": "partly"
+ },
+ "test_sm67_helper_lane_only_wave_ops": {
+  "verdict": "partly"
+ },
+ "test_sm67_helper_lane_wave_ops": {
+  "verdict": "partly"
+ },
+ "test_sm67_integer_sampling": {
+  "verdict": "partly"
+ },
+ "test_sm67_multi_sample_uav": {
+  "verdict": "partly"
+ },
+ "test_sm67_raw_gather": {
+  "verdict": "partly"
+ },
+ "test_sm67_sample_cmp_level": {
+  "verdict": "partly"
+ },
+ "test_sm68_draw_parameters": {
+  "verdict": "partly"
+ },
+ "test_sm68_sample_cmp_bias_grad": {
+  "verdict": "partly"
+ },
+ "test_sm68_wave_size_range": {
+  "verdict": "partly"
+ },
+ "test_sm69_fp16_isspecial": {
+  "verdict": "partly"
+ },
+ "test_sm69_long_vector_intrinsics": {
+  "verdict": "partly"
+ },
+ "test_sm69_long_vector_load_store_heap_desc": {
+  "verdict": "partly"
+ },
+ "test_sm69_long_vector_load_store_root_desc": {
+  "verdict": "partly"
+ },
+ "test_sm69_long_vector_storage": {
+  "verdict": "partly"
+ },
+ "test_sm69_long_vector_waveops": {
+  "verdict": "partly"
+ },
+ "test_sparse_buffer_memory_lifetime": {
+  "verdict": "failed"
+ },
+ "test_sparse_default_mapping": {
+  "verdict": "partly"
+ },
+ "test_sparse_depth_stencil_rendering": {
+  "verdict": "partly"
+ },
+ "test_srgb_unorm_mismatch_usage_aliasing": {
+  "verdict": "passed"
+ },
+ "test_srv_component_mapping": {
+  "verdict": "passed"
+ },
+ "test_static_sampler_dynamic_index": {
+  "verdict": "failed"
+ },
+ "test_stencil_export_dxbc": {
+  "verdict": "passed"
+ },
+ "test_stencil_export_dxil": {
+  "verdict": "passed"
+ },
+ "test_stencil_load": {
+  "verdict": "passed"
+ },
+ "test_structured_buffer_addressing_wrap": {
+  "verdict": "failed"
+ },
+ "test_suballocate_small_textures": {
+  "verdict": "passed"
+ },
+ "test_suballocate_small_textures_size": {
+  "verdict": "failed"
+ },
+ "test_suballocate_va_alignment": {
+  "verdict": "passed"
+ },
+ "test_sv_barycentric": {
+  "verdict": "partly"
+ },
+ "test_tessellation_dcl_index_range_complex_dxbc": {
+  "verdict": "passed"
+ },
+ "test_tessellation_dcl_index_range_complex_dxil": {
+  "verdict": "passed"
+ },
+ "test_tessellation_dcl_index_range_dxbc": {
+  "verdict": "passed"
+ },
+ "test_tessellation_dcl_index_range_dxil": {
+  "verdict": "passed"
+ },
+ "test_tessellation_primitive_id": {
+  "verdict": "passed"
+ },
+ "test_tessellation_read_tesslevel": {
+  "verdict": "failed"
+ },
+ "test_tex1d_array_reinterpretation_dxil": {
+  "verdict": "passed"
+ },
+ "test_tex1d_array_reinterpretation_sm51": {
+  "verdict": "passed"
+ },
+ "test_tex2d_array_reinterpretation_dxil": {
+  "verdict": "passed"
+ },
+ "test_tex2d_array_reinterpretation_sm51": {
+  "verdict": "passed"
+ },
+ "test_texture_feedback_instructions_dxil": {
+  "verdict": "failed"
+ },
+ "test_texture_feedback_instructions_sm51": {
+  "verdict": "failed"
+ },
+ "test_texture_ld": {
+  "verdict": "passed"
+ },
+ "test_texture_resource_barriers": {
+  "verdict": "passed"
+ },
+ "test_tgsm": {
+  "verdict": "passed"
+ },
+ "test_tight_resource_alignment": {
+  "verdict": "partly"
+ },
+ "test_topology_triangle_fan": {
+  "verdict": "partly"
+ },
+ "test_typed_buffer_uav": {
+  "verdict": "passed"
+ },
+ "test_typed_buffers_many_objects_dxbc": {
+  "verdict": "passed"
+ },
+ "test_typed_buffers_many_objects_dxil": {
+  "verdict": "passed"
+ },
+ "test_typed_srv_cast_clear": {
+  "verdict": "passed"
+ },
+ "test_typed_srv_uav_cast": {
+  "verdict": "passed"
+ },
+ "test_typed_uav_store": {
+  "verdict": "passed"
+ },
+ "test_uav_3d_sliced_view": {
+  "verdict": "failed"
+ },
+ "test_uav_clear_exhaustive_descriptors": {
+  "verdict": "failed"
+ },
+ "test_uav_counter_null_behavior_dxbc": {
+  "verdict": "failed"
+ },
+ "test_uav_counter_null_behavior_dxil": {
+  "verdict": "failed"
+ },
+ "test_uav_counters": {
+  "verdict": "passed"
+ },
+ "test_uav_load": {
+  "verdict": "passed"
+ },
+ "test_uav_robustness_oob_structure_element_dxbc": {
+  "verdict": "partly"
+ },
+ "test_uav_robustness_oob_structure_element_dxil": {
+  "verdict": "partly"
+ },
+ "test_unaligned_vertex_stride": {
+  "verdict": "passed"
+ },
+ "test_unbound_rtv_rendering": {
+  "verdict": "passed"
+ },
+ "test_undefined_descriptor_heap_mismatch_types": {
+  "verdict": "failed"
+ },
+ "test_undefined_read_typed_buffer_as_untyped_simple_dxbc": {
+  "verdict": "failed"
+ },
+ "test_undefined_read_typed_buffer_as_untyped_simple_dxil": {
+  "verdict": "failed"
+ },
+ "test_undefined_structured_raw_alias_dxbc": {
+  "verdict": "failed"
+ },
+ "test_undefined_structured_raw_alias_dxil": {
+  "verdict": "failed"
+ },
+ "test_undefined_structured_raw_read_typed_dxbc": {
+  "verdict": "failed"
+ },
+ "test_undefined_structured_raw_read_typed_dxil": {
+  "verdict": "failed"
+ },
+ "test_undefined_typed_read_structured_raw_dxbc": {
+  "verdict": "failed"
+ },
+ "test_undefined_typed_read_structured_raw_dxil": {
+  "verdict": "failed"
+ },
+ "test_uninit_root_parameters": {
+  "verdict": "passed"
+ },
+ "test_uninitialized_pixel_output_dxbc": {
+  "verdict": "failed"
+ },
+ "test_uninitialized_pixel_output_dxil": {
+  "verdict": "failed"
+ },
+ "test_unknown_dsv_format": {
+  "verdict": "passed"
+ },
+ "test_unknown_rtv_format": {
+  "verdict": "passed"
+ },
+ "test_unused_attachments_mix_and_match": {
+  "verdict": "failed"
+ },
+ "test_update_compute_descriptor_tables": {
+  "verdict": "passed"
+ },
+ "test_update_descriptor_heap_after_closing_command_list": {
+  "verdict": "passed"
+ },
+ "test_update_descriptor_tables": {
+  "verdict": "passed"
+ },
+ "test_update_descriptor_tables_after_root_signature_change": {
+  "verdict": "passed"
+ },
+ "test_update_root_descriptors": {
+  "verdict": "passed"
+ },
+ "test_update_tile_mappings": {
+  "verdict": "failed"
+ },
+ "test_update_tile_mappings_remap_smem": {
+  "verdict": "failed"
+ },
+ "test_update_tile_mappings_remap_vmem": {
+  "verdict": "failed"
+ },
+ "test_varying_nointerpolation_mixed_type_dxbc": {
+  "verdict": "passed"
+ },
+ "test_varying_nointerpolation_mixed_type_dxil": {
+  "verdict": "passed"
+ },
+ "test_vbv_stride_edge_cases": {
+  "verdict": "passed"
+ },
+ "test_vertex_id_dxbc": {
+  "verdict": "failed"
+ },
+ "test_vertex_id_dxil": {
+  "verdict": "failed"
+ },
+ "test_vertex_shader_stream_output_dxbc": {
+  "verdict": "passed"
+ },
+ "test_vertex_shader_stream_output_dxil": {
+  "verdict": "passed"
+ },
+ "test_view_instancing": {
+  "verdict": "partly"
+ },
+ "test_view_instancing_indirect_state": {
+  "verdict": "partly"
+ },
+ "test_view_min_lod": {
+  "verdict": "failed"
+ },
+ "test_virtual_queries": {
+  "verdict": "passed"
+ },
+ "test_vkd3d_dxvk_cmdbuf_interop": {
+  "verdict": "partly"
+ },
+ "test_vkd3d_out_of_band_interop": {
+  "verdict": "passed"
+ },
+ "test_vrs": {
+  "verdict": "partly"
+ },
+ "test_vrs_clip_distance": {
+  "verdict": "partly"
+ },
+ "test_vrs_depth_write_dxbc": {
+  "verdict": "partly"
+ },
+ "test_vrs_depth_write_dxil": {
+  "verdict": "partly"
+ },
+ "test_vrs_dxil": {
+  "verdict": "partly"
+ },
+ "test_vrs_image": {
+  "verdict": "partly"
+ },
+ "test_vrs_sample_mask": {
+  "verdict": "partly"
+ },
+ "test_vs_instance_input_nonuniform_workarounds": {
+  "verdict": "passed"
+ },
+ "test_vtable_origins": {
+  "verdict": "passed"
+ },
+ "test_wmma_alloca": {
+  "verdict": "failed"
+ },
+ "test_wmma_copy_transpose": {
+  "verdict": "failed"
+ },
+ "test_wmma_element_wise": {
+  "verdict": "failed"
+ },
+ "test_wmma_extract_insert": {
+  "verdict": "failed"
+ },
+ "test_wmma_fp32_fp8_conversions": {
+  "verdict": "failed"
+ },
+ "test_wmma_fp32_fp8_special_conversions": {
+  "verdict": "failed"
+ },
+ "test_wmma_fp8_fp32_conversions": {
+  "verdict": "failed"
+ },
+ "test_wmma_layout_assumptions": {
+  "verdict": "failed"
+ },
+ "test_wmma_lds_layout": {
+  "verdict": "failed"
+ },
+ "test_wmma_lds_transpose": {
+  "verdict": "failed"
+ },
+ "test_wmma_matmul": {
+  "verdict": "failed"
+ },
+ "test_wmma_matrix_length": {
+  "verdict": "failed"
+ },
+ "test_wmma_multi_matmul": {
+  "verdict": "failed"
+ },
+ "test_wmma_special_conversions": {
+  "verdict": "failed"
+ },
+ "test_workgraph_basic": {
+  "verdict": "partly"
+ },
+ "test_workgraph_basic_recursion": {
+  "verdict": "partly"
+ },
+ "test_workgraph_broadcast_input": {
+  "verdict": "partly"
+ },
+ "test_workgraph_coalesced_input": {
+  "verdict": "partly"
+ },
+ "test_workgraph_cross_group_sharing": {
+  "verdict": "partly"
+ },
+ "test_workgraph_local_root_signature": {
+  "verdict": "partly"
+ },
+ "test_workgraph_shared_inputs": {
+  "verdict": "partly"
+ },
+ "test_workgraph_thread_input": {
+  "verdict": "partly"
+ },
+ "test_workgraph_two_level_broadcast": {
+  "verdict": "partly"
+ },
+ "test_workgraph_two_level_empty": {
+  "verdict": "partly"
+ },
+ "test_write_buffer_immediate": {
+  "verdict": "failed"
+ },
+ "test_write_watch": {
+  "verdict": "failed"
+ },
+ "test_zero_vertex_stride": {
+  "verdict": "passed"
+ }
+}

@@ -1,0 +1,14 @@
+# drops the forced-early fragment-test metadata.
+--- a/src/airconv/air_signature.cpp
++++ b/src/airconv/air_signature.cpp
+@@ -1041,10 +1041,6 @@
+     ConstantAsMetadata::get(function), metadata_output_tuple,
+     metadata_input_tuple
+   };
+-  if (early_fragment_tests) {
+-    function_def_tuple.push_back(MDString::get(context, "early_fragment_tests")
+-    );
+-  }
+   if (max_work_group_size > 0) {
+     auto tuple = MDTuple::get(
+       context, {MDString::get(context, "air.max_work_group_size"),

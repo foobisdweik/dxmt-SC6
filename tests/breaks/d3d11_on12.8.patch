@@ -1,0 +1,14 @@
+# drops the returned fences as soon as queue 0 has been told to wait for them
+--- a/src/d3d11/d3d11_on12.cpp
++++ b/src/d3d11/d3d11_on12.cpp
+@@ -201,8 +201,8 @@ private:
+     ordered_metal_->SignalMetalAt(ordered_value_, ordered_event_.handle);
+     chunk.wait_event = ordered_event_;
+     chunk.wait_value = ordered_value_;
+-    chunk.completed = [completed = std::move(chunk.completed), done = done_, value = ++done_value_,
+-                       returned = std::move(returned)] {
++    returned.clear();
++    chunk.completed = [completed = std::move(chunk.completed), done = done_, value = ++done_value_] {
+       if (completed)
+         completed();
+       done->Signal(value);

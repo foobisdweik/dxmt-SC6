@@ -2,7 +2,7 @@
 
 #include "d3d10_util.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D10Texture1D final : public ID3D10Texture1D {
 
@@ -206,4 +206,4 @@ public:
 
   void STDMETHODCALLTYPE GetDesc(D3D10_TEXTURE3D_DESC *pDesc);
 };
-}; // namespace dxmt
+}; // namespace mullion

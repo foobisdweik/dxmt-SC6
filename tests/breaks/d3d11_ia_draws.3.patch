@@ -1,0 +1,12 @@
+# report zero instead of the selected vertex-buffer offset.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -4210,7 +4210,7 @@
+       if (pStrides != NULL)
+         pStrides[i] = VertexBuffer.Stride;
+       if (pOffsets != NULL)
+-        pOffsets[i] = VertexBuffer.Offset;
++        pOffsets[i] = 0;
+     }
+   }
+ #pragma endregion

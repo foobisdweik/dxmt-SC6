@@ -1,0 +1,12 @@
+# count a deferred region even when its predicate discards all of its draws
+--- a/src/d3d11/d3d11_context_imm.cpp
++++ b/src/d3d11/d3d11_context_imm.cpp
+@@ -613,7 +613,7 @@
+         enc.popDeferredVisibilityQueries();
+       });
+       const auto &part = cmdlist->regions[region];
+-      if (!skips) {
++      if (true) {
+         pipeline_counts_.IAVertices += part.pipeline_counts.IAVertices;
+         pipeline_counts_.IAPrimitives += part.pipeline_counts.IAPrimitives;
+         pipeline_counts_.VSInvocations += part.pipeline_counts.VSInvocations;

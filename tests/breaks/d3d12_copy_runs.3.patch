@@ -1,0 +1,13 @@
+# a copy is joined to the copy before whatever buffers either is between
+# family native
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2036,7 +2036,7 @@
+     auto last = reinterpret_cast<wmtcmd_blit_copy_from_buffer_to_buffer *>(
+         static_cast<BlitEncoderData *>(allocator_->encoder_current)->cmd_tail
+     );
+-    if (src != dst && last->type == WMTBlitCommandCopyFromBufferToBuffer && last->src == src && last->dst == dst &&
++    if (src != dst && last->type == WMTBlitCommandCopyFromBufferToBuffer &&
+         last->src_offset + last->copy_length == SrcOffset && last->dst_offset + last->copy_length == DstOffset) {
+       last->copy_length += ByteCount;
+       return;

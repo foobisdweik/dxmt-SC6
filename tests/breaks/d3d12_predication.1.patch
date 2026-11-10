@@ -1,0 +1,12 @@
+# statistics count the recorded work even when its predicate skips it
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -915,7 +915,7 @@
+       result[10] += dispatches[k].counts[c];
+   for (uint k = sum.first_predicated; k < sum.first_predicated + sum.predicated_count; k++) {
+     constant PredicatedStatistics &count = predicated[k];
+-    if (*count.skips)
++    if (false)
+       continue;
+     result[0] += count.vertices;
+     result[1] += count.primitives;

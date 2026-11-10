@@ -1,0 +1,12 @@
+# ignores the required wave size in shader metadata
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -1171,7 +1171,7 @@
+   // kDxilWaveSizeTag, a number or (DXIL 1.8) a tuple starting with it
+   if (auto size = tag(entry.properties, 11)) {
+     auto tuple = dyn_cast<MDNode>(size->get());
+-    info.wave_size = md_uint(tuple ? tuple->getOperand(0) : *size);
++    info.wave_size = 0;
+   }
+   // SM 6.6 quads: in groups with even X and Y, 2x2 blocks of thread IDs. Metal's are four consecutive threads, which
+   // other groups' quads already are, so these groups' IDs are derived from the flattened one and the group's

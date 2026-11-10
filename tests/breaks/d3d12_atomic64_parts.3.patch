@@ -1,0 +1,13 @@
+# SV_DispatchThreadID omits the part origin
+--- a/src/airconv/dxbc_signature.cpp
++++ b/src/airconv/dxbc_signature.cpp
+@@ -1221,7 +1221,8 @@
+         res.thread_id_arg = ctx.builder.CreateAdd(
+             res.thread_id_arg,
+             ctx.builder.CreateMul(
+-                origin, llvm::ConstantDataVector::get(ctx.llvm, llvm::ArrayRef<uint32_t>(sm50_shader->threadgroup_size))
++                llvm::Constant::getNullValue(origin->getType()),
++                llvm::ConstantDataVector::get(ctx.llvm, llvm::ArrayRef<uint32_t>(sm50_shader->threadgroup_size))
+             )
+         );
+       return std::monostate{};

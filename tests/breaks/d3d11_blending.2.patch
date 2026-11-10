@@ -1,0 +1,13 @@
+# leaves Metal's Zero blend weights, which drop NaNs and signed zeros.
+--- a/src/mullion/mullion_command.hpp
++++ b/src/mullion/mullion_command.hpp
+@@ -133,8 +133,7 @@ MultiplyZeroWeights(std::span<WMTColorAttachmentBlendInfo> colors) {
+               (c.src_rgb_blend_factor == WMTBlendFactorZero || c.dst_rgb_blend_factor == WMTBlendFactorZero ||
+                c.src_alpha_blend_factor == WMTBlendFactorZero || c.dst_alpha_blend_factor == WMTBlendFactorZero);
+     }
+-  if (!zero)
+-    return false;
++  return false;
+   for (auto &c : colors)
+     if (c.blending_enabled && floating(c.pixel_format))
+       for (auto [factor, by] : {std::pair{&c.src_rgb_blend_factor, WMTBlendFactorBlendColor},

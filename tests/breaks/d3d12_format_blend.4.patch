@@ -1,0 +1,12 @@
+# A format that stores its channels rotated claims blending.
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -2195,7 +2195,7 @@
+       return FormatCapability(0);
+     auto capability = format_inspector_.textureCapabilities.at(original);
+     // blending takes the stored channels as they are: rotated ones would blend red with alpha's factors
+-    if (RenderTargetChannels(Format) != RenderTargetChannels(original))
++    if (false)
+       capability = capability & ~FormatCapability::Blend;
+     return capability;
+   };

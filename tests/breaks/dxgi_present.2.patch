@@ -1,0 +1,12 @@
+# GetLastPresentCount includes a frame that was never submitted
+--- a/src/d3d12/d3d12_swapchain.cpp
++++ b/src/d3d12/d3d12_swapchain.cpp
+@@ -671,7 +671,7 @@
+     if (last_present_count == NULL) {
+       return E_POINTER;
+     }
+-    *last_present_count = presentation_count_;
++    *last_present_count = presentation_count_ + 1;
+     return S_OK;
+   };
+ 

@@ -1,0 +1,21 @@
+# negative infinity becomes the signed integer minimum; use the lane walk that consumes the identity
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2123,7 +2123,7 @@
+   // these for 32 bits and less, without groups; the rest walk the lanes
+   auto reduce = [&](const std::string &name, Value *v, Signedness sign, bool prefix, Combine combine, Value *identity,
+                     Value *group = nullptr) -> Value * {
+-    if (v->getType()->getPrimitiveSizeInBits() != 64 && !group)
++    if (v->getType()->getPrimitiveSizeInBits() != 64 && !group && !v->getType()->isFloatingPointTy())
+       return simd(prefix ? "simd_prefix_exclusive_" + name : "simd_" + name, v->getType(), {v}, v->getType(), sign);
+     auto lane = prefix ? lane_index() : nullptr;
+     return over_lanes(
+@@ -2353,7 +2353,7 @@
+                                : ConstantInt::get(vty, APInt::getMaxValue(width));
+         break;
+       default:
+-        identity = fp          ? ConstantFP::getInfinity(vty, true)
++        identity = fp          ? ConstantFP::get(vty, APInt::getSignedMinValue(width).roundToDouble(true))
+                    : is_signed ? ConstantInt::get(vty, APInt::getSignedMinValue(width))
+                                : Constant::getNullValue(vty);
+       }

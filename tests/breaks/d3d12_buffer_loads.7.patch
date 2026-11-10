@@ -1,0 +1,12 @@
+# a structured load past the end reads the view's first element
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -3296,7 +3296,7 @@
+   auto Units = ir.CreateZExtOrTrunc(ir.CreateUDiv(Bytes, llvm::ConstantInt::get(Bytes->getType(), UnitBytes)), Last->getType());
+   auto Whole = ir.CreateICmpULT(Last, Units);
+   auto Value = Read(ir.CreateSelect(Whole, Base, llvm::ConstantInt::get(Base->getType(), 0)), true);
+-  return ir.CreateSelect(Whole, Value, llvm::Constant::getNullValue(Value->getType()));
++  return Value;
+ }
+ 
+ llvm::Value *

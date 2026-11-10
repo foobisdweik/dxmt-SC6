@@ -1,0 +1,11 @@
+# queue Signal changes the fence before the queue reaches the signal
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -1266,6 +1266,7 @@
+   HRESULT STDMETHODCALLTYPE
+   Signal(ID3D12Fence *pFence, UINT64 Value) {
+     // from the CPU, once the work before has completed and what it left for the CPU is done
++    static_cast<MTLD3D12Fence *>(pFence)->completion->Reach(Value);
+     auto work = [this, fence = Com<MTLD3D12Fence, false>(static_cast<MTLD3D12Fence *>(pFence)), Value] {
+       // after a submission another thread is in the middle of
+       std::lock_guard<mullion::mutex> lock(mutex_commit_);

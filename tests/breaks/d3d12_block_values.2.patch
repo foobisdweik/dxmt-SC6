@@ -1,0 +1,12 @@
+# BC4 signed endpoints are decoded as unsigned.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -1012,7 +1012,7 @@
+     break;
+   }
+   case DXGI_FORMAT_BC4_SNORM: {
+-    description.PixelFormat = WMTPixelFormatBC4_RSnorm;
++    description.PixelFormat = WMTPixelFormatBC4_RUnorm;
+     description.Flag = MTL_DXGI_FORMAT_BC;
+     description.BlockSize = 8;
+     break;

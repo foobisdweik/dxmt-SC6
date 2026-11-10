@@ -1,0 +1,13 @@
+# a buffer placed in an imported heap is made 64KB long, past the region the heap wraps
+# family native
+--- a/src/d3d12/d3d12_buffer.cpp
++++ b/src/d3d12/d3d12_buffer.cpp
+@@ -67,7 +67,7 @@
+         return FAIL(E_INVALIDARG);
+       // the memory the heap's owner made ends where the heap does: the rest of a 64KB granule past it is not ours to
+       // wrap
+-      length = std::min<uint64_t>(align(length, desc_.Alignment), size - Offset);
++      length = align(length, desc_.Alignment);
+       memory = std::shared_ptr<void>(pHeap->memory, (char *)pHeap->memory.get() + Offset);
+     } else if (HeapFlags & D3D12_HEAP_FLAG_ALLOW_WRITE_WATCH) {
+       SYSTEM_INFO system;

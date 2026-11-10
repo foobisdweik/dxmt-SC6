@@ -1,0 +1,12 @@
+# omits the no-bit-found all-ones result for firstbit.
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1031,7 +1031,7 @@
+   }
+   // a count of the operand's whole width, or more, says no bit was found
+   auto Bits = Value->getType()->getScalarSizeInBits();
+-  return MaxIfInMask(llvm::maskTrailingOnes<uint64_t>(Bits) - (Bits - 1), Value);
++  return Value;
+ }
+ 
+ llvm::Value *

@@ -19,68 +19,66 @@
 #include "Metal.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d12_device.hpp"
-#include "d3d12_pageable.hpp"
 #include "d3d12_pipeline.hpp"
 #include "log/log.hpp"
+#include <array>
+#include <limits>
+#include <map>
 
-namespace dxmt {
+namespace mullion {
 
-class MTLD3D12ComputePipelineStateImpl : public MTLD3D12Pageable<MTLD3D12ComputePipelineState> {
+class MTLD3D12ComputePipelineStateImpl : public MTLD3D12PipelineObject<MTLD3D12ComputePipelineState> {
 
+  // held for the pipeline's life, as a graphics pipeline holds its shaders
+  SM50Shader shader_cs;
   MTL_SHADER_REFLECTION ref_cs;
 
 public:
-  MTLD3D12ComputePipelineStateImpl(MTLD3D12Device *pDevice) : MTLD3D12Pageable<MTLD3D12ComputePipelineState>(pDevice) {
+  MTLD3D12ComputePipelineStateImpl(MTLD3D12Device *pDevice) :
+      MTLD3D12PipelineObject<MTLD3D12ComputePipelineState>(pDevice) {
     IsComputePipelineState = 1;
   }
 
   HRESULT
   Initialize(const D3D12_COMPUTE_PIPELINE_STATE_DESC *pDesc) {
-
-    SM50Shader shader_cs;
-    SM50Error sm50_err;
-
-    SM50_SHADER_ROOT_SIGNATURE_DATA rootsig;
+    auto start = device_->NamesPasses() ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point();
+    SM50_SHADER_ROOT_SIGNATURE_DATA rootsig{};
     rootsig.type = SM50_SHADER_ROOT_SIGNATURE;
-    if (pDesc->pRootSignature) {
-      rootsig.bytecode_length = static_cast<MTLD3D12RootSignature *>(pDesc->pRootSignature)->GetBlob(&rootsig.bytecode);
-    } else {
-      rootsig.bytecode = pDesc->CS.pShaderBytecode;
-      rootsig.bytecode_length = pDesc->CS.BytecodeLength;
-    }
+    rootsig.bytecode_length = static_cast<MTLD3D12RootSignature *>(pDesc->pRootSignature)->GetBlob(&rootsig.bytecode);
     rootsig.next = nullptr;
 
     SM50_SHADER_COMMON_DATA common;
-    common.flags = {};
+    common.flags = SM50_SHADER_FLAG(device_->GetShaderFlags() | left_out);
     common.type = SM50_SHADER_COMMON;
-    common.metal_version = SM50_SHADER_METAL_310;
+    common.metal_version = device_->GetMetalVersion();
+    common.simd_width = device_->GetSIMDWidth();
     common.next = &rootsig;
 
-    if (HRESULT hr = InitializeShader(pDesc->CS, &shader_cs, &ref_cs); FAILED(hr))
+    Name({pDesc->CS});
+    if (HRESULT hr = InitializeShader(device_, pDesc->CS, &shader_cs, &ref_cs); FAILED(hr))
       return hr;
 
     threadgroup_size = {ref_cs.ThreadgroupSize[0], ref_cs.ThreadgroupSize[1], ref_cs.ThreadgroupSize[2]};
-
-    SM50ShaderBitcode cs_bitcode;
-
-    if (SM50Compile(shader_cs, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&common, "cs_main", &cs_bitcode, &sm50_err)) {
-      ERR("Failed to compile cs shader: ", SM50GetErrorMessageString(sm50_err));
-      return E_FAIL;
-    }
-
-    SM50_COMPILED_BITCODE cs_bitcode_compiled;
-
-    SM50GetCompiledBitcode(cs_bitcode, &cs_bitcode_compiled);
-
-    auto cs_data = WMT::MakeDispatchData(cs_bitcode_compiled.Data, cs_bitcode_compiled.Size);
+    bool locks = ref_cs.DeviceAtomics64 &&
+                 (!ref_cs.DeviceAtomics64Native || (device_->GetShaderFlags() & SM50_SHADER_FLAG_NO_ATOMIC_MINMAX64));
+    groups_work_together = ref_cs.GroupsWorkTogether || locks;
+    if (groups_work_together)
+      Logger::info(str::format("compute pipeline ", name, ": its threadgroups work together, it is dispatched in parts"));
 
     auto metal = device_->GetMTLDevice();
-
+    auto args = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&common;
+    HRESULT status = E_FAIL;
+    auto cs_func = CompileFunction(
+        device_, this, std::array{pDesc->CS}, args, "cs_main", [&](auto args, auto name, auto bitcode, auto error) {
+          auto result = SM50Compile(shader_cs, args, name, bitcode, error);
+          if (result)
+            status = E_INVALIDARG;
+          return result;
+        }
+    );
+    if (!cs_func)
+      return status;
     WMT::Reference<WMT::Error> err;
-
-    auto cs_lib = metal.newLibrary(cs_data, err);
-
-    auto cs_func = cs_lib.newFunction("cs_main");
 
     // PSO
     {
@@ -89,13 +87,22 @@ public:
       info.compute_function = cs_func;
       info.support_indirect_command_buffers = true;
 
-      pso = metal.newComputePipelineState(info, err);
+      pso = device_->Archived(info, err, [&](auto &info, auto &error) { return metal.newComputePipelineState(info, error); });
       if (!pso) {
-        ERR("Failed to create compute PSO: ", err.description().getUTF8String());
+        ERR("Failed to create compute PSO of shader ", name, ": ", err.description().getUTF8String());
+        DumpShaders({pDesc->CS});
         return E_FAIL;
       }
     }
+    // a lock's holder waits behind the spinning SIMD groups that share its core (MTL_SHADER_REFLECTION::DeviceAtomics64):
+    // those of a part run at once, where other waits need only be kept
+    if (groups_work_together)
+      groups_at_once = device_->GroupsAtOnce(
+          pso, uint64_t(threadgroup_size.width) * threadgroup_size.height * threadgroup_size.depth, !locks
+      );
 
+    if (device_->NamesPasses())
+      device_->PipelineMade(name, "compute", start);
     return S_OK;
   }
 
@@ -103,7 +110,7 @@ public:
   STDMETHODCALLTYPE
   QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
-      return E_POINTER;
+      return FAIL(E_POINTER);
 
     *ppvObject = nullptr;
 
@@ -117,25 +124,303 @@ public:
       WARN("D3D12ComputePipelineState: Unknown interface query ", str::format(riid));
     }
 
-    return E_NOINTERFACE;
+    return MTLD3D12PipelineObject::QueryInterface(riid, ppvObject);
   }
 
   virtual HRESULT STDMETHODCALLTYPE
   GetCachedBlob(ID3DBlob **blob) {
-    IMPLEMENT_ME
-    return E_NOTIMPL;
+    return GetCachedPipelineBlob(blob);
   }
 };
 
 HRESULT
 CreateComputePipelineState(
-    MTLD3D12Device *pDevice, const D3D12_COMPUTE_PIPELINE_STATE_DESC *pDesc, REFIID riid, void **ppPipelineState
+    MTLD3D12Device *pDevice, const D3D12_COMPUTE_PIPELINE_STATE_DESC *pDesc, REFIID riid, void **ppPipelineState,
+    const PipelineShaderCache *cached
 ) {
+  if (HRESULT hr = CheckCachedPipeline(pDesc->CachedPSO); FAILED(hr))
+    return hr;
+  auto desc = *pDesc;
+  Com<ID3D12RootSignature> embedded;
+  if (!desc.pRootSignature) {
+    if (!ShaderContainerHolds(desc.CS.pShaderBytecode, desc.CS.BytecodeLength))
+      return FAIL(E_INVALIDARG);
+    HRESULT hr = CreateRootSignature(
+        pDevice, 0, desc.CS.pShaderBytecode, desc.CS.BytecodeLength, __uuidof(ID3D12RootSignature),
+        reinterpret_cast<void **>(&embedded)
+    );
+    if (FAILED(hr))
+      return hr == E_FAIL ? FAIL(E_INVALIDARG) : hr;
+    desc.pRootSignature = embedded.ptr();
+  }
   auto pso = Com(new MTLD3D12ComputePipelineStateImpl(pDevice));
-  HRESULT hr = pso->Initialize(pDesc);
+  if (HRESULT hr = PipelineKey(*pDesc, pso->library_key); FAILED(hr))
+    return hr;
+  Lean(*pso.ptr(), pDevice, {.desc_cs = *pDesc});
+  if (cached)
+    pso->cached_shaders = *cached;
+  HRESULT hr = pso->Initialize(&desc);
   if (FAILED(hr))
     return hr;
   return pso->QueryInterface(riid, ppPipelineState);
 };
 
-} // namespace dxmt
+class MTLD3D12PipelineLibrary : public MTLD3D12DeviceChild<ID3D12PipelineLibrary1> {
+  static constexpr char kMagic[] = "Mullion library 2";
+  static constexpr SIZE_T kHeaderSize = sizeof(kMagic) + sizeof(uint32_t) + sizeof(uint64_t) + sizeof(Sha1Digest);
+  struct Entry {
+    Sha1Digest key;
+    Com<MTLD3D12PipelineState, false> pipeline;
+    std::vector<Sha1Digest> shaders;
+  };
+  mullion::mutex mutex_;
+  std::map<std::wstring, Entry, std::less<>> entries_;
+  PipelineShaderCache shaders_;
+
+  SIZE_T
+  SerializedSize() const {
+    SIZE_T size = kHeaderSize + sizeof(uint64_t);
+    for (auto &[key, data] : shaders_)
+      size += sizeof(key) + sizeof(uint64_t) + data.getBytes(nullptr, 0);
+    for (auto &[name, entry] : entries_)
+      size += 2 * sizeof(uint64_t) + sizeof(entry.key) + entry.shaders.size() * sizeof(Sha1Digest) +
+              name.size() * sizeof(WCHAR);
+    return size;
+  }
+
+  HRESULT
+  Load(LPCWSTR name, const PipelineStateStream &desc, REFIID iid, void **pipeline) try {
+    InitReturnPtr(pipeline);
+    if (!name)
+      return FAIL(E_INVALIDARG);
+    Sha1Digest key;
+    if (HRESULT hr = desc.Key(key); FAILED(hr))
+      return hr;
+    std::unique_lock lock(mutex_);
+    auto found = entries_.find(name);
+    // a miss is what LoadPipeline answers for a pipeline not stored yet, not a refusal: it says nothing
+    if (found == entries_.end() || found->second.key != key)
+      return E_INVALIDARG;
+    if (!found->second.pipeline) {
+      PipelineShaderCache cached;
+      for (auto shader : found->second.shaders)
+        cached.emplace(shader, shaders_.at(shader));
+      lock.unlock();
+      Com<ID3D12PipelineState> made;
+      if (HRESULT hr = desc.Create(device_, __uuidof(ID3D12PipelineState), (void **)&made, &cached); FAILED(hr))
+        return hr;
+      lock.lock();
+      found = entries_.find(name);
+      if (!found->second.pipeline)
+        found->second.pipeline = static_cast<MTLD3D12PipelineState *>(made.ptr());
+    }
+    return found->second.pipeline->QueryInterface(iid, pipeline);
+  } catch (const std::bad_alloc &) {
+    return FAIL(E_OUTOFMEMORY);
+  }
+
+public:
+  MTLD3D12PipelineLibrary(MTLD3D12Device *device) :
+      MTLD3D12DeviceChild<ID3D12PipelineLibrary1>(device) {}
+
+  HRESULT
+  Initialize(const void *blob, SIZE_T size) {
+    if (!size)
+      return S_OK;
+    if (!blob)
+      return FAIL(E_INVALIDARG);
+    // a blob that is not a Mullion library at all (another driver's, an older Mullion's) is one of another driver:
+    // games keep their pipeline cache file across runs and only replace it on DRIVER_VERSION_MISMATCH, so
+    // E_INVALIDARG would leave them building every pipeline on every launch (vkd3d-proton's
+    // d3d12_cached_pipeline_state_validate: "Avoid E_INVALIDARG with an invalid header size, since that may confuse
+    // some games")
+    if (size < kHeaderSize || memcmp(blob, kMagic, sizeof(kMagic)))
+      return D3D12_ERROR_DRIVER_VERSION_MISMATCH;
+    auto data = static_cast<const char *>(blob);
+    SIZE_T offset = sizeof(kMagic);
+    auto read = [&](auto &value) {
+      if (sizeof(value) > size - offset)
+        return false;
+      memcpy(&value, data + offset, sizeof(value));
+      offset += sizeof(value);
+      return true;
+    };
+    uint32_t version;
+    uint64_t adapter;
+    Sha1Digest checksum;
+    read(version), read(adapter), read(checksum);
+    Sha1HashState hash;
+    hash.update(data, kHeaderSize - sizeof(checksum));
+    hash.update(data + kHeaderSize, size - kHeaderSize);
+    if (hash.final() != checksum)
+      return FAIL(E_INVALIDARG);
+    if (version != AIRCONV_VERSION)
+      return D3D12_ERROR_DRIVER_VERSION_MISMATCH;
+    if (adapter != device_->GetMTLDevice().registryID())
+      return D3D12_ERROR_ADAPTER_NOT_FOUND;
+    uint64_t shaders;
+    if (!read(shaders) || shaders > (size - offset) / (sizeof(Sha1Digest) + sizeof(uint64_t)))
+      return FAIL(E_INVALIDARG);
+    for (uint64_t i = 0; i < shaders; i++) {
+      Sha1Digest key;
+      uint64_t length;
+      if (!read(key) || !read(length) || !length || length > size - offset || shaders_.contains(key))
+        return FAIL(E_INVALIDARG);
+      auto compiled = WMT::MakeDispatchData(uint64_t(data + offset), length);
+      if (!compiled)
+        return FAIL(E_OUTOFMEMORY);
+      shaders_.emplace(key, std::move(compiled));
+      offset += length;
+    }
+    while (offset < size) {
+      uint64_t length, count;
+      Entry entry{};
+      if (!read(length) || !read(entry.key) || !read(count) || !count || count > (size - offset) / sizeof(Sha1Digest))
+        return FAIL(E_INVALIDARG);
+      for (uint64_t i = 0; i < count; i++) {
+        Sha1Digest key;
+        read(key);
+        if (!shaders_.contains(key))
+          return FAIL(E_INVALIDARG);
+        entry.shaders.push_back(key);
+      }
+      if (length > (size - offset) / sizeof(WCHAR))
+        return FAIL(E_INVALIDARG);
+      std::wstring name(length, L'\0');
+      memcpy(name.data(), data + offset, length * sizeof(WCHAR));
+      offset += length * sizeof(WCHAR);
+      if (name.find(L'\0') != std::wstring::npos || !entries_.try_emplace(std::move(name), std::move(entry)).second)
+        return FAIL(E_INVALIDARG);
+    }
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  QueryInterface(REFIID iid, void **object) override {
+    if (!object)
+      return FAIL(E_POINTER);
+    *object = nullptr;
+    if (iid == __uuidof(IUnknown) || iid == __uuidof(ID3D12Object) || iid == __uuidof(ID3D12DeviceChild) ||
+        iid == __uuidof(ID3D12PipelineLibrary) || iid == __uuidof(ID3D12PipelineLibrary1))
+      *object = static_cast<ID3D12PipelineLibrary1 *>(ref(this));
+    return *object ? S_OK : MTLD3D12DeviceChild::QueryInterface(iid, object);
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  StorePipeline(LPCWSTR name, ID3D12PipelineState *pipeline) override {
+    if (!pipeline)
+      return FAIL(E_INVALIDARG);
+    Com<ID3D12Device> parent;
+    if (FAILED(pipeline->GetDevice(__uuidof(ID3D12Device), (void **)&parent)) || parent.ptr() != device_)
+      return FAIL(E_INVALIDARG);
+    std::lock_guard lock(mutex_);
+    try {
+      auto state = static_cast<MTLD3D12PipelineState *>(pipeline);
+      if (entries_.contains(name ? name : L""))
+        return FAIL(E_INVALIDARG);
+      Entry entry{state->library_key, state, {}};
+      std::lock_guard shader_lock(state->shader_mutex);
+      for (auto &[key, data] : state->cached_shaders) {
+        data = shaders_.try_emplace(key, data).first->second;
+        entry.shaders.push_back(key);
+      }
+      entries_.emplace(name ? name : L"", std::move(entry));
+      return S_OK;
+    } catch (const std::bad_alloc &) {
+      return FAIL(E_OUTOFMEMORY);
+    }
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  LoadGraphicsPipeline(
+      LPCWSTR name, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *desc, REFIID iid, void **pipeline
+  ) override {
+    InitReturnPtr(pipeline);
+    if (!desc)
+      return FAIL(E_INVALIDARG);
+    PipelineStateStream description;
+    description.desc_graphics = *desc;
+    return Load(name, description, iid, pipeline);
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  LoadComputePipeline(
+      LPCWSTR name, const D3D12_COMPUTE_PIPELINE_STATE_DESC *desc, REFIID iid, void **pipeline
+  ) override {
+    InitReturnPtr(pipeline);
+    if (!desc)
+      return FAIL(E_INVALIDARG);
+    PipelineStateStream description;
+    description.desc_cs = *desc;
+    return Load(name, description, iid, pipeline);
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  LoadPipeline(LPCWSTR name, const D3D12_PIPELINE_STATE_STREAM_DESC *desc, REFIID iid, void **pipeline) override {
+    InitReturnPtr(pipeline);
+    PipelineStateStream description;
+    if (HRESULT hr = description.Parse(desc); FAILED(hr))
+      return hr;
+    return Load(name, description, iid, pipeline);
+  }
+
+  SIZE_T STDMETHODCALLTYPE
+  GetSerializedSize() override {
+    std::lock_guard lock(mutex_);
+    return SerializedSize();
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  Serialize(void *blob, SIZE_T size) override {
+    std::lock_guard lock(mutex_);
+    auto required = SerializedSize();
+    if (!blob || size < required)
+      return FAIL(E_INVALIDARG);
+    auto data_ptr = static_cast<char *>(blob);
+    SIZE_T offset = 0;
+    auto write = [&](const void *value, SIZE_T bytes) {
+      memcpy(data_ptr + offset, value, bytes);
+      offset += bytes;
+    };
+    uint32_t version = AIRCONV_VERSION;
+    uint64_t adapter = device_->GetMTLDevice().registryID();
+    write(kMagic, sizeof(kMagic)), write(&version, sizeof(version)), write(&adapter, sizeof(adapter));
+    offset = kHeaderSize;
+    uint64_t count = shaders_.size();
+    write(&count, sizeof(count));
+    for (auto &[key, data] : shaders_) {
+      uint64_t length = data.getBytes(nullptr, 0);
+      write(&key, sizeof(key)), write(&length, sizeof(length));
+      data.getBytes(data_ptr + offset, length);
+      offset += length;
+    }
+    for (auto &[name, entry] : entries_) {
+      uint64_t length = name.size();
+      uint64_t shaders = entry.shaders.size();
+      write(&length, sizeof(length)), write(&entry.key, sizeof(entry.key)), write(&shaders, sizeof(shaders));
+      write(entry.shaders.data(), shaders * sizeof(Sha1Digest));
+      write(name.data(), length * sizeof(WCHAR));
+    }
+    Sha1HashState hash;
+    hash.update(data_ptr, kHeaderSize - sizeof(Sha1Digest));
+    hash.update(data_ptr + kHeaderSize, required - kHeaderSize);
+    auto checksum = hash.final();
+    memcpy(data_ptr + kHeaderSize - sizeof(checksum), &checksum, sizeof(checksum));
+    return S_OK;
+  }
+};
+
+HRESULT
+CreatePipelineLibrary(MTLD3D12Device *Device, const void *Blob, SIZE_T Size, REFIID Iid, void **Library) {
+  InitReturnPtr(Library);
+  try {
+    auto library = Com(new MTLD3D12PipelineLibrary(Device));
+    if (HRESULT hr = library->Initialize(Blob, Size); FAILED(hr))
+      return hr;
+    return Library ? library->QueryInterface(Iid, Library) : S_FALSE;
+  } catch (const std::bad_alloc &) {
+    return FAIL(E_OUTOFMEMORY);
+  }
+}
+
+} // namespace mullion

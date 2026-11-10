@@ -1,0 +1,12 @@
+# deferred NO_OVERWRITE writes suballocation zero instead of the recorded one (R14)
+--- a/src/d3d11/d3d11_context_def.cpp
++++ b/src/d3d11/d3d11_context_def.cpp
+@@ -198,7 +198,7 @@
+           return D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD;
+         }
+         auto &allocation_state = ret->second;
+-        pMappedResource->pData = allocation_state.allocation->mappedMemory(allocation_state.suballocation);
++        pMappedResource->pData = allocation_state.allocation->mappedMemory(0);
+         pMappedResource->RowPitch = buffer_length;
+         pMappedResource->DepthPitch = buffer_length;
+       }

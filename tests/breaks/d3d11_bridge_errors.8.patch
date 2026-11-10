@@ -1,0 +1,12 @@
+# return the MTLDevice_newLinkedComputePipelineState error without ownership
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -3747,7 +3747,7 @@
+                                                                                                options:MTLPipelineOptionNone
+                                                                                             reflection:nil
+                                                                                                  error:&err];
+-    params->ret_error = (obj_handle_t)[err retain];
++    params->ret_error = (obj_handle_t)err;
+     [descriptor release];
+   }
+   return STATUS_SUCCESS;

@@ -1,0 +1,12 @@
+# report mip zero for D3D10 texture3D shader views
+--- a/src/d3d10/d3d10_view.cpp
++++ b/src/d3d10/d3d10_view.cpp
+@@ -43,7 +43,7 @@
+     break;
+   case D3D11_SRV_DIMENSION_TEXTURE3D:
+     pDesc->Texture3D.MipLevels = d3d11_desc.Texture3D.MipLevels;
+-    pDesc->Texture3D.MostDetailedMip = d3d11_desc.Texture3D.MostDetailedMip;
++    pDesc->Texture3D.MostDetailedMip = 0;
+     break;
+   case D3D11_SRV_DIMENSION_TEXTURECUBE:
+     pDesc->TextureCube.MipLevels = d3d11_desc.TextureCube.MipLevels;

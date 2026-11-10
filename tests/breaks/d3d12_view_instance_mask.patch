@@ -1,0 +1,14 @@
+# SetViewInstanceMask is not implemented, and stops the process
+# family native
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -4121,8 +4121,7 @@ public:
+ 
+   void STDMETHODCALLTYPE
+   SetViewInstanceMask(UINT Mask) {
+-    // no pipeline has view instancing (ViewInstancingTier is NOT_SUPPORTED): "The view instance mask is only honored
+-    // by PSOs that have view instancing enabled" (D3D12 View Instancing)
++    IMPLEMENT_ME
+   }
+ 
+   void STDMETHODCALLTYPE

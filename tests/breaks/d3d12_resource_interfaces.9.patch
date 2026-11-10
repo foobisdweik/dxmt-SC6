@@ -1,0 +1,12 @@
+# a resource with no protected session leaves the output set
+--- a/src/d3d12/d3d12_device.hpp
++++ b/src/d3d12/d3d12_device.hpp
+@@ -117,8 +117,6 @@
+ 
+   HRESULT STDMETHODCALLTYPE
+   GetProtectedResourceSession(REFIID riid, void **ppProtectedSession) override {
+-    if (ppProtectedSession)
+-      *ppProtectedSession = nullptr;
+     return E_NOINTERFACE;
+   }
+ 

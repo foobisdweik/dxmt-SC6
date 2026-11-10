@@ -1,0 +1,10 @@
+# use MAX for the D3D12 MIN blend operation.
+diff --git a/src/d3d12/d3d12_pipeline_graphics.cpp b/src/d3d12/d3d12_pipeline_graphics.cpp
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -66,4 +66,4 @@ constexpr WMTBlendOperation kBlendOpMap[] = {
+     WMTBlendOperationAdd, // padding 0
+     WMTBlendOperationAdd, WMTBlendOperationSubtract, WMTBlendOperationReverseSubtract,
+-    WMTBlendOperationMin, WMTBlendOperationMax,
++    WMTBlendOperationMax, WMTBlendOperationMax,
+ };

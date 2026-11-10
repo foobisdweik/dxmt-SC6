@@ -1,0 +1,12 @@
+# the last bound viewport is treated as absent
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5589,7 +5589,7 @@
+       auto render_target_width = render_pass_width_, render_target_height = render_pass_height_;
+       auto scissors = AllocateCommandData<WMTScissorRect>(viewport_count);
+       for (unsigned i = 0; i < viewport_count; i++) {
+-        if (i >= state_.Rasterizer.NumViewports) {
++        if (i + 1 >= state_.Rasterizer.NumViewports) {
+           scissors[i] = {0, 0, 0, 0};
+         } else if (allow_scissor) {
+           if (i < state_.Rasterizer.NumScissorRects) {

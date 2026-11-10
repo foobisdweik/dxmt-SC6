@@ -1,0 +1,12 @@
+# a pass with no targets rasterizes the forced count but its pipeline the description's count
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -880,7 +880,7 @@
+ 
+     // a description left at zero has one sample (Unreal Engine 5's pipelines; vkd3d-proton draws them so). a pass
+     // with no targets rasterizes the forced count (d3d12_command_list.cpp), and its pipeline with it
+-    info.raster_sample_count = !rtv_mask && !dsv_mask && pDesc->RasterizerState.ForcedSampleCount
++    info.raster_sample_count = false
+                                    ? pDesc->RasterizerState.ForcedSampleCount
+                                    : std::max(pDesc->SampleDesc.Count, 1u);
+     // refused before its shaders are compiled for a pipeline Metal would refuse

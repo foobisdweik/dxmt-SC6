@@ -1,0 +1,11 @@
+# a buffer destruction callback reenters the queue while its mutex is held
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -145,7 +145,6 @@
+       lock.unlock();
+       Trace("held work starts");
+       work();
+-      work = {};
+       lock.lock();
+       held_.pop_front();
+       Trace("held work done, ", held_.size(), " left");

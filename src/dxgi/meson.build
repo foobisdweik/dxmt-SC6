@@ -13,8 +13,8 @@ dxgi_link_depends = []
 
 dxgi_dll = shared_library('dxgi', dxgi_src, dxgi_res,
   name_prefix         : '',
-  dependencies        : [ dxmt_dep, util_dep, winemetal_dep ],
-  include_directories : [ dxmt_include_path ],
+  dependencies        : [ mullion_dep, util_dep, winemetal_dep ],
+  include_directories : [ mullion_include_path ],
   install             : true,
   install_dir         : windows_native_install_dir,
   vs_module_defs      : 'dxgi.def',
@@ -24,7 +24,7 @@ dxgi_dll = shared_library('dxgi', dxgi_src, dxgi_res,
 
 dxgi_dep = declare_dependency(
   link_with           : [ dxgi_dll ],
-  include_directories : [ dxmt_include_path, include_directories('.') ],
+  include_directories : [ mullion_include_path, include_directories('.') ],
 )
 
 if wine_builtin_dll

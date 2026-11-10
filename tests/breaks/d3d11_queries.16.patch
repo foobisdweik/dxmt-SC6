@@ -1,0 +1,11 @@
+# retain GPU captures after caching their totals, so repeated reads add them again
+--- a/src/d3d11/d3d11_query.cpp
++++ b/src/d3d11/d3d11_query.cpp
+@@ -42,7 +42,6 @@
+       } else {
+         *((uint64_t *)data) = accumulated_value_;
+       }
+-      query_ = new VisibilityResultQuery();
+       state_ = QueryState::Signaled;
+       return S_OK;
+     }

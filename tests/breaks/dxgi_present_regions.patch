@@ -1,0 +1,21 @@
+# presentation reads the last sequential buffer instead of the current buffer
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -848,7 +848,7 @@
+       presenter->changeGammaRamp(output->GetGammaRamp());
+     }
+     // the output is mono: a stereo buffer shows its left eye, or its right one when the present prefers it
+-    auto &shown = backbuffers_[0]->texture();
++    auto &shown = backbuffers_.back()->texture();
+     auto eye = shown->createView(
+         {shown->pixelFormat(), WMTTextureType2D, 0, 1, PresentFlags & DXGI_PRESENT_STEREO_PREFER_RIGHT ? 1u : 0u, 1}
+     );
+@@ -874,7 +874,7 @@
+       chunk->emitcc([
+         this, vsync_duration, state = presenter->synchronizeLayerProperties(),
+         sync_state = SyncFrame(++presentation_count_),
+-        backbuffer = backbuffers_[0]->texture(), eye
++        backbuffer = backbuffers_.back()->texture(), eye
+       ](ArgumentEncodingContext &ctx) mutable {
+         ctx.present(backbuffer, eye, presenter, vsync_duration, std::move(state));
+         ReleaseSemaphore(present_semaphore_, 1, nullptr);

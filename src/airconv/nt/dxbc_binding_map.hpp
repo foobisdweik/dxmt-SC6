@@ -2,8 +2,9 @@
 
 #include "air_builder.hpp"
 #include "llvm/IR/Value.h"
+#include <optional>
 
-namespace dxmt::dxbc {
+namespace mullion::dxbc {
 
 struct ConstantBufferDescriptor {
   llvm::Value *Pointer;
@@ -14,6 +15,10 @@ struct SamplerDescriptor {
   llvm::Value *SamplerHandle;
   llvm::Value *CubeSamplerHandle;
   llvm::Value *Metadata;
+  llvm::Value *Border = nullptr; // SM50_SAMPLER_BORDER's address, when the binding can have one
+  // a static sampler's, known when the pipeline is made: whether it filters anisotropically, whether its metadata
+  // holds a LOD bias, and whether it is a minimum or maximum filter
+  std::optional<bool> Anisotropic, Biased, Reduces;
 };
 
 struct TextureDescirptor {
@@ -24,7 +29,8 @@ struct TextureDescirptor {
   llvm::air::Texture::ResourceKind ResourceKindLogical;
   llvm::air::Texture::MemoryAccess MemoryAccess;
   llvm::air::Texture::SampleType SampleType;
-
+  llvm::Value *Range = nullptr; // where its format range is (SM50_SAMPLER_BORDER), when the binding has one
+  bool IsUAV = false;
 };
 
 struct BufferDescriptor {
@@ -32,6 +38,10 @@ struct BufferDescriptor {
   llvm::Value *Metadata;
   uint32_t StructureStride;
   bool GlobalCoherent;
+  // whether an access out of its bounds is defined: not through a root descriptor, nor through a descriptor root
+  // signature 1.1 says is static ("Out of bounds accesses to any Buffer views ... are invalid and produce undefined
+  // results", Root Signature Version 1.1, Static and Volatile Flags)
+  bool Bounded = true;
 };
 
 struct CounterDescriptor {
@@ -57,6 +67,15 @@ public:
   GetUAVBuffer(llvm::air::AIRBuilder &Builder, RangeId Range, llvm::Value *Index) = 0;
   virtual llvm::Optional<CounterDescriptor>
   GetUAVCounter(llvm::air::AIRBuilder &Builder, RangeId Range, llvm::Value *Index) = 0;
+  // the device's table of lock words for 64-bit atomics (word 0 its index mask), where the binding carries one
+  virtual llvm::Value *
+  GetAtomicLocks(llvm::air::AIRBuilder &Builder) {
+    return nullptr;
+  }
+  virtual llvm::Value *
+  GetSparseBufferMappings(llvm::air::AIRBuilder &Builder) {
+    return nullptr;
+  }
 };
 
-} // namespace dxmt::dxbc
+} // namespace mullion::dxbc

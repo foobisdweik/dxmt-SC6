@@ -9,54 +9,54 @@
 #define THREAD_PRIORITY_TIME_CRITICAL 15
 
 inline HANDLE GetCurrentProcess() {
-  dxmt::Logger::warn("GetCurrentProcess not implemented.");
+  mullion::Logger::warn("GetCurrentProcess not implemented.");
   return nullptr;
 }
 
 inline HANDLE GetCurrentThread() {
-  dxmt::Logger::warn("GetCurrentThread not implemented.");
+  mullion::Logger::warn("GetCurrentThread not implemented.");
   return nullptr;
 }
 
 inline DWORD GetCurrentProcessId() {
-  dxmt::Logger::warn("GetCurrentProcessId not implemented.");
+  mullion::Logger::warn("GetCurrentProcessId not implemented.");
   return 0;
 }
 
 inline BOOL ProcessIdToSessionId(DWORD pid, DWORD *id) {
-  dxmt::Logger::warn("ProcessIdToSessionId not implemented.");
+  mullion::Logger::warn("ProcessIdToSessionId not implemented.");
   *id = 0;
   return FALSE;
 }
 
 inline BOOL SetThreadPriority(HANDLE hThread, int nPriority) {
-  dxmt::Logger::warn("SetThreadPriority not implemented.");
+  mullion::Logger::warn("SetThreadPriority not implemented.");
   return FALSE;
 }
 
 inline HANDLE GetModuleHandle(LPCSTR lpModuleName) {
-  dxmt::Logger::warn("GetModuleHandle not implemented.");
+  mullion::Logger::warn("GetModuleHandle not implemented.");
   return nullptr;
 }
 
 inline void ExitThread(DWORD dwExitCode) {
-  dxmt::Logger::warn("ExitThread not implemented.");
+  mullion::Logger::warn("ExitThread not implemented.");
 }
 
 #define WM_SIZE 0
 
 inline LONG SendMessage(HWND hWnd, UINT Msg, UINT_PTR wParam, LONG_PTR lParam) {
-  dxmt::Logger::warn("SendMessage not implemented.");
+  mullion::Logger::warn("SendMessage not implemented.");
   return 0;
 }
 
 inline DWORD GetProcessId(HANDLE Process) {
-  dxmt::Logger::warn("GetProcessId not implemented.");
+  mullion::Logger::warn("GetProcessId not implemented.");
   return 0;
 }
 
 inline DWORD GetWindowThreadProcessId(HWND hWnd, LPDWORD lpdwProcessId) {
-  dxmt::Logger::warn("GetWindowThreadProcessId not implemented.");
+  mullion::Logger::warn("GetWindowThreadProcessId not implemented.");
   *lpdwProcessId = 0;
   return 0;
 }
@@ -71,19 +71,19 @@ inline HANDLE CreateSemaphore(LPSECURITY_ATTRIBUTES lpSemaphoreAttributes,
                               LONG                  lInitialCount,
                               LONG                  lMaximumCount,
                               LPCSTR                lpName) {
-  dxmt::Logger::warn("CreateSemaphore not implemented.");
+  mullion::Logger::warn("CreateSemaphore not implemented.");
   return nullptr;
 }
 
 inline BOOL ReleaseSemaphore(HANDLE hSemaphore,
                              LONG   lReleaseCount,
                              LPLONG lpPreviousCount) {
-  dxmt::Logger::warn("ReleaseSemaphore not implemented.");
+  mullion::Logger::warn("ReleaseSemaphore not implemented.");
   return FALSE;
 }
 
 inline BOOL CloseHandle(HANDLE hObject) {
-  dxmt::Logger::warn("CloseHandle not implemented.");
+  mullion::Logger::warn("CloseHandle not implemented.");
   return FALSE;
 }
 
@@ -95,7 +95,7 @@ inline BOOL DuplicateHandle(HANDLE   hSourceProcessHandle,
                             BOOL     bInheritHandle,
                             DWORD    dwOptions)
 {
-  dxmt::Logger::warn("DuplicateHandle not implemented.");
+  mullion::Logger::warn("DuplicateHandle not implemented.");
   return FALSE;
 }
 

@@ -20,9 +20,10 @@
 #endif
 
 #include "util_env.hpp"
+#include <cstring>
 #include "unknwn.h"
 
-namespace dxmt::env {
+namespace mullion::env {
 
 std::string getEnvVar(const char *name) {
 #ifdef _WIN32
@@ -33,11 +34,15 @@ std::string getEnvVar(const char *name) {
                                         MAX_PATH);
   result.resize(len);
 
-  return str::fromws(result.data());
+  std::string value = str::fromws(result.data());
 #else
   const char *result = std::getenv(name);
-  return result ? result : "";
+  std::string value = result ? result : "";
 #endif
+  // a variable that had DXMT's name still answers to it
+  if (value.empty() && !std::strncmp(name, "MULLION_", 8))
+    return getEnvVar(("DXMT_" + std::string(name + 8)).c_str());
+  return value;
 }
 
 size_t matchFileExtension(const std::string &name, const char *ext) {
@@ -113,7 +118,7 @@ void setThreadName(const std::string &name) {
   }
 #else
   std::array<char, 16> posixName = {};
-  dxmt::str::strlcpy(posixName.data(), name.c_str(), 16);
+  mullion::str::strlcpy(posixName.data(), name.c_str(), 16);
   ::pthread_setname_np(posixName.data());
 #endif
 }
@@ -155,4 +160,4 @@ std::string getUnixPath(const std::string &path) {
 #endif
 }
 
-} // namespace dxmt::env
+} // namespace mullion::env

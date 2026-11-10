@@ -1,0 +1,11 @@
+--- a/src/d3d11/d3d11_context_imm.cpp
++++ b/src/d3d11/d3d11_context_imm.cpp
+@@ -358,7 +358,7 @@
+     case D3D11_QUERY_OCCLUSION_PREDICATE:
+     case D3D11_QUERY_PIPELINE_STATISTICS: {
+       if (static_cast<MTLD3D11Query *>(pAsync)->state_ != QueryState::Building)
+-        Begin(pAsync);
++        return;
+       auto occlusion = static_cast<MTLD3D11OcclusionQuery *>(pAsync);
+       occlusion->counts = PipelineCountsSince(occlusion->begun);
+       auto query = occlusion->End();

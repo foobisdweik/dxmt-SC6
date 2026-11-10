@@ -1,0 +1,12 @@
+# A render target that stores its channels rotated takes the shader's output unrotated.
+--- a/src/mullion/mullion_shader_cache.hpp
++++ b/src/mullion/mullion_shader_cache.hpp
+@@ -30,7 +30,7 @@
+       outputs[reg] =
+           integer ? (unsigned_output ? WMTPixelFormatR32Uint : WMTPixelFormatR32Sint) : WMTPixelFormatR32Float;
+     auto channels = RenderTargetChannels(formats[slot]);
+-    if (channels != RenderTargetChannels(format)) {
++    if (false) {
+       outputs[reg] |= SM50_PIXEL_FORMAT_CHANNELS;
+       for (uint32_t i = 0; i < channels.size(); i++)
+         outputs[reg] |= i << (8 + 2 * channels[i]);

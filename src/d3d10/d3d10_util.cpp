@@ -1,7 +1,7 @@
 #include "d3d10_util.hpp"
 #include "com/com_pointer.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 void
 GetD3D10Device(ID3D11DeviceChild *d3d11, ID3D10Device **ppDevice) {
@@ -33,9 +33,12 @@ ConvertD3D11ResourceFlags(UINT MiscFlags) {
   return ret;
 }
 
-UINT
-ConvertD3D10ResourceFlags(UINT MiscFlags) {
-  UINT ret = 0;
+HRESULT
+ConvertD3D10ResourceFlags(UINT MiscFlags, UINT &ret) {
+  if (MiscFlags & ~(D3D10_RESOURCE_MISC_GENERATE_MIPS | D3D10_RESOURCE_MISC_SHARED | D3D10_RESOURCE_MISC_TEXTURECUBE |
+                    D3D10_RESOURCE_MISC_SHARED_KEYEDMUTEX | D3D10_RESOURCE_MISC_GDI_COMPATIBLE))
+    return E_INVALIDARG;
+  ret = 0;
   if (MiscFlags & D3D10_RESOURCE_MISC_GENERATE_MIPS)
     ret |= D3D11_RESOURCE_MISC_GENERATE_MIPS;
   if (MiscFlags & D3D10_RESOURCE_MISC_SHARED)
@@ -46,7 +49,7 @@ ConvertD3D10ResourceFlags(UINT MiscFlags) {
     ret |= D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
   if (MiscFlags & D3D10_RESOURCE_MISC_GDI_COMPATIBLE)
     ret |= D3D11_RESOURCE_MISC_GDI_COMPATIBLE;
-  return ret;
+  return S_OK;
 }
 
-} // namespace dxmt
+} // namespace mullion

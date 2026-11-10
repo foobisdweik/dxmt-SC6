@@ -1,0 +1,11 @@
+# comparison gather swaps the lower-left and upper-left results
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2137,6 +2137,7 @@
+ 
+   auto [Value, Residency] =
+       Gather(*Tex, SamplerHandle, Sampler->Metadata, Coord, ArrayIndex, Offset, nullptr, Reference, Sampler->Border);
++  Value = ir.CreateShuffleVector(Value, {3, 1, 2, 0});
+ 
+   StoreOperand(sample.dst, MaskSwizzle(Value, GetMask(sample.dst), Tex->Swizzle));
+   StoreFeedback(sample.feedback, Residency);

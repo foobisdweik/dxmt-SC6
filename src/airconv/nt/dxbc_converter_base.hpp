@@ -23,13 +23,15 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Value.h"
 
+#include "../airconv_public.h"
 #include "../dxbc_instructions.hpp"
 #include "adt.hpp"
 #include "air_builder.hpp"
+#include "dxbc_binding_map.hpp"
 #include "tl/generator.hpp"
 #include "ftl.hpp"
 
-namespace dxmt::dxbc {
+namespace mullion::dxbc {
 
 using mask_t = uint32_t;
 
@@ -51,6 +53,8 @@ struct TextureResourceHandle {
   llvm::Value *Metadata;
   Swizzle Swizzle;
   bool GlobalCoherent;
+  llvm::Value *Range = nullptr;
+  bool IsUAV = false;
 };
 
 struct BufferResourceHandle {
@@ -59,6 +63,9 @@ struct BufferResourceHandle {
   uint32_t StructureStride; // 0 if not structured
   Swizzle Swizzle;
   bool GlobalCoherent;
+  bool Bounded = true; // BufferDescriptor::Bounded
+  // the metadata an access is checked against, where it has to be
+  llvm::Value *Bounds() const { return Bounded ? Metadata : nullptr; }
 };
 
 struct AtomicBufferResourceHandle {
@@ -67,6 +74,8 @@ struct AtomicBufferResourceHandle {
   uint32_t StructureStride; // 0 if not structured
   mask_t Mask;
   bool GlobalCoherent;
+  bool Bounded = true;
+  llvm::Value *Bounds() const { return Bounded ? Metadata : nullptr; }
 };
 
 struct UAVCounterHandle {
@@ -77,10 +86,13 @@ struct SamplerHandle {
   llvm::Value *Handle;
   llvm::Value *HandleCube;
   llvm::Value *Bias;
+  llvm::Value *Metadata;
+  llvm::Value *Border;
 };
 
+// a register's interpolants, one per component the shader takes of it
 struct InterpolantHandle {
-  llvm::Value *Handle;
+  std::array<llvm::Value *, 4> Component;
   bool Perspective;
 };
 
@@ -208,6 +220,8 @@ public:
     std::visit(
         [=, this](auto &DstOp) {
           auto Value_ = Value;
+          // sat(NaN) is 0 (D3D11.3 22.19.1). MSL leaves Metal's fast variant undefined for a NaN, and d3d12_minmax
+          // checks that the GPU gives it
           if (DstOp._.write_type == OperandDataType::Float && Saturate)
             Value_ = air.CreateFPUnOp(llvm::air::AIRBuilder::saturate, Value);
           this->StoreOperand(DstOp, Value_);
@@ -215,6 +229,8 @@ public:
         DstOp
     );
   }
+
+  void StoreFeedback(const std::optional<DstOperand> &Feedback, llvm::Value *Residency);
 
   void
   StoreOperandVec4(const DstOperand &DstOp, llvm::Value *ValueVec4, bool Saturate = false) {
@@ -245,13 +261,17 @@ public:
   operator()(const InstSync &sync) {
     using namespace llvm::air;
     MemFlags mem_flag = sync.tgsm_memory_barrier ? MemFlags::Threadgroup : MemFlags::None;
-    if (sync.uav_boundary != InstSync::UAVBoundary::none) {
+    // HLSL's globallycoherent: "memory barriers and syncs flush data across the entire GPU", which a threadgroup
+    // barrier does not do on Apple7
+    auto uav_boundary =
+        sync.tgsm_execution_barrier && CoherentGroupSync() ? InstSync::UAVBoundary::global : sync.uav_boundary;
+    if (uav_boundary != InstSync::UAVBoundary::none) {
       mem_flag |= MemFlags::Device | MemFlags::Texture;
       if (SupportsNonExecutionBarrier())
         air.CreateAtomicFence(
             mem_flag,
-            (sync.uav_boundary == InstSync::UAVBoundary::global ? (ThreadScope::Device | ThreadScope::Threadgroup)
-                                                                : ThreadScope::Threadgroup)
+            // scopes are an enumeration: the device's contains the threadgroup's
+            uav_boundary == InstSync::UAVBoundary::global ? ThreadScope::Device : ThreadScope::Threadgroup
         );
       if (sync.tgsm_execution_barrier)
         air.CreateBarrier(SupportsNonExecutionBarrier() ? MemFlags::None : mem_flag);
@@ -419,7 +439,8 @@ public:
       case 0b10:
       case 0b100:
       case 0b1000:
-        return ir.CreateExtractElement(Value, __builtin_ctz(Mask));
+        // the value holds only the combined mask's components, packed
+        return ir.CreateExtractElement(Value, __builtin_popcount(CombinedMask & (Mask - 1)));
       default:
         break;
     }
@@ -459,6 +480,224 @@ public:
   }
 
   llvm::Value *
+  DecodeSamplerBias(llvm::Value *Metadata) {
+    auto Bias = ir.CreateFMul(
+        ir.CreateSIToFP(ir.CreateTrunc(Metadata, ir.getInt16Ty()), air.getFloatTy()),
+        llvm::ConstantFP::get(air.getFloatTy(), std::ldexp(1.0, -SM50_SAMPLER_METADATA_LOD_FRACTION_BITS))
+    );
+    SamplerBiases[Bias] = Metadata;
+    return Bias;
+  }
+
+  // the resource's min-LOD clamp, raised by a shader clamp or applied to an explicit LOD (D3D11.3 5.8.2)
+  llvm::Value *
+  ClampMinLOD(llvm::Value *Metadata, llvm::Value *LOD) {
+    auto Clamp = DecodeTextureMinLODClamp(Metadata);
+    return LOD ? air.CreateFPBinOp(llvm::air::AIRBuilder::fmax, Clamp, LOD) : Clamp;
+  }
+
+  // D3D's lod: the LOD a sample would use and the LOD before any clamp, both with the sampler's bias (D3D11.3
+  // 22.5.6, 7.18.11). the clamp is the sampler's MinLOD and MaxLOD, the view's min-LOD clamp and its mips. `Level`,
+  // unbiased, replaces Metal's where it has no derivatives
+  std::pair<llvm::Value *, llvm::Value *> CalculateLOD(
+      const TextureResourceHandle &Tex, llvm::Value *Sampler, llvm::Value *SamplerMetadata, llvm::Value *Coord,
+      llvm::Value *Level = nullptr, bool Conservative = false
+  );
+
+  // a sample whose LOD comes from its quad's derivatives, with `Bias` and `MinLOD`, of `Reference` when it compares.
+  // Metal biases the footprint's minor axis before an anisotropic filter clamps the footprint's ratio, which can undo
+  // the bias; D3D biases the LOD of the clamped footprint ("biasedLOD = output.LOD + MipLODBias", D3D11.3 7.18.11).
+  // so a pixel shader's sample of a 2D texture through a sampler that may be anisotropic scales its gradients
+  // instead, which keeps the ratio, and one through a sampler that is not keeps Metal's LOD and bias. a static
+  // sampler's anisotropy and bias are known when the pipeline is made (SamplerDescriptor): KnownSamplers holds them by
+  // the sampler's metadata, and SamplerBiases the metadata each bias DecodeSamplerBias made was read from, which a
+  // sample may add its own to. a descriptor's sampler is known only from its metadata, and its quad branches on it
+  struct KnownSampler {
+    bool Anisotropic, Biased;
+  };
+  std::map<llvm::Value *, KnownSampler> KnownSamplers;
+  std::map<llvm::Value *, llvm::Value *> SamplerBiases;
+  // a static sampler's reduction, known when the pipeline is made, by its metadata: whether it is a minimum or
+  // maximum filter (MinMaxFilter)
+  std::map<llvm::Value *, bool> KnownReductions;
+  void
+  NoteSampler(const SamplerDescriptor &Descriptor) {
+    if (Descriptor.Anisotropic && Descriptor.Biased)
+      KnownSamplers[Descriptor.Metadata] = {*Descriptor.Anisotropic, *Descriptor.Biased};
+    if (Descriptor.Reduces)
+      KnownReductions[Descriptor.Metadata] = *Descriptor.Reduces;
+  }
+
+  std::pair<llvm::Value *, llvm::Value *> SampleImplicit(
+      const TextureResourceHandle &Tex, llvm::Value *Sampler, llvm::Value *SamplerMetadata, llvm::Value *Coord,
+      llvm::Value *ArrayIndex, const int32_t Offset[3], llvm::Value *Reference, llvm::Value *Bias, llvm::Value *MinLOD
+  );
+
+  // how a sample chooses its LOD (D3D11.3 7.18.11): an explicit `Level`, gradients, or its quad's derivatives in a
+  // pixel shader, with `Bias` the sampler's and the sample's own together; then the view's and the sample's `MinLOD`
+  struct Footprint {
+    llvm::Value *Level = nullptr; // before the sampler's bias and clamps
+    llvm::Value *DDX = nullptr, *DDY = nullptr;
+    llvm::Value *Bias = nullptr;
+    llvm::Value *MinLOD = nullptr;
+  };
+
+  // `Filtered`, the value and status of a sample, with D3D's minimum and maximum filters: "fetches the same set of
+  // texels that a normal texture filter would fetch, but ... returns the min() or max() of the texels fetched, on a
+  // per-component basis", and a texel the filter weights 0 "still do[es] not contribute" (D3D11.3 5.9.4.5.6). Metal's
+  // samplers average where the metadata asks for a reduction (SM50_SAMPLER_REDUCTION), so those samples read the
+  // texels themselves. a static sampler that does not reduce costs nothing; any other sampler costs a branch
+  std::pair<llvm::Value *, llvm::Value *> MinMaxFilter(
+      const TextureResourceHandle &Tex, llvm::Value *Sampler, llvm::Value *Border, llvm::Value *SamplerMetadata,
+      llvm::Value *Coord, llvm::Value *ArrayIndex, const int32_t Offset[3], const Footprint &Footprint,
+      std::pair<llvm::Value *, llvm::Value *> Filtered
+  );
+
+  // a sample's texels and status, where Metal's own are wrong: a reserved texture a shader can write reports no
+  // texel mapped, and filters as if magnified, when the level is past its last mip (D3D11.3 7.18.10: the level is
+  // "clamped to available miplevels"). `Read` reads again, `Level` or the gradients say how the sample chose its level
+  std::pair<llvm::Value *, llvm::Value *> SamplingResidency(
+      const TextureResourceHandle &Tex, llvm::Value *Sampler, llvm::Value *SamplerMetadata, llvm::Value *Coord,
+      llvm::Value *ArrayIndex, const int32_t Offset[3], std::pair<llvm::Value *, llvm::Value *> Sample,
+      llvm::function_ref<std::pair<llvm::Value *, llvm::Value *>(llvm::Value *)> Read, llvm::Value *Level,
+      llvm::Value *Bias = nullptr, llvm::Value *MinLOD = nullptr, llvm::Value *DDX = nullptr, llvm::Value *DDY = nullptr
+  );
+
+  // D3D's gather, with `Reference` its comparison (D3D11.3 22.4.2-22.4.5). an offset is the low 6 bits of each
+  // component, signed; Metal's native offset reaches [-8, 7], so other offsets move the coordinate by whole texels of
+  // the view's first mip. gather reads only that mip: a view min-LOD clamp that removes it gives the out-of-bounds 0,
+  // compared against the reference with the sampler's comparison function (5.8.6.1)
+  std::pair<llvm::Value *, llvm::Value *> Gather(
+      const TextureResourceHandle &Tex, llvm::Value *Sampler, llvm::Value *SamplerMetadata, llvm::Value *Coord,
+      llvm::Value *ArrayIndex, llvm::Value *Offset, llvm::Value *Component, llvm::Value *Reference,
+      llvm::Value *Border = nullptr
+  );
+
+  // 1.0 when `Reference` passes the sampler's comparison function against `Texel`, else 0.0
+  llvm::Value *SamplerCompare(llvm::Value *SamplerMetadata, llvm::Value *Reference, llvm::Value *Texel);
+  llvm::Value *CompareReference(llvm::Value *SamplerMetadata, llvm::Value *Reference);
+
+  // `Value`, what `Sampler` read (a sample, a gather of `Component`, or a comparison of either with `Reference`), with
+  // the sampler's custom border color (SM50_SAMPLER_BORDER). `Read(Sampler)` repeats the read without its comparison
+  llvm::Value *CustomBorder(
+      const TextureResourceHandle &Tex, llvm::Value *Sampler, llvm::Value *Border, llvm::Value *SamplerMetadata,
+      llvm::Value *Value, const std::function<llvm::Value *(llvm::Value *)> &Read, llvm::Value *Reference = nullptr,
+      llvm::Value *Component = nullptr
+  );
+
+  // LOD is log2 of the gradient length, so a sampler bias b scales the gradients by 2^b (D3D11.3 7.18.11)
+  llvm::Value *
+  BiasGradient(llvm::Value *Gradient, llvm::Value *Bias) {
+    auto Scale = air.CreateFPUnOp(llvm::air::AIRBuilder::exp2, Bias);
+    auto Ty = llvm::dyn_cast<llvm::FixedVectorType>(Gradient->getType());
+    return ir.CreateFMul(Gradient, Ty ? ir.CreateVectorSplat(Ty->getNumElements(), Scale) : Scale);
+  }
+
+  llvm::Value *
+  LoadConstantBuffer(const ConstantBufferDescriptor &Buffer, llvm::Value *Row, int Component = -1, mask_t Dwords = kMaskAll);
+  // a row of zeros in the shader's constant memory, which constant buffer reads past the bound size read instead
+  llvm::GlobalVariable *ZeroRow();
+
+  // a D3D texel address (texel coordinates, then the array slice) as Metal's position and array index. texel
+  // buffers are addressed inside their view. a position past the view, or at a `Level` below the view's min-LOD
+  // clamp (D3D11.3 5.8.5), becomes all ones: Metal reads zero there and drops the write
+  std::pair<llvm::Value *, llvm::Value *>
+  TexelAddress(const TextureResourceHandle &Tex, llvm::Value *Coord, const int32_t Offset[3], llvm::Value *Level);
+
+  // D3D converts float to half toward zero, with overflow to the largest finite half (D3D11.3 3.2.2)
+  llvm::Value *ConvertToHalfTowardZero(llvm::Value *Value);
+
+  llvm::Value *FirstBit(IntegerUnaryOp Op, llvm::Value *Value);
+  // frc and DXIL's Frc: the value less its floor (D3D11.3 22.10.7), NaN for an infinity or a NaN
+  llvm::Value *Fraction(llvm::Value *Value);
+  llvm::Value *SinCos(llvm::air::AIRBuilder::FPUnOp Op, llvm::Value *Value);
+  // `Used`: the components the caller takes of the texel
+  std::pair<llvm::Value *, llvm::Value *> ReadTexel(
+      const TextureResourceHandle &Tex, llvm::Value *Address, llvm::Value *ArrayIndex, llvm::Value *SampleIndex,
+      llvm::Value *Level, mask_t Used = kMaskAll
+  );
+  llvm::Value *ExtractBits(llvm::Value *Width, llvm::Value *Offset, llvm::Value *Src, bool Signed);
+  llvm::Value *InsertBits(llvm::Value *Width, llvm::Value *Offset, llvm::Value *Src, llvm::Value *Dst);
+  llvm::Value *MaskedSumOfAbsDiff(llvm::Value *Ref, llvm::Value *Src, llvm::Value *Accum);
+  // an eval_snapped offset in 1/16 pixel steps, [-8, 7]
+  llvm::Value *InterpolateAtOffset(const InterpolantHandle &Itp, llvm::Value *Offset);
+  // the register, each of its interpolants evaluated by `At`
+  llvm::Value *
+  Interpolate(const InterpolantHandle &Itp, auto &&At) {
+    llvm::Value *Value = llvm::ConstantAggregateZero::get(air.getFloatTy(4));
+    for (unsigned i = 0; i < 4; i++)
+      if (Itp.Component[i])
+        Value = ir.CreateInsertElement(Value, At(Itp.Component[i]), i);
+    return Value;
+  }
+
+  // width, height, depth or array length, and mip count, as the D3D resinfo instruction returns them
+  llvm::Value *TextureDimensions(const TextureResourceHandle &Tex, llvm::Value *Level);
+  // how many sizes the texture has: a cube reports the size of a face
+  static unsigned
+  SizeDimension(llvm::air::Texture::ResourceKind Logical) {
+    auto &Info = llvm::air::AIRBuilder::getTextureInfo(Logical);
+    return Info.is_cube ? 2 : Info.coord_dimension;
+  }
+
+  BufferResourceHandle
+  MakeBufferHandle(const BufferDescriptor &Descriptor, Swizzle Swizzle) {
+    return {
+        Descriptor.Pointer, Descriptor.Metadata, Descriptor.StructureStride, Swizzle,
+        Descriptor.GlobalCoherent && SupportsMemoryCoherency(), Descriptor.Bounded
+    };
+  }
+
+  TextureResourceHandle
+  MakeTextureHandle(const TextureDescirptor &Descriptor, Swizzle Swizzle) {
+    llvm::air::Texture Texture;
+    Texture.kind = Descriptor.ResourceKind;
+    Texture.memory_access = Descriptor.MemoryAccess;
+    Texture.sample_type = Descriptor.SampleType;
+    if (llvm::air::AIRBuilder::getTextureInfo(Texture.kind).is_ms) {
+      Texture.SingleSample = ir.CreateICmpNE(
+          ir.CreateAnd(Descriptor.Metadata, SM50_TEXTURE_MULTISAMPLE_METADATA_SINGLE), ir.getInt64(0)
+      );
+      Texture.Paired = ir.CreateICmpNE(
+          ir.CreateAnd(Descriptor.Metadata, SM50_TEXTURE_MULTISAMPLE_METADATA_PAIRED), ir.getInt64(0)
+      );
+    }
+    Texture.Unbound = ir.CreateICmpNE(ir.CreateAnd(Descriptor.Metadata, SM50_TEXTURE_METADATA_UNBOUND), ir.getInt64(0));
+    return {
+        Texture,
+        Descriptor.ResourceKindLogical,
+        Descriptor.ResourceHandle,
+        Descriptor.Metadata,
+        Swizzle,
+        Descriptor.GlobalCoherent && SupportsMemoryCoherency(),
+        Descriptor.Range,
+        Descriptor.IsUAV
+    };
+  }
+
+  // a multisample texture's sample offset, of D3D's count and index: the pattern of no samples places every one at
+  // the center, and paired samples are the texture's half as many
+  llvm::Value *
+  TextureSamplePos(const TextureResourceHandle &Tex, llvm::Value *Samples, llvm::Value *Index) {
+    auto Centered =
+        ir.CreateICmpNE(ir.CreateAnd(Tex.Metadata, SM50_TEXTURE_MULTISAMPLE_METADATA_CENTERED), ir.getInt64(0));
+    if (Tex.Texture.Paired) {
+      Samples = ir.CreateSelect(Tex.Texture.Paired, ir.CreateLShr(Samples, 1), Samples);
+      Index = ir.CreateSelect(Tex.Texture.Paired, ir.CreateLShr(Index, 1), Index);
+    }
+    return air.CreateSamplePos(ir.CreateSelect(Centered, ir.getInt32(0), Samples), Index);
+  }
+
+  // a 3D UAV's W range, which a Metal view cannot select: its metadata holds the first W slice where a texture holds
+  // its array length, and the W size in the low half (0: the whole texture). null for other textures
+  llvm::Value *
+  UAVWSize(const TextureResourceHandle &Tex) {
+    if (Tex.Logical != llvm::air::Texture::texture3d || !Tex.IsUAV)
+      return nullptr;
+    return ir.CreateTrunc(Tex.Metadata, air.getIntTy());
+  }
+
+  llvm::Value *
   DecodeTextureArrayLength(llvm::Value *Metadata) {
     return ir.CreateTrunc(ir.CreateLShr(Metadata, 32uLL), air.getIntTy());
   }
@@ -470,35 +709,83 @@ public:
 
   llvm::Value *
   DecodeTextureBufferElement(llvm::Value *Metadata) {
-    // Bit 63 marks an RGB32 SRV. The remaining high bits hold the logical count.
-    return ir.CreateAnd(ir.CreateTrunc(ir.CreateLShr(Metadata, 32uLL), air.getIntTy()), 0x7fffffff);
+    return ir.CreateAnd(
+        ir.CreateTrunc(ir.CreateLShr(Metadata, 32uLL), air.getIntTy()),
+        ~(SM50_TEXEL_BUFFER_METADATA_RGB32 | uint32_t(SM50_TEXTURE_METADATA_UNBOUND >> 32))
+    );
+  }
+
+  llvm::Value *
+  DecodeTextureBufferRGB32(llvm::Value *Metadata) {
+    return ir.CreateICmpNE(ir.CreateAnd(Metadata, uint64_t(SM50_TEXEL_BUFFER_METADATA_RGB32) << 32), ir.getInt64(0));
   }
 
   llvm::Value *ClampArrayIndex(llvm::Value *ShaderValue, llvm::Value *Metadata);
 
-  llvm::Value *GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index);
 
-  void HullGenerateWorkloadForTriangle(
-      llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
-      llvm::Value *TessFactorIn, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1, llvm::Value *TessFactorOut2
+  // `Domain`: quad, triangle or isoline. `Capacity`: the workloads `DataPtr` has room for. `GroupsPtr`: where
+  // groups of workloads of at most `GroupLimit` vertices begin (null and 0: no groups). `TessFactors`: the inside's,
+  // then the edges'; an isoline's density, then its detail
+  void HullGenerateWorkload(
+      const char *Domain, llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, uint32_t Capacity,
+      llvm::Value *GroupsPtr, uint32_t GroupLimit, TessellatorPartitioning Partitioning,
+      llvm::ArrayRef<llvm::Value *> TessFactors
   );
 
-  void HullGenerateWorkloadForQuad(
-      llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
-      llvm::Value *TessFactorIn0, llvm::Value *TessFactorIn1, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1,
-      llvm::Value *TessFactorOut2, llvm::Value *TessFactorOut3
+  // a mesh threadgroup's group of workloads, `First` to `End`: its vertex `ThreadIndex`'s domain location, whether
+  // the group has it, and whether every thread of the SIMD group has one; and its primitives, which all its threads
+  // make together, `Lane` being each one's
+  llvm::Value *DomainGetGroupLayout(llvm::Value *First, llvm::Value *End, llvm::Value *Lane, llvm::Value *DataPtr);
+  std::tuple<llvm::Value *, llvm::Value *, llvm::Value *> DomainGetGroupLocation(
+      llvm::Value *First, llvm::Value *End, llvm::Value *ThreadIndex, llvm::Value *Layout, llvm::Value *DataPtr
+  );
+  void DomainGenerateGroup(
+      llvm::Value *First, llvm::Value *End, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive,
+      llvm::Value *Behind, llvm::Value *Lane
   );
 
   llvm::Value *DomainGetPatchIndex(llvm::Value *WorkloadIndex, llvm::Value *DataPtr);
+  std::pair<llvm::Value *, llvm::Value *> DomainGetPrimitiveLocation(
+      llvm::Value *WorkloadIndex, llvm::Value *PrimitiveIndex, llvm::Value *Corner, TessellatorOutputPrimitive Primitive,
+      llvm::Value *DataPtr
+  );
 
-  std::tuple<llvm::Value *, llvm::Value *, llvm::Value *> DomainGetLocation(
-      llvm::Value *WorkloadIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr, TessellatorPartitioning Partitioning
+  std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>
+  DomainGetLocation(llvm::Value *WorkloadIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr);
+
+  // the same for a threadgroup that makes `Count` of the workload's primitives, from `First`, each of vertices of
+  // its own
+  std::tuple<llvm::Value *, llvm::Value *, llvm::Value *> DomainGetPieceLocation(
+      llvm::Value *WorkloadIndex, llvm::Value *First, llvm::Value *ThreadIndex, uint32_t Count,
+      TessellatorOutputPrimitive Primitive, llvm::Value *DataPtr
+  );
+  void DomainGeneratePiece(
+      llvm::Value *WorkloadIndex, llvm::Value *First, uint32_t Count, llvm::Value *DataPtr,
+      TessellatorOutputPrimitive Primitive, llvm::Value *Behind
   );
 
   void
-  DomainGeneratePrimitives(llvm::Value *WorkloadIndex, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive);
+  // `Behind`: for each vertex, a bit for every cull distance it is behind, in threadgroup memory; null without any
+  DomainGeneratePrimitives(
+      llvm::Value *WorkloadIndex, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive, llvm::Value *Behind
+  );
 
-  llvm::Value * CreateGEPInt32WithBoundCheck(BufferResourceHandle &Buffer, llvm::Value* Index);
+  // `Inside`: the unit is known to be in bounds, and is reached and loaded as it is
+  llvm::Value * CreateGEPInt32WithBoundCheck(BufferResourceHandle &Buffer, llvm::Value* Index, bool Inside = false);
+
+  llvm::Value *BufferResidency(llvm::Value *Pointer);
+  // Then() where Condition holds and Else() where it does not
+  llvm::Value *LoadBufferValue(BufferResourceHandle &Buffer, llvm::Type *Type, llvm::Value *Ptr, bool Inside = false);
+  llvm::Value *LoadBufferUnits(
+      BufferResourceHandle &Buffer, llvm::Value *Base, llvm::Value *Last, uint32_t UnitBytes,
+      llvm::function_ref<llvm::Value *(llvm::Value *, bool)> Read
+  );
+  // Within, when given, bounds the whole load in place of each word's own bound (InstLoadStructured), and Index is at
+  // the view's start where it fails
+  void LoadBufferWords(
+      BufferResourceHandle &Buf, llvm::Value *Index, const DstOperand &Dst, const std::optional<DstOperand> &Feedback,
+      llvm::Value *Within = nullptr
+  );
 
   llvm::Value * CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm::Value* Index);
 
@@ -517,6 +804,8 @@ public:
 
   bool SupportsMemoryCoherency() const;
   bool SupportsNonExecutionBarrier() const;
+  // whether the shader's group syncs also make globallycoherent memory visible to the whole GPU
+  bool CoherentGroupSync() const;
 
 private:
   llvm::air::AIRBuilder &air;
@@ -527,4 +816,4 @@ private:
   io_binding_map &res;
 };
 
-} // namespace dxmt::dxbc
+} // namespace mullion::dxbc

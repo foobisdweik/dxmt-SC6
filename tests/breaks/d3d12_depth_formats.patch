@@ -1,0 +1,12 @@
+# D32S8 reports one plane instead of separate depth and stencil.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -646,7 +646,7 @@
+     description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER |
+                        MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL;
+     description.BytesPerTexel = 8;
+-    description.PlanarCount = 2;
++    description.PlanarCount = 1;
+     break;
+   }
+   case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS: {

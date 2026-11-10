@@ -1,0 +1,13 @@
+# drop the final control point before complete patches reach stream output.
+diff --git a/src/d3d11/d3d11_context_impl.cpp b/src/d3d11/d3d11_context_impl.cpp
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1658,7 +1658,7 @@
+     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
+       MULLION_DRAW_ARGUMENTS *draw_argument = enc.getMappedArgumentBuffer<MULLION_DRAW_ARGUMENTS>(draw_arguments_offset);
+       draw_argument->StartVertex = StartVertexLocation;
+-      draw_argument->VertexCount = VertexCountPerInstance;
++      draw_argument->VertexCount = VertexCountPerInstance - 1;
+       draw_argument->InstanceCount = InstanceCount;
+       draw_argument->StartInstance = StartInstanceLocation;
+ 

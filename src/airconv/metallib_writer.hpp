@@ -3,7 +3,7 @@
 #include <cstdint>
 #include "sha256.hpp"
 
-namespace dxmt::metallib {
+namespace mullion::metallib {
 
 #define MTLB_FOURCC(ch0, ch1, ch2, ch3)                                        \
   ((uint32_t)(char)(ch0) | ((uint32_t)(char)(ch1) << 8) |                      \
@@ -59,6 +59,7 @@ enum class FunctionType : uint8_t {
   Vertex = 0x00,
   Fragment = 0x01,
   Kernel = 0x02,
+  Visible = 0x04,
   Mesh = 0x07,
   Object = 0x08,
 };
@@ -120,4 +121,4 @@ public:
   void Write(const llvm::Module &module, llvm::raw_ostream &OS);
 };
 
-} // namespace dxmt::metallib
+} // namespace mullion::metallib

@@ -11,7 +11,7 @@
 #include "thread.hpp"
 #ifdef _WIN32
 
-namespace dxmt::this_thread {
+namespace mullion::this_thread {
 
 bool isInModuleDetachment() {
   using PFN_RtlDllShutdownInProgress = BOOLEAN(WINAPI *)();
@@ -23,11 +23,11 @@ bool isInModuleDetachment() {
   return RtlDllShutdownInProgress();
 }
 
-} // namespace dxmt::this_thread
+} // namespace mullion::this_thread
 
 #else
 
-namespace dxmt::this_thread {
+namespace mullion::this_thread {
 
 static std::atomic<uint32_t> g_threadCtr = {0u};
 static thread_local uint32_t g_threadId = 0u;
@@ -44,6 +44,6 @@ uint32_t get_id() {
   return g_threadId;
 }
 
-} // namespace dxmt::this_thread
+} // namespace mullion::this_thread
 
 #endif

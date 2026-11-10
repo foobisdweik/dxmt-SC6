@@ -1,0 +1,12 @@
+# GetDesc2 reports one extra byte of shared system memory
+--- a/src/dxgi/dxgi_adapter.cpp
++++ b/src/dxgi/dxgi_adapter.cpp
+@@ -156,7 +156,7 @@
+       pDesc->Revision = desc.Revision;
+       pDesc->DedicatedVideoMemory = desc.DedicatedVideoMemory;
+       pDesc->DedicatedSystemMemory = desc.DedicatedSystemMemory;
+-      pDesc->SharedSystemMemory = desc.SharedSystemMemory;
++      pDesc->SharedSystemMemory = desc.SharedSystemMemory + 1;
+       pDesc->AdapterLuid = desc.AdapterLuid;
+       pDesc->Flags = desc.Flags & 0b11;
+       pDesc->GraphicsPreemptionGranularity = desc.GraphicsPreemptionGranularity;

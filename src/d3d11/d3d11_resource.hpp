@@ -1,15 +1,17 @@
 #pragma once
-#include "dxmt_buffer.hpp"
-#include "dxmt_dynamic.hpp"
-#include "dxmt_staging.hpp"
-#include "dxmt_texture.hpp"
-#include "dxmt_keyed_mutex.hpp"
+#include "mullion_buffer.hpp"
+#include "mullion_format.hpp"
+#include "mullion_counter.hpp"
+#include "mullion_dynamic.hpp"
+#include "mullion_staging.hpp"
+#include "mullion_texture.hpp"
+#include "mullion_keyed_mutex.hpp"
 #include "d3d11_device_child.hpp"
 #include "com/com_pointer.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_view.hpp"
-#include "d3d11_surface.hpp"
 #include "dxgi_resource.hpp"
+#include "d3d11_surface.hpp"
 #include "log/log.hpp"
 #include "../d3d10/d3d10_buffer.hpp"
 #include "../d3d10/d3d10_texture.hpp"
@@ -26,7 +28,7 @@ DEFINE_COM_INTERFACE("9a6f6549-d4b1-45ea-8794-8503d190d3d1",
   virtual float GetMinLOD() = 0;
 };
 
-namespace dxmt {
+namespace mullion {
 
 template <typename RESOURCE_DESC>
 void UpgradeResourceDescription(const RESOURCE_DESC *pSrc, RESOURCE_DESC &dst) {
@@ -107,6 +109,17 @@ struct tag_texture_3d {
   static constexpr std::string_view debug_name = "tex3d";
 };
 
+struct WrappedResourceState {
+  Rc<Buffer> buffer;
+  Rc<Texture> texture;
+  struct Use {
+    ResourceSubsetState subset;
+    uint64_t read = 0, written = 0;
+  };
+  std::vector<Use> uses;
+  uint64_t returned_seq = 0;
+};
+
 struct D3D11ResourceCommon : ID3D11Resource {
     /* ID3D11Buffer::GetDesc */
     /* ID3D11Texture1D::GetDesc */
@@ -119,6 +132,7 @@ struct D3D11ResourceCommon : ID3D11Resource {
 
   virtual void AddRefPrivate() = 0;
   virtual void ReleasePrivate() = 0;
+  virtual ULONG GetPrivateRefCount() = 0;
   virtual HRESULT STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE
@@ -130,17 +144,21 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual HRESULT GetSharedHandle(HANDLE *pSharedHandle) = 0;
   virtual HRESULT
   CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle) = 0;
-  virtual HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) = 0;
 
   virtual Rc<StagingResource> staging(UINT Subresource) = 0;
   virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
   virtual Rc<DynamicLinearTexture> dynamicLinearTexture(UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
   virtual Rc<DynamicBuffer> dynamicTexture(UINT Subresource, UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
+  virtual bool CanMap(UINT Subresource, D3D11_MAP MapType, UINT MapFlags, D3D11_DEVICE_CONTEXT_TYPE ContextType) = 0;
 
+  Com<ID3D12Resource> wrapped_resource;
+  std::shared_ptr<WrappedResourceState> wrapped_state;
   Rc<Buffer> buffer_{};
   Rc<Texture> texture_{};
   uint32_t bind_flags_{};
+  DXGI_USAGE dxgi_usage_{};
   Rc<KeyedMutex> keyed_mutex_{};
+  Rc<Counter> so_filled_{};
 
   const Rc<Buffer> &buffer() const {
     return buffer_;
@@ -150,6 +168,13 @@ struct D3D11ResourceCommon : ID3D11Resource {
   }
   uint32_t bindFlags() const {
     return bind_flags_;
+  }
+  // how much of the buffer stream output has filled
+  const Rc<Counter> &
+  streamOutputFilled() {
+    if (!so_filled_.ptr())
+      so_filled_ = new Counter();
+    return so_filled_;
   }
   bool
   hazardsFree() const {
@@ -183,9 +208,14 @@ GetStagingResource(ID3D11Resource *pResource, UINT Subresource) {
   return static_cast<D3D11ResourceCommon *>(pResource)->staging(Subresource);
 };
 inline Rc<Texture>
-GetTexture(ID3D11Resource *pResource) {
-  return static_cast<D3D11ResourceCommon *>(pResource)->texture();
+GetTexture(ID3D11Resource *pResource, UINT plane = 0) {
+  auto texture = static_cast<D3D11ResourceCommon *>(pResource)->texture();
+  return texture ? texture->plane(plane) : nullptr;
 }
+
+template <typename TEXTURE_DESC>
+void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,
+                   uint32_t *pHeight, uint32_t *pDepth);
 
 template <typename tag, typename... Base>
 class TResourceBase : public MTLD3D11DeviceChild<D3D11ResourceCommon, Base...> {
@@ -195,8 +225,8 @@ public:
       desc(desc),
       dxgi_resource(this),
       keyed_mutex(this, device->GetImmediateContextPrivate()),
-      d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()),
-      dxgi_surface(this) {
+      d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {
+    // D3D11ResourceCommonß::bind_flags_
     this->bind_flags_ = desc.BindFlags;
   }
 
@@ -235,6 +265,8 @@ public:
     if (riid == __uuidof(ID3D10DeviceChild) ||
         riid == __uuidof(ID3D10Resource) ||
         riid == __uuidof(typename tag::D3D10)) {
+      if (desc.MiscFlags & (D3D11_RESOURCE_MISC_RESOURCE_CLAMP | D3D11_RESOURCE_MISC_BUFFER_STRUCTURED))
+        return E_NOINTERFACE;
       *ppvObject = ref_and_cast<typename tag::D3D10>(&d3d10);
       return S_OK;
     }
@@ -245,22 +277,29 @@ public:
       *ppvObject = ref(&dxgi_resource);
       return S_OK;
     }
-
-    if ((riid == __uuidof(IDXGISurface) || riid == __uuidof(IDXGISurface1) || riid == __uuidof(IDXGISurface2))) {
-      if constexpr (tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D ||
-                    tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
-        if (this->desc.ArraySize * this->desc.MipLevels == 1) {
-          *ppvObject = ref(&dxgi_surface);
-          return S_OK;
-        }
-      }
-    }
-
+  
     if (riid == __uuidof(IDXGIKeyedMutex)) {
       if (!(this->desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX))
         return E_NOINTERFACE;
       *ppvObject = ref(&keyed_mutex);
       return S_OK;
+    }
+
+    // a single-subresource 1D or 2D texture is its surface (Wine's test_texture1d_interfaces and IDXGISurface)
+    if (riid == __uuidof(IDXGISurface) || riid == __uuidof(IDXGISurface1) || riid == __uuidof(IDXGISurface2)) {
+      if constexpr (tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D ||
+                    tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
+        if (Subresources() == 1) {
+          try {
+            std::call_once(surfaces_once, [this] { surface.reset(Surface(0, true)); });
+          } catch (const std::bad_alloc &) {
+            return E_OUTOFMEMORY;
+          }
+          *ppvObject = ref(surface.get());
+          return S_OK;
+        }
+      }
+      return E_NOINTERFACE;
     }
 
     if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {
@@ -271,13 +310,39 @@ public:
   }
 
   void STDMETHODCALLTYPE GetDesc(void *pDesc) final {
-    ::dxmt::DowngradeResourceDescription(desc, (typename tag::DESC *)pDesc);
+    ::mullion::DowngradeResourceDescription(desc, (typename tag::DESC *)pDesc);
   }
 
   void STDMETHODCALLTYPE GetDesc1(void *pDesc) override { *(typename tag::DESC1 *)pDesc = desc; }
 
   void STDMETHODCALLTYPE GetType(D3D11_RESOURCE_DIMENSION *pResourceDimension) final {
     *pResourceDimension = tag::dimension;
+  }
+
+  bool
+  CanMap(UINT Subresource, D3D11_MAP MapType, UINT MapFlags, D3D11_DEVICE_CONTEXT_TYPE ContextType) final {
+    UINT subresources = 1;
+    if constexpr (tag::dimension != D3D11_RESOURCE_DIMENSION_BUFFER) {
+      subresources = desc.MipLevels;
+      if constexpr (tag::dimension != D3D11_RESOURCE_DIMENSION_TEXTURE3D)
+        subresources *= desc.ArraySize;
+    }
+    // D3D11.3 5.6.1.1 and D3D11_MAP/Map remarks: access and usage constrain the CPU's map, not internal updates.
+    if (Subresource >= subresources || MapType < D3D11_MAP_READ || MapType > D3D11_MAP_WRITE_NO_OVERWRITE ||
+        ((MapFlags & D3D11_MAP_FLAG_DO_NOT_WAIT) && MapType >= D3D11_MAP_WRITE_DISCARD) ||
+        (ContextType == D3D11_DEVICE_CONTEXT_DEFERRED && MapType < D3D11_MAP_WRITE_DISCARD))
+      return false;
+    if (desc.Usage == D3D11_USAGE_DYNAMIC) {
+      if (MapType < D3D11_MAP_WRITE_DISCARD ||
+          (MapType == D3D11_MAP_WRITE_NO_OVERWRITE && tag::dimension != D3D11_RESOURCE_DIMENSION_BUFFER))
+        return false;
+    } else if ((desc.Usage != D3D11_USAGE_STAGING && !this->wrapped_state) ||
+               MapType > D3D11_MAP_READ_WRITE) {
+      return false;
+    }
+    return ((MapType != D3D11_MAP_READ && MapType != D3D11_MAP_READ_WRITE) ||
+            (desc.CPUAccessFlags & D3D11_CPU_ACCESS_READ)) &&
+           (MapType == D3D11_MAP_READ || (desc.CPUAccessFlags & D3D11_CPU_ACCESS_WRITE));
   }
 
   void STDMETHODCALLTYPE SetEvictionPriority(UINT EvictionPriority) final {}
@@ -290,11 +355,60 @@ public:
     return device->QueryInterface(riid, ppDevice);
   };
 
+  // Wine's test_subresource_surface records Windows rejecting a whole volume, even its depth-one mips
+  UINT
+  Subresources() {
+    if constexpr (tag::dimension == D3D11_RESOURCE_DIMENSION_BUFFER)
+      return 1;
+    else if constexpr (tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D)
+      return desc.Depth == 1 ? desc.MipLevels : 0;
+    else
+      return desc.MipLevels * desc.ArraySize;
+  }
+
+  MTLD3D11Surface *
+  Surface(UINT Index, bool Whole) {
+    if (Index >= Subresources())
+      return nullptr;
+    DXGI_SURFACE_DESC surface_desc{0, 1, DXGI_FORMAT_UNKNOWN, {1, 0}};
+    if constexpr (tag::dimension == D3D11_RESOURCE_DIMENSION_BUFFER) {
+      surface_desc.Width = desc.ByteWidth;
+    } else {
+      UINT depth;
+      GetMipmapSize(&desc, Index % desc.MipLevels, &surface_desc.Width, &surface_desc.Height, &depth);
+      surface_desc.Format = desc.Format;
+      if constexpr (tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+        surface_desc.SampleDesc = desc.SampleDesc;
+    }
+    if (desc.MiscFlags & D3D11_RESOURCE_MISC_GDI_COMPATIBLE)
+      std::call_once(gdi_once, [this] { gdi = std::make_unique<MTLD3D11Surface::GDIState[]>(Subresources()); });
+    return new MTLD3D11Surface(
+        this, this->m_parent->GetImmediateContextPrivate(), Index, Whole, surface_desc, gdi ? &gdi[Index] : nullptr
+    );
+  }
+
+  HRESULT
+  CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) {
+    if (!ppSurface)
+      return E_INVALIDARG;
+    try {
+      auto created = Surface(Index, false);
+      if (!created)
+        return E_INVALIDARG;
+      *ppSurface = ref(created);
+      return S_OK;
+    } catch (const std::bad_alloc &) {
+      return E_OUTOFMEMORY;
+    }
+  }
+
   virtual HRESULT GetDXGIUsage(DXGI_USAGE *pUsage) {
     if (!pUsage) {
       return E_INVALIDARG;
     }
-    *pUsage = 0;
+    *pUsage = this->dxgi_usage_ | (desc.BindFlags & D3D11_BIND_RENDER_TARGET ? DXGI_USAGE_RENDER_TARGET_OUTPUT : 0) |
+              (desc.BindFlags & D3D11_BIND_SHADER_RESOURCE ? DXGI_USAGE_SHADER_INPUT : 0) |
+              (desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS ? DXGI_USAGE_UNORDERED_ACCESS : 0);
     return S_OK;
   }
 
@@ -326,10 +440,15 @@ public:
   virtual HRESULT
   CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle)
       override {
+    if (this->wrapped_resource && (desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE)) {
+      InitReturnPtr(pNTHandle);
+      if (!pNTHandle)
+        return E_INVALIDARG;
+      Com<ID3D12Device> owner;
+      HRESULT hr = this->wrapped_resource->GetDevice(IID_PPV_ARGS(&owner));
+      return FAILED(hr) ? hr : owner->CreateSharedHandle(this->wrapped_resource.ptr(), Attributes, Access, pName, pNTHandle);
+    }
     return E_INVALIDARG;
-  }
-  virtual HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) override {
-    return DXGI_ERROR_INVALID_CALL;
   }
 
 protected:
@@ -337,7 +456,10 @@ protected:
   MTLDXGIResource<TResourceBase<tag, Base...>> dxgi_resource;
   MTLDXGIKeyedMutex<TResourceBase<tag, Base...>, IMTLD3D11DeviceContext> keyed_mutex;
   tag::D3D10_IMPL d3d10;
-  D3D11DXGISurface dxgi_surface;
+  std::once_flag surfaces_once;
+  std::unique_ptr<MTLD3D11Surface> surface;
+  std::once_flag gdi_once;
+  std::unique_ptr<MTLD3D11Surface::GDIState[]> gdi;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
@@ -492,7 +614,7 @@ inline void MakeUniqueSharedName(char (&out)[54]) {
     uint64_t r1 = dis(gen);
     uint64_t r2 = dis(gen);
 
-    std::snprintf(out, 54, "DXMT_shared_resource_%016llx%016llx",
+    std::snprintf(out, sizeof(out), "MULLION_shared_%016llx%016llx",
                   static_cast<unsigned long long>(r1),
                   static_cast<unsigned long long>(r2));
 }
@@ -528,7 +650,8 @@ HRESULT CreateDeviceTexture1D(MTLD3D11Device *pDevice,
 HRESULT CreateDeviceTexture2D(MTLD3D11Device *pDevice,
                               const D3D11_TEXTURE2D_DESC1 *pDesc,
                               const D3D11_SUBRESOURCE_DATA *pInitialData,
-                              ID3D11Texture2D1 **ppTexture);
+                              ID3D11Texture2D1 **ppTexture,
+                              WMTTextureUsage usage = WMTTextureUsageUnknown);
 
 HRESULT CreateDeviceTexture3D(MTLD3D11Device *pDevice,
                               const D3D11_TEXTURE3D_DESC1 *pDesc,
@@ -536,6 +659,18 @@ HRESULT CreateDeviceTexture3D(MTLD3D11Device *pDevice,
                               ID3D11Texture3D1 **ppTexture);
 
 HRESULT ImportSharedTexture(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void **ppTexture);
+
+// a texture over another API's Metal texture, of the description of its dimension's DESC1 (D3D11On12)
+HRESULT WrapTexture(
+    MTLD3D11Device *pDevice, D3D11_RESOURCE_DIMENSION Dimension, const void *pDesc1, WMT::Reference<WMT::Texture> &&Metal,
+    const MullionMetalResource &Info, REFIID riid, void **ppTexture
+);
+
+// a buffer over another API's Metal buffer, at its GPU address and with its CPU mapping or none (D3D11On12)
+HRESULT WrapBuffer(
+    MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc, WMT::Reference<WMT::Buffer> &&Metal,
+    const MullionMetalResource &Info, REFIID riid, void **ppBuffer
+);
 
 HRESULT ImportSharedTextureFromNtHandle(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void **ppTexture);
 
@@ -580,9 +715,9 @@ HRESULT ExtractEntireResourceViewDescription(const RESOURCE_DESC *pResourceDesc,
                                              VIEW_DESC *pViewDescOut);
 
 template <typename RESOURCE_DESC, typename VIEW_DESC>
-HRESULT ExtractEntireResourceViewDescription(const RESOURCE_DESC *pResourceDesc,
-                                             const VIEW_DESC *pViewDescIn,
-                                             VIEW_DESC *pViewDescOut) {
+HRESULT
+ExtractEntireResourceViewDescription(MTLD3D11Device *pDevice, const RESOURCE_DESC *pResourceDesc,
+                                    const VIEW_DESC *pViewDescIn, VIEW_DESC *pViewDescOut, DXGI_USAGE Usage) {
   if (pViewDescIn) {
     *pViewDescOut = *pViewDescIn;
     if constexpr (!std::is_same_v<RESOURCE_DESC, D3D11_BUFFER_DESC>) {
@@ -590,10 +725,72 @@ HRESULT ExtractEntireResourceViewDescription(const RESOURCE_DESC *pResourceDesc,
         pViewDescOut->Format = pResourceDesc->Format;
       }
     }
-    return S_OK;
   } else {
-    return ExtractEntireResourceViewDescription(pResourceDesc, pViewDescOut);
+    *pViewDescOut = {};
+    if (FAILED(ExtractEntireResourceViewDescription(pResourceDesc, pViewDescOut)))
+      return E_INVALIDARG;
   }
+  constexpr bool srv = std::is_same_v<VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC1>;
+  constexpr bool rtv = std::is_same_v<VIEW_DESC, D3D11_RENDER_TARGET_VIEW_DESC1>;
+  constexpr bool dsv = std::is_same_v<VIEW_DESC, D3D11_DEPTH_STENCIL_VIEW_DESC>;
+  constexpr UINT bind = srv   ? D3D11_BIND_SHADER_RESOURCE
+                        : rtv ? D3D11_BIND_RENDER_TARGET
+                        : dsv ? D3D11_BIND_DEPTH_STENCIL
+                              : D3D11_BIND_UNORDERED_ACCESS;
+  if (!(pResourceDesc->BindFlags & bind))
+    return E_INVALIDARG;
+  if constexpr (!std::is_same_v<RESOURCE_DESC, D3D11_BUFFER_DESC>) {
+    constexpr UINT one = dsv ? UINT(D3D11_DSV_DIMENSION_TEXTURE1D) : UINT(D3D11_SRV_DIMENSION_TEXTURE1D);
+    constexpr UINT one_array =
+        dsv ? UINT(D3D11_DSV_DIMENSION_TEXTURE1DARRAY) : UINT(D3D11_SRV_DIMENSION_TEXTURE1DARRAY);
+    constexpr UINT two = dsv ? UINT(D3D11_DSV_DIMENSION_TEXTURE2D) : UINT(D3D11_SRV_DIMENSION_TEXTURE2D);
+    constexpr UINT ms_array =
+        dsv ? UINT(D3D11_DSV_DIMENSION_TEXTURE2DMSARRAY) : UINT(D3D11_SRV_DIMENSION_TEXTURE2DMSARRAY);
+    UINT dimension = pViewDescOut->ViewDimension;
+    if constexpr (std::is_same_v<RESOURCE_DESC, D3D11_TEXTURE1D_DESC>) {
+      if (dimension != one && dimension != one_array)
+        return E_INVALIDARG;
+    } else if constexpr (std::is_same_v<RESOURCE_DESC, D3D11_TEXTURE2D_DESC1>) {
+      if (dimension < two || dimension > ms_array) {
+        if constexpr (srv) {
+          if ((dimension != D3D11_SRV_DIMENSION_TEXTURECUBE && dimension != D3D11_SRV_DIMENSION_TEXTURECUBEARRAY) ||
+              !(pResourceDesc->MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE))
+            return E_INVALIDARG;
+        } else {
+          return E_INVALIDARG;
+        }
+      }
+    } else {
+      if (dsv || dimension != D3D11_SRV_DIMENSION_TEXTURE3D)
+        return E_INVALIDARG;
+    }
+    // D3D11.3 5.1.6: typed resources keep their format; 5.2.1: views fully qualify typeless resources
+    MTL_DXGI_FORMAT_DESC resource_format, view_format;
+    if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pResourceDesc->Format, resource_format)) ||
+        FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDescOut->Format, view_format)) ||
+        view_format.PixelFormat == WMTPixelFormatInvalid ||
+        // a family's parent qualifies no view; the formats of a depth stencil texture's planes carry the name and do
+        ((view_format.Flag & MTL_DXGI_FORMAT_TYPELESS) && DXGIFormatType(pViewDescOut->Format) == pViewDescOut->Format))
+      return E_INVALIDARG;
+    // and an unordered access view of a 32-bit typeless texture can be R32 of any type (D3D11.3 5.3.9.5, as D3D12's
+    // CastsToR32UnorderedAccess)
+    constexpr bool uav = !srv && !rtv && !dsv;
+    const bool r32 = pViewDescOut->Format == DXGI_FORMAT_R32_UINT || pViewDescOut->Format == DXGI_FORMAT_R32_SINT ||
+                     pViewDescOut->Format == DXGI_FORMAT_R32_FLOAT;
+    if (!(resource_format.Flag & MTL_DXGI_FORMAT_VIDEO_PLANAR) && !(uav && r32 && CastsToR32UnorderedAccess(pResourceDesc->Format)) &&
+        (DXGIFormatType(pResourceDesc->Format) != DXGIFormatType(pViewDescOut->Format) ||
+         (pViewDescOut->Format != pResourceDesc->Format && !(resource_format.Flag & MTL_DXGI_FORMAT_TYPELESS) &&
+          !((srv || rtv) && (Usage & DXGI_USAGE_BACK_BUFFER)))))
+      return E_INVALIDARG;
+    UINT support = 0;
+    constexpr UINT required = srv   ? D3D11_FORMAT_SUPPORT_SHADER_LOAD | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE
+                              : rtv ? D3D11_FORMAT_SUPPORT_RENDER_TARGET
+                              : dsv ? D3D11_FORMAT_SUPPORT_DEPTH_STENCIL
+                                    : D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW;
+    if (FAILED(pDevice->CheckFormatSupport(pViewDescOut->Format, &support)) || !(support & required))
+      return E_INVALIDARG;
+  }
+  return S_OK;
 }
 
 template <typename TEXTURE_DESC>
@@ -615,10 +812,6 @@ HRESULT InitializeAndNormalizeViewDescriptor(
 );
 
 template <typename TEXTURE_DESC>
-void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,
-                   uint32_t *pHeight, uint32_t *pDepth);
-
-template <typename TEXTURE_DESC>
 HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
                                const TEXTURE_DESC &Desc, uint32_t Level,
                                uint32_t &BytesPerRow, uint32_t &BytesPerImage,
@@ -636,6 +829,6 @@ CalculateBufferViewOffsetAndSize(const D3D11_BUFFER_DESC &buffer_desc,
 #pragma endregion
 
 constexpr UINT kD3D11OutputBindFlags =
-    D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_RENDER_TARGET | D3D11_BIND_RENDER_TARGET;
+    D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_RENDER_TARGET | D3D11_BIND_DEPTH_STENCIL;
 
-} // namespace dxmt
+} // namespace mullion

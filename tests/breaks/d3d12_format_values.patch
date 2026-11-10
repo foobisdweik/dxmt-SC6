@@ -1,0 +1,12 @@
+# B5G6R5 uses the B5G5R5A1 layout.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -1036,7 +1036,7 @@
+     break;
+   }
+   case DXGI_FORMAT_B5G6R5_UNORM: {
+-    description.PixelFormat = WMTPixelFormatB5G6R5Unorm;
++    description.PixelFormat = WMTPixelFormatBGR5A1Unorm;
+     description.BytesPerTexel = 2;
+     break;
+   }

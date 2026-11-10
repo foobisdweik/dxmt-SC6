@@ -1,0 +1,12 @@
+# immediate updates copy into the first slot
+--- a/src/d3d11/d3d11_context_imm.cpp
++++ b/src/d3d11/d3d11_context_imm.cpp
+@@ -67,7 +67,7 @@
+ template <>
+ std::pair<BufferAllocation *, uint32_t>
+ ImmediateContextBase::GetDynamicBufferAllocation(Rc<DynamicBuffer> &dynamic) {
+-  return {dynamic->immediateName().ptr(), dynamic->immediateSuballocation()};
++  return {dynamic->immediateName().ptr(), 0};
+ }
+ 
+ class MTLD3D11ImmediateContext : public ImmediateContextBase {

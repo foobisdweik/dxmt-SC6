@@ -1,0 +1,13 @@
+# ExecuteIndirect tier 1.1 is reported, which Mullion does not have
+# family native
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1051,7 +1051,7 @@
+         return FAIL(E_INVALIDARG);
+       // no work graphs, and command signatures have tier 1.0's arguments (no incrementing constant)
+       *reinterpret_cast<sdk::D3D12_FEATURE_DATA_D3D12_OPTIONS21 *>(pFeatureData) = {
+-          0, sdk::D3D12_EXECUTE_INDIRECT_TIER_1_0, FALSE, FALSE
++          0, sdk::D3D12_EXECUTE_INDIRECT_TIER_1_0 + 1, FALSE, FALSE
+       };
+       return S_OK;
+     }

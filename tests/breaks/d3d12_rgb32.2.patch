@@ -1,0 +1,12 @@
+# an R32G32B32 typed buffer load that takes blue leaves out the third R32 texel
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1496,7 +1496,7 @@
+   auto Past = ir.CreateICmpEQ(Address, llvm::ConstantInt::getAllOnesValue(Address->getType()));
+   auto Wide = Value;
+   for (unsigned i = 1; i < 3; i++) {
+-    if (!(Used & (1 << i)))
++    if (!(Used & (1 << i)) || i == 2)
+       continue;
+     auto At = ir.CreateSelect(Past, Address, ir.CreateAdd(Address, air.getInt(i)));
+     auto Texel = air.CreateRead(Tex.Texture, Tex.Handle, At, ArrayIndex, SampleIndex, Level, Tex.GlobalCoherent).first;

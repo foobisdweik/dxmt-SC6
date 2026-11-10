@@ -1,0 +1,12 @@
+# fast min/max drop NaN
+--- a/src/airconv/dxbc_signature.cpp
++++ b/src/airconv/dxbc_signature.cpp
+@@ -541,7 +541,7 @@
+             );
+             using llvm::air::AIRBuilder;
+             depth = ctx.air.CreateFPBinOp(
+-              AIRBuilder::fmin, range(1), ctx.air.CreateFPBinOp(AIRBuilder::fmax, range(0), depth, false), false
++              AIRBuilder::fmin, range(1), ctx.air.CreateFPBinOp(AIRBuilder::fmax, range(0), depth, true), true
+             );
+             return ir.CreateInsertValue(v, depth, {assigned_index});
+           });

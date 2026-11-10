@@ -1,0 +1,12 @@
+# constant fetch omits the current storage offset
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -265,7 +265,7 @@
+       auto argbuf = cbuf.buffer;
+       auto valid_length = argbuf->length() > cbuf.offset ? argbuf->length() - cbuf.offset : 0;
+       auto [argbuf_alloc, argbuf_offset] = access<stage>(argbuf, cbuf.offset, valid_length, ResourceAccess::Read);
+-      encoded_buffer[arg.StructurePtrOffset] = argbuf_alloc->gpuAddress() + argbuf_offset + cbuf.offset;
++      encoded_buffer[arg.StructurePtrOffset] = argbuf_alloc->gpuAddress() + cbuf.offset;
+       encoded_buffer[arg.StructurePtrOffset + 1] = std::min<uint64_t>(cbuf.length, valid_length);
+       makeResident<stage, kind>(argbuf.ptr());
+       break;

@@ -1,0 +1,11 @@
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -1594,8 +1594,6 @@
+     if (r0->visibility_result_count + r1->visibility_result_count <=
+             VisibilityResultOffsetBumpState::kVisibilitySegments &&
+         r0->scissors + r1->scissors <= WMT::kPassRectangles && r0->viewports + r1->viewports <= WMT::kPassRectangles &&
+-        (!r0->use_visibility_result || !r1->use_visibility_result ||
+-         r0->visibility_result_window == r1->visibility_result_window) &&
+         isEncoderSignatureMatched(r0, r1) &&
+         // can't merge if latter's vertex wait for former's fragment
+         !r1->fence_wait_vertex.intersectedWith(r0->fence_update)) {

@@ -1,0 +1,12 @@
+# sign-extends an unsigned carry, producing all ones instead of one.
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1307,7 +1307,7 @@
+     if (!IsNull(bin.dst_low)) {
+       auto ResultTuple = ir.CreateBinaryIntrinsic(Intrinsic::uadd_with_overflow, Src0Lo, Src1Lo);
+       StoreOperand(
+-          bin.dst_low, ir.CreateZExt(
++          bin.dst_low, ir.CreateSExt(
+                            ir.CreateExtractValue(ResultTuple, 1),
+                            ResultTuple->getType()->getStructElementType(1)->getWithNewBitWidth(32)
+                        )

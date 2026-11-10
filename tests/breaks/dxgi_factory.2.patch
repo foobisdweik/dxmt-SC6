@@ -1,0 +1,12 @@
+# a newly created factory is reported stale
+--- a/src/dxgi/dxgi_factory.cpp
++++ b/src/dxgi/dxgi_factory.cpp
+@@ -233,7 +233,7 @@
+     return S_OK;
+   }
+ 
+-  BOOL STDMETHODCALLTYPE IsCurrent() final { return TRUE; }
++  BOOL STDMETHODCALLTYPE IsCurrent() final { return FALSE; }
+ 
+   HRESULT STDMETHODCALLTYPE RegisterOcclusionStatusWindow(
+       HWND WindowHandle, UINT wMsg, DWORD *pdwCookie) final {

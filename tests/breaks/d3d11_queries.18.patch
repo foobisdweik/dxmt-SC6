@@ -1,0 +1,12 @@
+# create every D3D10 query as an event instead of its requested kind.
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -1199,7 +1199,7 @@
+     return E_INVALIDARG;
+ 
+   D3D11_QUERY_DESC d3d11_desc;
+-  d3d11_desc.Query = D3D11_QUERY(pQueryDesc->Query);
++  d3d11_desc.Query = D3D11_QUERY_EVENT;
+   d3d11_desc.MiscFlags = pQueryDesc->MiscFlags;
+ 
+   Com<ID3D11Query> d3d11_query;

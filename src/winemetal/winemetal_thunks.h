@@ -6,6 +6,16 @@
 
 #pragma pack(push, 8)
 
+struct unixcall_dispatchdata_bytes {
+  obj_handle_t data;
+  struct WMTMemoryPointer buffer;
+  uint64_t size;
+  uint64_t ret;
+};
+
+STATIC_ASSERT(sizeof(struct unixcall_dispatchdata_bytes) ==
+              sizeof(obj_handle_t) + sizeof(struct WMTMemoryPointer) + 2 * sizeof(uint64_t));
+
 struct unixcall_generic_obj_ret {
   obj_handle_t ret;
 };
@@ -28,6 +38,52 @@ struct unixcall_generic_obj_uint64_obj_ret {
 struct unixcall_generic_obj_uint64_ret {
   obj_handle_t handle;
   uint64_t ret;
+};
+
+struct unixcall_sparse_tile_size {
+  obj_handle_t device;
+  uint32_t type;
+  uint32_t format;
+  uint32_t sample_count;
+  uint32_t page_size;
+  struct WMTSize ret;
+};
+
+struct unixcall_new_placement_sparse_buffer {
+  obj_handle_t device;
+  uint64_t length;
+  uint64_t options;
+  uint64_t page_size;
+  obj_handle_t ret;
+  uint64_t gpu_address;
+};
+
+struct unixcall_sparse_tail {
+  obj_handle_t texture;
+  uint64_t first_mip;
+  uint64_t bytes;
+};
+
+struct unixcall_mtl4_mappings {
+  obj_handle_t queue;
+  obj_handle_t resource;
+  obj_handle_t other; // the heap, or the copy's destination
+  uint64_t texture;
+  struct WMTMemoryPointer operations;
+  uint64_t count;
+};
+
+struct unixcall_mtl4_event {
+  obj_handle_t queue;
+  obj_handle_t event;
+  uint64_t value;
+  uint64_t wait;
+};
+
+struct unixcall_mtldevice_sampletimestamps {
+  obj_handle_t device;
+  uint64_t cpu_timestamp;
+  uint64_t gpu_timestamp;
 };
 
 struct unixcall_generic_obj_uint64_noret {
@@ -224,38 +280,38 @@ struct unixcall_mtlcommandbuffer_spatial_scale {
   obj_handle_t fence;
 };
 
+struct unixcall_mtldevice_newfxdenoisedscaler {
+  obj_handle_t device;
+  struct WMTConstMemoryPointer info;
+  obj_handle_t ret;
+  bool metal4;
+};
+
+struct unixcall_mtlcommandbuffer_denoised_scale {
+  obj_handle_t cmdbuf;
+  obj_handle_t scaler;
+  struct WMTConstMemoryPointer args;
+  bool metal4;
+};
+
 struct unixcall_nsstring_string {
   struct WMTConstMemoryPointer buffer_ptr;
   enum WMTStringEncoding encoding;
   obj_handle_t ret;
 };
 
-struct unixcall_request_native_fullscreen {
-  uint64_t hwnd;
-  uint64_t enable;
-  uint64_t ret_state;
-};
-
-struct unixcall_read_cache_file {
-  struct WMTConstMemoryPointer path;
-  struct WMTMemoryPointer buffer;
-  uint64_t capacity;
-  uint64_t ret_size;
-  uint64_t ret_success;
-};
-
-struct unixcall_write_cache_file {
-  struct WMTConstMemoryPointer path;
-  struct WMTConstMemoryPointer data;
-  uint64_t size;
-  uint64_t ret_success;
-};
-
 struct unixcall_create_metal_view_from_hwnd {
   uint64_t hwnd;
+  struct WMTWindowPlacement placement;
   obj_handle_t device;
   obj_handle_t ret_view;
   obj_handle_t ret_layer;
+};
+
+struct unixcall_metal_view_set_placement {
+  obj_handle_t view;
+  struct WMTWindowPlacement placement;
+  uint8_t ret;
 };
 
 struct unixcall_enumerate {
@@ -308,6 +364,7 @@ struct unixcall_mtlsharedevent_setevent {
   obj_handle_t event_handle;
   obj_handle_t shared_event_listener;
   uint64_t value;
+  uint64_t reference;
 };
 
 struct unixcall_mtlsharedevent_createmachport {
@@ -360,12 +417,34 @@ struct unixcall_cache_set {
   obj_handle_t value_data;
 };
 
+struct unixcall_request_native_fullscreen {
+  uint64_t hwnd;
+  uint64_t enable;
+  uint64_t ret_state;
+};
+
+struct unixcall_read_cache_file {
+  struct WMTConstMemoryPointer path;
+  struct WMTMemoryPointer buffer;
+  uint64_t capacity;
+  uint64_t ret_size;
+  uint64_t ret_success;
+};
+
+struct unixcall_write_cache_file {
+  struct WMTConstMemoryPointer path;
+  struct WMTConstMemoryPointer data;
+  uint64_t size;
+  uint64_t ret_success;
+};
+
 struct unixcall_setmetalcachepath {
   struct WMTConstMemoryPointer path;
   uint64_t ret_success;
 };
 
 struct unixcall_bootstrap {
+  obj_handle_t object;
   char name[128];
   uint32_t mach_port;
   uint32_t reserved;
@@ -455,6 +534,91 @@ struct unixcall_mtldevice_newicb {
   uint64_t options;
   obj_handle_t ret;
 };
+
+struct unixcall_mtldevice_accelerationstructuresizes {
+  obj_handle_t device;
+  struct WMTMemoryPointer info;
+};
+
+struct unixcall_mtldevice_newaccelerationstructure {
+  obj_handle_t device;
+  uint64_t size;
+  uint64_t ret_gpu_resource_id;
+  obj_handle_t ret;
+};
+
+struct unixcall_mtldevice_newlinkedcomputepso {
+  obj_handle_t device;
+  struct WMTConstMemoryPointer info;
+  obj_handle_t ret_error;
+  obj_handle_t ret_pso;
+};
+
+struct unixcall_mtlcomputepso_newvisiblefunctiontable {
+  obj_handle_t pso;
+  struct WMTConstMemoryPointer functions;
+  uint64_t function_count;
+  obj_handle_t ret;
+};
+
+struct unixcall_mtlcommandbuffer_sampledcommandencoder {
+  obj_handle_t cmdbuf;
+  struct WMTConstMemoryPointer samples, render_info;
+  obj_handle_t ret;
+  enum WMTSampledEncoder type;
+};
+struct unixcall_wmtgpu_statistics {
+  obj_handle_t device;
+  struct WMTMemoryPointer buffer;
+  uint64_t size;
+  uint64_t ret;
+};
+
+struct unixcall_wmtdiag_write {
+  struct WMTConstMemoryPointer directory, lines;
+  uint64_t length;
+  uint32_t ret;
+};
+
+struct unixcall_wmttrace_write {
+  struct WMTConstMemoryPointer directory, lines;
+  uint64_t length;
+  uint32_t encoder_errors, memory_samples;
+  uint32_t ret;
+};
+
+struct unixcall_wmtflight_write {
+  struct WMTConstMemoryPointer reason, directory, executable, records;
+  uint64_t count, frequency, now, lost, overwritten;
+};
+struct unixcall_metal4_new {
+  obj_handle_t queue, fence, event, residency;
+  uint64_t value;
+  struct WMTMetal4BindingCounts bindings;
+  uint32_t padding;
+  obj_handle_t ret;
+};
+struct unixcall_metal4_encoder {
+  obj_handle_t buffer;
+  struct WMTConstMemoryPointer render;
+  struct WMTMemoryPointer samples;
+  uint64_t kind;
+  obj_handle_t ret;
+};
+struct unixcall_metal4_commands {
+  obj_handle_t encoder;
+  struct WMTConstMemoryPointer head;
+  uint64_t kind;
+};
+struct unixcall_metal4_feedback {
+  obj_handle_t buffer;
+  struct WMTMetal4Feedback ret;
+};
+
+STATIC_ASSERT(sizeof(struct unixcall_metal4_new) == 64);
+STATIC_ASSERT(sizeof(struct unixcall_metal4_encoder) == 40);
+STATIC_ASSERT(sizeof(struct unixcall_metal4_commands) == 24);
+STATIC_ASSERT(sizeof(struct unixcall_metal4_feedback) == 48);
 
 #pragma pack(pop)
 

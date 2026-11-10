@@ -1,0 +1,13 @@
+# use OR instead of XOR in the D3D11 output merger.
+diff --git a/src/d3d11/d3d11_state_object.cpp b/src/d3d11/d3d11_state_object.cpp
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -108,7 +108,7 @@ constexpr WMTLogicOperation kLogicOpMap[] = {
+     WMTLogicOperationNoOp,       WMTLogicOperationInvert,
+     WMTLogicOperationAnd,        WMTLogicOperationNand,
+     WMTLogicOperationOr,         WMTLogicOperationNor,
+-    WMTLogicOperationXor,        WMTLogicOperationEquiv,
++    WMTLogicOperationOr,         WMTLogicOperationEquiv,
+     WMTLogicOperationAndReverse, WMTLogicOperationAndInverted,
+     WMTLogicOperationOrReverse,  WMTLogicOperationOrInverted,
+ };

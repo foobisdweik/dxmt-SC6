@@ -1,0 +1,11 @@
+# closing a list leaves ended statistics in the list instead of its heap
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -665,7 +665,6 @@
+     if (encoder_count < std::numeric_limits<size_t>::max())
+       return FAIL(E_FAIL);
+     SumOcclusion();
+-    SumStatistics();
+     EndPredication();
+     HRESULT hr = allocator_->EndRecord(&encoder_count);
+     recorded_on = allocator_.ptr();

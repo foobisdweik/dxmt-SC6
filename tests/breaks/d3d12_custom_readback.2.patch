@@ -1,0 +1,12 @@
+# sampled timestamps are all zero, which a monotonicity-only check accepts
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -435,7 +435,7 @@
+       auto sample = [&](size_t until) {
+         for (; read < until; read++)
+           for (auto &[heap, query] : inflight.sampled[read].second)
+-            heap->timestamps[query] = clock[inflight.sampled[read].first];
++            heap->timestamps[query] = 0;
+       };
+       for (auto &resolve : inflight.resolves) {
+         sample(resolve.after);

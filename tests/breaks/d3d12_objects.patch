@@ -1,0 +1,12 @@
+# drops the reference transferred by GetPrivateData for an interface.
+--- a/src/util/com/com_private_data.cpp
++++ b/src/util/com/com_private_data.cpp
+@@ -76,8 +76,6 @@
+ 
+   if (size >= minSize) {
+     if (m_type == ComPrivateDataType::Iface) {
+-      if (m_iface)
+-        m_iface->AddRef();
+       std::memcpy(data, &m_iface, minSize);
+     } else {
+       std::memcpy(data, m_data, minSize);

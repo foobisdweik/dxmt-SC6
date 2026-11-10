@@ -1,0 +1,12 @@
+# a frame's record leaves out the bridge's call totals
+--- a/src/mullion/mullion_diag.hpp
++++ b/src/mullion/mullion_diag.hpp
+@@ -276,7 +276,7 @@
+   auto now = Now();
+   uint64_t host, gpu;
+   device.sampleTimestamps(host, gpu);
+-  Write(Line("frame", queue, number, now, host) + Statistics(device) + Calls());
++  Write(Line("frame", queue, number, now, host) + Statistics(device));
+ }
+ 
+ template <typename Head, typename Name>

@@ -18,18 +18,233 @@
 
 #include "d3d12_command_allocator.hpp"
 #include "com/com_pointer.hpp"
+#include "mullion_diag.hpp"
+#include <map>
+#include <bit>
 
-namespace dxmt {
+namespace mullion {
+
+struct GPURecord {
+  const char *bytes, *kind;
+  size_t length, written_offset, written_length;
+};
+// a closed list's directory stays read-only while later lists are recorded
+struct GPUListRecords {
+  EncoderData *root;
+  GPUListRecords *previous;
+  std::unordered_map<EncoderData *, std::vector<GPURecord>> passes;
+};
+struct GPURecording {
+  std::atomic<GPUListRecords *> head = nullptr;
+  ~GPURecording() { Clear(); }
+  void Clear() {
+    for (auto list = head.exchange(nullptr); list;) {
+      auto previous = list->previous;
+      delete list;
+      list = previous;
+    }
+  }
+};
+struct GPURecordChecks {
+  struct Snapshot {
+    GPURecord record;
+    std::string label, bytes;
+    uint64_t pass;
+  };
+  std::vector<Snapshot> snapshots;
+  bool checked = false;
+};
+struct GPURecordTotals {
+  mullion::mutex mutex;
+  std::map<std::string, std::pair<uint64_t, uint64_t>> kinds;
+};
+
+std::shared_ptr<GPURecordTotals>
+CreateGPURecordTotals() { return std::make_shared<GPURecordTotals>(); }
+
+void
+SnapshotGPURecords(
+    const GPUListRecords *List, EncoderData *Pass, const std::string &Label, std::shared_ptr<GPURecordChecks> &Checks
+) {
+  if (!List)
+    return;
+  auto found = List->passes.find(Pass);
+  if (found == List->passes.end())
+    return;
+  if (!Checks)
+    Checks = std::make_shared<GPURecordChecks>();
+  for (auto &record : found->second) {
+    auto &snapshot = Checks->snapshots.emplace_back(record, Label, std::string(record.length, '\0'),
+                                                   Pass->type == EncoderType::Null ? 0 : Pass->id);
+    // predication may already be writing the excluded span
+    memcpy(snapshot.bytes.data(), record.bytes, record.written_offset);
+    auto end = record.written_offset + record.written_length;
+    memcpy(snapshot.bytes.data() + end, record.bytes + end, record.length - end);
+  }
+}
+
+void
+CompareGPURecords(const std::shared_ptr<GPURecordChecks> &Checks, const std::shared_ptr<GPURecordTotals> &Totals) {
+  if (!Checks)
+    return;
+  std::lock_guard<mullion::mutex> lock(Totals->mutex);
+  if (std::exchange(Checks->checked, true))
+    return;
+  size_t changed = 0, first = 0, word = 0;
+  uint32_t encoded = 0, current = 0;
+  for (size_t i = 0; i < Checks->snapshots.size(); i++) {
+    auto &snapshot = Checks->snapshots[i];
+    auto &record = snapshot.record;
+    auto at = std::mismatch(record.bytes, record.bytes + record.written_offset, snapshot.bytes.data()).first;
+    if (at == record.bytes + record.written_offset) {
+      auto end = record.written_offset + record.written_length;
+      at = std::mismatch(record.bytes + end, record.bytes + record.length, snapshot.bytes.data() + end).first;
+    }
+    auto &totals = Totals->kinds[record.kind];
+    totals.first++;
+    if (at == record.bytes + record.length)
+      continue;
+    totals.second++;
+    if (changed++ == 0) {
+      first = i;
+      word = (at - record.bytes) / sizeof(uint32_t);
+      auto offset = word * sizeof(uint32_t), length = std::min(sizeof(uint32_t), record.length - offset);
+      memcpy(&encoded, snapshot.bytes.data() + offset, length);
+      memcpy(&current, record.bytes + offset, length);
+    }
+  }
+  if (changed)
+    ERR("D3D12 recording changed: ", Checks->snapshots[first].record.kind, "; pass ", Checks->snapshots[first].pass,
+        " ", Checks->snapshots[first].label, "; word ", word, " encoded ", encoded, " current ", current, "; ", changed,
+        " of ", Checks->snapshots.size(), " records differ");
+}
+
+void
+ReportGPURecords(const std::shared_ptr<GPURecordTotals> &Totals) {
+  uint64_t compared = 0, differed = 0;
+  for (auto &[kind, totals] : Totals->kinds) {
+    Logger::info(str::format(
+        "D3D12 recording kind: ", kind, "; ", totals.first, " compared; ", totals.second, " differed"
+    ));
+    compared += totals.first, differed += totals.second;
+  }
+  Logger::info(str::format("D3D12 recording totals: ", compared, " compared; ", differed, " differed"));
+}
+
+void
+MTLD3D12CommandAllocatorImpl::RecordGPUHeap(
+    const void *Bytes, size_t Length, const char *Kind, size_t WrittenOffset, size_t WrittenLength, EncoderData *Pass
+) {
+  if (!Length || exhausted_)
+    return;
+  auto pass = Pass ? Pass : encoder_current ? encoder_current : encoder_last;
+  auto root = &encoder_lists_.back();
+  auto list = records_->head.load(std::memory_order_relaxed);
+  if (!list || list->root != root) {
+    list = new GPUListRecords{root, list, {}};
+    records_->head.store(list, std::memory_order_release);
+  }
+  list->passes[pass].push_back({static_cast<const char *>(Bytes), Kind, Length, WrittenOffset, WrittenLength});
+}
+
+void
+MTLD3D12CommandAllocatorImpl::ExcludeGPUWrite(const void *Bytes, size_t Offset, size_t Length) {
+  auto list = records_->head.load(std::memory_order_relaxed);
+  if (!list)
+    return;
+  auto found = list->passes.find(encoder_current);
+  if (found == list->passes.end())
+    return;
+  auto &records = found->second;
+  for (auto it = records.rbegin(); it != records.rend(); ++it)
+    if (it->bytes == Bytes) {
+      it->written_offset = Offset, it->written_length = Length;
+      return;
+    }
+}
+
+const GPUListRecords *
+MTLD3D12CommandAllocatorImpl::GPURecordsFor(EncoderData *Root) {
+  auto list = records_->head.load(std::memory_order_acquire);
+  while (list && list->root != Root)
+    list = list->previous;
+  return list;
+}
+
+MTLD3D12CommandAllocatorImpl::~MTLD3D12CommandAllocatorImpl() {
+  // what no submitted list still runs goes to the device's pool
+  if (!pending) {
+    for (auto &[key, unused] : icb_pool_)
+      device_->indirect_command_buffers.Give(std::move(unused));
+    for (auto &used : icb_)
+      device_->indirect_command_buffers.Give(std::move(used));
+  }
+  ReleaseRuns();
+  delete records_;
+}
+
+void
+MTLD3D12CommandAllocatorImpl::Discard(EncoderData *Root) {
+  for (auto pass = std::exchange(Root->next, nullptr); pass;) {
+    auto next = pass->next;
+    if (diag::profile)
+      device_->PassName(pass);
+    switch (pass->type) {
+    case EncoderType::Null:
+    case EncoderType::Predicate:
+    case EncoderType::Later:
+    case EncoderType::Settle:
+      break;
+    case EncoderType::Upscale:
+      reinterpret_cast<UpscaleEncoderData *>(pass)->~UpscaleEncoderData();
+      break;
+    case EncoderType::Clear:
+    case EncoderType::Render:
+      reinterpret_cast<RenderEncoderData *>(pass)->~RenderEncoderData();
+      break;
+    case EncoderType::Blit:
+      reinterpret_cast<BlitEncoderData *>(pass)->~BlitEncoderData();
+      break;
+    case EncoderType::Compute:
+    case EncoderType::ComputeParts:
+      reinterpret_cast<ComputeEncoderData *>(pass)->~ComputeEncoderData();
+      break;
+    case EncoderType::AccelerationStructure:
+      reinterpret_cast<AccelerationStructureEncoderData *>(pass)->~AccelerationStructureEncoderData();
+      break;
+    case EncoderType::Resolve:
+      reinterpret_cast<ResolveEncoderData *>(pass)->~ResolveEncoderData();
+      break;
+    case EncoderType::ResolveTimestamps:
+      reinterpret_cast<ResolveTimestampsData *>(pass)->~ResolveTimestampsData();
+      break;
+    }
+    pass = next;
+  }
+}
+
+void
+MTLD3D12CommandAllocatorImpl::ReleaseRuns() {
+  for (auto &list : encoder_lists_)
+    Discard(&list);
+  encoder_lists_.clear();
+  if (records_)
+    records_->Clear();
+  for (auto [arena, cursor] : {std::pair{&device_->recording.commands, &cpu_cursor_},
+                              std::pair{&device_->recording.arguments, &gpu_cursor_}}) {
+    for (auto &run : cursor->runs)
+      arena->Release(run);
+    *cursor = {};
+  }
+}
 
 MTLD3D12CommandAllocatorImpl::MTLD3D12CommandAllocatorImpl(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type) :
     MTLD3D12Pageable<MTLD3D12CommandAllocator>(pDevice),
     type_(Type),
+    records_(diag::errors ? new GPURecording : nullptr),
     clear_uav_(device_->GetMTLDevice(), *this),
-    clear_rtv_(device_->GetMTLDevice(), *this),
-    copy_temp_allocator_(
-        {device_->GetMTLDevice(), WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModePrivate}
-    ),
-    copy_temp_version_(0) {}
+    transcode_feedback_(*this),
+    clear_rtv_(device_->GetMTLDevice(), *this) {}
 
 HRESULT
 CreateCommandAllocator(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type, REFIID riid, void **ppCommandAllocator) {
@@ -40,7 +255,7 @@ CreateCommandAllocator(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type, RE
   case D3D12_COMMAND_LIST_TYPE_COPY:
     break;
   default:
-    return E_INVALIDARG;
+    return FAIL(E_INVALIDARG);
   }
   auto command_allocator = Com(new MTLD3D12CommandAllocatorImpl(pDevice, Type));
   HRESULT hr = command_allocator->Initialize();
@@ -52,37 +267,60 @@ CreateCommandAllocator(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type, RE
 HRESULT
 MTLD3D12CommandAllocatorImpl::Initialize() {
 
-  if (!cpu_heap_)
-    cpu_heap_ = malloc(kCPUHeapSize);
-  if (!cpu_heap_)
-    return E_OUTOFMEMORY;
-  cpu_heap_offset_ = 0;
-
-  if (!gpu_heap_)
-    gpu_heap_ = malloc(kGPUHeapSize);
-  if (!gpu_heap_)
-    return E_OUTOFMEMORY;
-  gpu_heap_offset_ = 0;
-
-  WMTBufferInfo buffer_info;
-  buffer_info.memory.set(gpu_heap_);
-  buffer_info.length = kGPUHeapSize;
-  buffer_info.options = WMTResourceHazardTrackingModeUntracked;
-  gpu_heap_buffer_ = device_->GetMTLDevice().newBuffer(buffer_info);
-
-  if (!gpu_heap_buffer_) {
-    ERR("CommandAllocator: failed to allocate gpu buffer");
-    return E_FAIL;
+  // the device's arenas, and the one Metal buffer over what the GPU reads: there from the first allocator on
+  auto &recording = device_->recording;
+  {
+    std::lock_guard<mullion::mutex> lock(recording.mutex);
+    if (!recording.commands.Initialize() || !recording.arguments.Initialize())
+      return FAIL(E_OUTOFMEMORY);
+    if (!recording.buffer) {
+      WMTBufferInfo buffer_info;
+      buffer_info.memory.set(recording.arguments.base);
+      buffer_info.length = RecordingArena::kSize;
+      buffer_info.options = WMTResourceHazardTrackingModeUntracked;
+      recording.buffer = device_->GetMTLDevice().newBuffer(buffer_info);
+      if (!recording.buffer) {
+        ERR("CommandAllocator: failed to allocate gpu buffer");
+        return E_FAIL;
+      }
+      recording.address = buffer_info.gpu_address;
+    }
+    if (!recording.zeros && !(recording.zeros = recording.arguments.Acquire(1)))
+      return FAIL(E_OUTOFMEMORY);
   }
-  gpu_heap_buffer_address_ = buffer_info.gpu_address;
+  cpu_heap_ = recording.commands.base, gpu_heap_ = recording.arguments.base;
+  gpu_heap_buffer_ = recording.buffer, gpu_heap_buffer_address_ = recording.address;
+  ReleaseRuns();
+  exhausted_ = false;
+  spill_.clear();
 
   encoder_current = nullptr;
   encoder_last = nullptr;
   encoder_count_ = 0;
 
+  // the pool keeps only what the last use made, so it grows with a use and never past it; what that use left unused
+  // goes to the device's, for another allocator
+  for (auto &[key, unused] : icb_pool_)
+    device_->indirect_command_buffers.Give(std::move(unused));
+  icb_pool_.clear();
+  for (auto &used : icb_)
+    icb_pool_.emplace(used.key, std::move(used));
   icb_.clear();
+  sparse_clear_texels_.clear();
+  visibility_.clear();
+  visibility_used_ = kVisibilityWindow;
+  depth_bounds_samples_.clear();
+  depth_bounds_length_ = 0;
+  acceleration_structures_.clear();
+  acceleration_structure_inputs_.clear();
 
-  copy_temp_allocator_.free_blocks(copy_temp_version_++);
+  // the next lists copy in the last buffer while the last lists took half of it: an allocator keeps at most twice what
+  // its last lists copied
+  if (!temp_buffers_.empty() && 2 * temp_used_ >= temp_buffers_.back().length)
+    temp_buffers_.erase(temp_buffers_.begin(), temp_buffers_.end() - 1);
+  else
+    temp_buffers_.clear();
+  temp_offset_ = temp_used_ = 0;
 
   return S_OK;
 }
@@ -91,7 +329,7 @@ HRESULT
 STDMETHODCALLTYPE
 MTLD3D12CommandAllocatorImpl::QueryInterface(REFIID riid, void **ppvObject) {
   if (ppvObject == nullptr)
-    return E_POINTER;
+    return FAIL(E_POINTER);
 
   *ppvObject = nullptr;
 
@@ -105,47 +343,86 @@ MTLD3D12CommandAllocatorImpl::QueryInterface(REFIID riid, void **ppvObject) {
     WARN("D3D12CommandAllocator: Unknown interface query ", str::format(riid));
   }
 
-  return E_NOINTERFACE;
+  return MTLD3D12DeviceChild::QueryInterface(riid, ppvObject);
 }
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12CommandAllocatorImpl::Reset() {
   if (encoder_last)
-    return E_FAIL;
-
-  for (auto &encoder_list : encoder_lists_) {
-    EncoderData *next = encoder_list.next;
-    while (next) {
-      switch (next->type) {
-      case EncoderType::Null:
-        break;
-      case EncoderType::Clear:
-        reinterpret_cast<ClearEncoderData *>(next)->~ClearEncoderData();
-        break;
-      case EncoderType::Render:
-        reinterpret_cast<RenderEncoderData *>(next)->~RenderEncoderData();
-        break;
-      case EncoderType::Blit:
-        reinterpret_cast<BlitEncoderData *>(next)->~BlitEncoderData();
-        break;
-      case EncoderType::Compute:
-        reinterpret_cast<ComputeEncoderData *>(next)->~ComputeEncoderData();
-        break;
-      case EncoderType::Resolve:
-        reinterpret_cast<ResolveEncoderData *>(next)->~ResolveEncoderData();
-        break;
-      }
-      next = next->next;
-    }
-  }
-  encoder_lists_.clear();
-
-  for (auto ptr : spilled_cpu_heap_)
-    free(ptr);
-  spilled_cpu_heap_.clear();
+    return FAIL(E_FAIL);
+  // "the runtime will not allow a reset while a command list is still being executed": the lists' recording is what
+  // the GPU still reads
+  if (pending)
+    ERR("CommandAllocator: Reset while ", pending.load(), " of its submitted lists have not completed");
 
   return Initialize();
 };
+
+// runs the signature's resolver over the commands; the caller fills in what it reads
+IndirectComputeCommandData *
+MTLD3D12CommandAllocatorImpl::EncodeComputeResolver(MTLD3D12CommandSignature *pCmdSig, size_t MaxCount) {
+  auto [Ptr, Offset] = AllocateGPUHeap(sizeof(IndirectComputeCommandData), 16);
+  if (records_)
+    RecordGPUHeap(Ptr, offsetof(IndirectComputeCommandData, execution_range), "indirect dispatch");
+  auto data = new (Ptr) IndirectComputeCommandData{};
+  data->max_count = MaxCount;
+
+  auto &cmd_setpso_res = EncodeComputeCommand<wmtcmd_compute_setpso>();
+  cmd_setpso_res.type = WMTComputeCommandSetPSO;
+  cmd_setpso_res.pso = pCmdSig->compute_resolver;
+  cmd_setpso_res.threadgroup_size = {pCmdSig->compute_resolver.maxTotalThreadsPerThreadgroup(), 1, 1};
+  if (device_->NamesPasses())
+    device_->NamePass(encoder_current, "indirect resolver", pCmdSig->compute_resolver);
+
+  auto &cmd_argbuf_res = EncodeComputeCommand<wmtcmd_compute_setbuffer>();
+  cmd_argbuf_res.type = WMTComputeCommandSetBuffer;
+  cmd_argbuf_res.buffer = gpu_heap_buffer_;
+  cmd_argbuf_res.offset = Offset;
+  cmd_argbuf_res.index = 30;
+
+  auto &cmd_dispatch_res = EncodeComputeCommand<wmtcmd_compute_dispatch>();
+  cmd_dispatch_res.type = WMTComputeCommandDispatchThreads;
+  cmd_dispatch_res.size = {std::max<size_t>(MaxCount, 1), 1, 1};
+  OrderDispatches();
+  return data;
+}
+
+// an indirect command buffer of the kind `info` describes, for `count` commands: a pooled one of the same kind and
+// size when the allocator or else the device has one, else a new one, of the next power of two in size so that others
+// fit it. both leave its GPU resource ID in `info`; the lists keep it until the allocator is reset
+WMT::IndirectCommandBuffer
+MTLD3D12CommandAllocatorImpl::AcquireICB(WMTIndirectCommandBufferInfo &info, uint64_t count, WMTResourceOptions options) {
+  uint64_t capacity = std::bit_ceil(std::max<uint64_t>(count, 1));
+  WMTIndirectCommandBufferInfo kind = info;
+  kind.padding_bits = 0;
+  kind.padding = 0;
+  kind.gpu_resource_id = 0;
+  uint64_t key = std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char *>(&kind), sizeof(kind)));
+  key ^= (capacity * 0x9e3779b97f4a7c15ull) ^ (uint64_t(options) << 56);
+  PooledICB entry;
+  bool pooled = false;
+  for (auto [it, end] = icb_pool_.equal_range(key); it != end; ++it)
+    if (it->second.Is(key, kind, capacity, options)) {
+      entry = std::move(it->second);
+      icb_pool_.erase(it);
+      pooled = true;
+      break;
+    }
+  if (!pooled)
+    pooled = device_->indirect_command_buffers.Take(key, kind, capacity, options, entry);
+  if (!pooled) {
+    entry.icb = device_->GetMTLDevice().newIndirectCommandBuffer(info, capacity, options);
+    entry.gpu_resource_id = info.gpu_resource_id;
+    entry.key = key;
+    entry.kind = kind;
+    entry.capacity = capacity;
+    entry.options = options;
+  }
+  info.gpu_resource_id = entry.gpu_resource_id;
+  WMT::IndirectCommandBuffer icb = entry.icb;
+  icb_.push_back(std::move(entry));
+  return icb;
+}
 
 IndirectComputeCommandData *
 MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignature *pCmdSig, MTLD3D12ComputePipelineState *pPSO, size_t MaxCount) {
@@ -166,78 +443,49 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignat
   info.max_fragment_buffer_binding = 0;
   info.max_object_buffer_binding = 0;
   info.max_mesh_buffer_binding = 0;
-  info.max_kernel_buffer_binding = 31;
+  info.max_kernel_buffer_binding = pCmdSig->KernelBufferBindCount;
   info.max_kernel_threadgroup_memory_binding = 0;
   info.max_object_threadgroup_memory_binding = 0;
   info.gpu_resource_id = 0;
 
-  auto icb = device_->GetMTLDevice().newIndirectCommandBuffer(info, MaxCount, WMTResourceStorageModeShared);
+  auto icb = AcquireICB(info, MaxCount, WMTResourceStorageModeShared);
 
-  auto [Ptr, Offset] = AllocateGPUHeap(sizeof(IndirectComputeCommandData), 16);
+  auto &cmd_use_icb = EncodeComputeCommand<wmtcmd_compute_useresource>();
+  cmd_use_icb.type = WMTComputeCommandUseResource;
+  cmd_use_icb.usage = WMTResourceUsageRead | WMTResourceUsageWrite;
+  cmd_use_icb.resource = icb;
 
-  auto data = reinterpret_cast<IndirectComputeCommandData *>(Ptr);
-
+  auto data = EncodeComputeResolver(pCmdSig, MaxCount);
   data->cmd_buf = info.gpu_resource_id;
-  data->max_count = MaxCount;
   data->tgsize_x = pPSO->threadgroup_size.width;
   data->tgsize_y = pPSO->threadgroup_size.height;
   data->tgsize_z = pPSO->threadgroup_size.depth;
 
-  {
-    // populated outside
-    data->max_count_buffer = 0;
-    data->argument_buffer = 0;
-    data->rootsig_qwords = 0;
-    data->rootsig_qwords_stride = 0;
-    data->static_samplers = 0;
-  }
+  auto &cmd_setpso = EncodeComputeCommand<wmtcmd_compute_setpso>();
+  cmd_setpso.type = WMTComputeCommandSetPSO;
+  cmd_setpso.pso = pPSO->pso;
+  cmd_setpso.threadgroup_size = pPSO->threadgroup_size; // not really used
+  if (device_->NamesPasses())
+    device_->NamePass(encoder_current, pPSO->name, pPSO->pso);
 
-  {
-    /**
-     * TODO: move these out?
-     */
-
-    auto &cmd_use_icb = EncodeComputeCommand<wmtcmd_compute_useresource>();
-    cmd_use_icb.type = WMTComputeCommandUseResource;
-    cmd_use_icb.usage = WMTResourceUsageRead | WMTResourceUsageWrite;
-    cmd_use_icb.resource = icb;
-
-    auto &cmd_setpso_res = EncodeComputeCommand<wmtcmd_compute_setpso>();
-    cmd_setpso_res.type = WMTComputeCommandSetPSO;
-    cmd_setpso_res.pso = pCmdSig->compute_resolver;
-    cmd_setpso_res.threadgroup_size = {1, 1, 1};
-
-    auto &cmd_argbuf_res = EncodeComputeCommand<wmtcmd_compute_setbuffer>();
-    cmd_argbuf_res.type = WMTComputeCommandSetBuffer;
-    cmd_argbuf_res.buffer = gpu_heap_buffer_;
-    cmd_argbuf_res.offset = Offset;
-    cmd_argbuf_res.index = 30;
-
-    auto &cmd_dispatch_res = EncodeComputeCommand<wmtcmd_compute_dispatch>();
-    cmd_dispatch_res.type = WMTComputeCommandDispatch;
-    cmd_dispatch_res.size = {1, 1, 1};
-
-    auto &cmd_setpso = EncodeComputeCommand<wmtcmd_compute_setpso>();
-    cmd_setpso.type = WMTComputeCommandSetPSO;
-    cmd_setpso.pso = pPSO->pso;
-    cmd_setpso.threadgroup_size = pPSO->threadgroup_size; // not really used
-  }
-
-  auto &cmd = EncodeComputeCommand<wmtcmd_compute_executecommands>();
-  cmd.type = WMTComputeCommandExecuteCommandsInBuffer;
+  auto &cmd = EncodeComputeCommand<wmtcmd_compute_executecommands_indirect>();
+  cmd.type = WMTComputeCommandExecuteCommandsInBufferIndirect;
   cmd.indirect_command_buffer = icb;
-  cmd.location = 0;
-  cmd.length = MaxCount;
-
-  icb_.push_back(std::move(icb));
+  cmd.indirect_buffer = gpu_heap_buffer_;
+  cmd.indirect_buffer_offset = reinterpret_cast<char *>(data) - static_cast<char *>(gpu_heap_) +
+                               offsetof(IndirectComputeCommandData, execution_range);
 
   return data;
 }
 
 IndirectRenderCommandData *
 MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
-    MTLD3D12CommandSignature *pCmdSig, MTLD3D12GraphicsPipelineState *pPSO, size_t MaxCount
+    MTLD3D12CommandSignature *pCmdSig, MTLD3D12GraphicsPipelineState *pPSO, WMT::RenderPipelineState Pipeline,
+    size_t MaxCount, bool tessellation, bool statistics_cuts, bool runs_max_count
 ) {
+  // for a tessellated, geometry or mesh command (`tessellation`) the resolver leaves an IndirectMeshDraw, and the
+  // caller draws each: mesh commands in indirect command buffers come only with Apple9 GPUs, and one way serves all
+  bool draws = tessellation;
   WMTIndirectCommandBufferInfo info;
   info.inherit_buffers = !(pCmdSig->UpdateVertexBuffers || pCmdSig->UpdateIndexBuffer || pCmdSig->UpdateRootArguments);
   info.inherit_pso = 1;
@@ -251,9 +499,9 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
   info.support_dynamic_attribute_stride = 0;
   info.support_ray_tracing = 0;
   info.type = pCmdSig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED ? WMTIndirectCommandTypeDrawIndexed
-                                                                                : WMTIndirectCommandTypeDraw;
-  info.max_vertex_buffer_binding = 31;
-  info.max_fragment_buffer_binding = 31;
+                                                                                 : WMTIndirectCommandTypeDraw;
+  info.max_vertex_buffer_binding = pCmdSig->VertexBufferBindCount;
+  info.max_fragment_buffer_binding = pCmdSig->FragmentBufferBindCount;
   info.max_object_buffer_binding = 0;
   info.max_mesh_buffer_binding = 0;
   info.max_kernel_buffer_binding = 0;
@@ -261,13 +509,20 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
   info.max_object_threadgroup_memory_binding = 0;
   info.gpu_resource_id = 0;
 
-  auto icb = device_->GetMTLDevice().newIndirectCommandBuffer(info, MaxCount, WMTResourceStorageModePrivate);
+  // room for kIndexedCommands commands per indexed command of an ordinary pipeline: its draw, and past all the draws,
+  // its extra commands, should it have any (IndirectRenderCommandData::zeros, extras_claimed)
+  size_t each = !tessellation && pCmdSig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED ? kIndexedCommands : 1;
+  WMT::IndirectCommandBuffer icb;
+  if (!draws)
+    icb = AcquireICB(info, MaxCount * each, WMTResourceStorageModePrivate);
 
   auto [Ptr, Offset] = AllocateGPUHeap(sizeof(IndirectRenderCommandData), 16);
+  if (records_)
+    RecordGPUHeap(Ptr, offsetof(IndirectRenderCommandData, execution_range), "indirect draw");
 
   auto data = reinterpret_cast<IndirectRenderCommandData *>(Ptr);
 
-  data->cmd_buf = info.gpu_resource_id;
+  data->cmd_buf = draws ? 0 : info.gpu_resource_id;
   data->max_count = MaxCount;
 
   {
@@ -282,49 +537,125 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
     data->primitive_type = 0;
     data->index_buffer = 0;
     data->index_buffer_format = {};
+    data->index_buffer_view = 0;
+    data->control_points = 0;
+    data->threads_per_patch = pPSO->threads_per_patch;
+    data->tessellation_parts = pPSO->tessellation_parts;
+    data->vertex_slots = pPSO->slot_mask;
+    data->geometry_threads = 0;
+    data->geometry_increment = 0;
+    data->geometry_max_warps = 0;
+    data->pixel_statistics = data->statistics = 0;
+    data->statistics_first = data->statistics_step = data->statistics_cut = data->statistics_cuts = 0;
+    for (unsigned i = 0; i < 3; i++) {
+      data->object_threads[i] = pPSO->mesh_shader ? pPSO->object_threads[i] : 0;
+      data->mesh_threads[i] = pPSO->mesh_shader ? pPSO->mesh_threads[i] : 0;
+    }
   }
 
-  {
-    /**
-     * TODO: move these out?
-     */
-
-    auto &cmd_use_icb = EncodeRenderCommand<wmtcmd_render_useresource>();
-    cmd_use_icb.type = WMTRenderCommandUseResource;
-    cmd_use_icb.stages = WMTRenderStageVertex;
-    cmd_use_icb.usage = WMTResourceUsageRead | WMTResourceUsageWrite;
-    cmd_use_icb.resource = icb;
-
-    auto &cmd_setpso_res = EncodeRenderCommand<wmtcmd_render_setpso>();
-    cmd_setpso_res.type = WMTRenderCommandSetPSO;
-    cmd_setpso_res.pso = pCmdSig->render_resolver;
-
-    auto &cmd_argbuf_res = EncodeRenderCommand<wmtcmd_render_setbuffer>();
-    cmd_argbuf_res.type = WMTRenderCommandSetVertexBuffer;
-    cmd_argbuf_res.buffer = gpu_heap_buffer_;
-    cmd_argbuf_res.offset = Offset;
-    cmd_argbuf_res.index = 30;
-
-    auto &cmd_draw_res = EncodeRenderCommand<wmtcmd_render_draw>();
-    cmd_draw_res.type = WMTRenderCommandDraw;
-    cmd_draw_res.primitive_type = WMTPrimitiveTypePoint;
-    cmd_draw_res.vertex_start = 0;
-    cmd_draw_res.vertex_count = 1;
-    cmd_draw_res.base_instance = 0;
-    cmd_draw_res.instance_count = 1;
-
-    auto &cmd_setpso = EncodeRenderCommand<wmtcmd_render_setpso>();
-    cmd_setpso.type = WMTRenderCommandSetPSO;
-    cmd_setpso.pso = pPSO->GetRenderPipelineVariant({} /* FIXME: value should not matter here until gs/ts */);
+  auto &zeros = *device_->recording.zeros;
+  data->zeros = each > 1 ? gpu_heap_buffer_address_ + zeros.offset : 0;
+  data->zero_count = zeros.length / sizeof(uint16_t);
+  // the resolver's last thread runs the extras an execution claims, and leaves the counts at zero for the next
+  data->extras_claimed = data->extras_done = 0;
+  data->draws = 0;
+  data->so_targets = data->so_scratch_size = data->so_invocations = data->so_lacked = 0;
+  if (draws) {
+    auto [records, at] = AllocateGPUHeap(MaxCount * sizeof(IndirectMeshDraw), alignof(IndirectMeshDraw));
+    memset(records, 0, MaxCount * sizeof(IndirectMeshDraw));
+    data->draws = gpu_heap_buffer_address_ + at;
   }
 
-  auto &cmd = EncodeRenderCommand<wmtcmd_render_executecommands>();
-  cmd.type = WMTRenderCommandExecuteCommandsInBuffer;
+  // a word for each command, which its resolver thread writes, for the queue to read when the pass completes
+  auto omitted = [&](bool scratch) {
+    size_t words = std::max<size_t>(MaxCount, 1);
+    auto [word, offset] = AllocateGPUHeap(words * sizeof(uint32_t), alignof(uint32_t));
+    memset(word, 0, words * sizeof(uint32_t));
+    auto render = static_cast<RenderEncoderData *>(encoder_current);
+    render->omitted = new (AllocateCPUHeap(sizeof(RenderEncoderData::Omitted), alignof(RenderEncoderData::Omitted)))
+        RenderEncoderData::Omitted{gpu_heap_buffer_, offset, words, render->omitted, scratch};
+    return gpu_heap_buffer_address_ + offset;
+  };
+  data->omitted = 0;
+  if (draws && !pPSO->threads_per_patch && !pPSO->mesh_shader)
+    data->omitted = omitted(false);
+  if (draws && pPSO->stream_output)
+    data->so_lacked = omitted(true);
+  data->most = 0;
+  if (diag::errors) {
+    auto [words, offset] = AllocateGPUHeap(kMostWords * sizeof(uint32_t), sizeof(uint32_t));
+    memset(words, 0, kMostWords * sizeof(uint32_t));
+    data->most = gpu_heap_buffer_address_ + offset;
+    auto render = static_cast<RenderEncoderData *>(encoder_current);
+    render->most = new (AllocateCPUHeap(sizeof(RenderEncoderData::Most), alignof(RenderEncoderData::Most)))
+        RenderEncoderData::Most{static_cast<const uint32_t *>(words), data, render->most};
+  }
+
+  // the signature's resolver writes the commands in a compute pass before the render pass, which then runs them: a
+  // pass that ran what one of its own draws was still writing ran half-written commands now and then
+  auto &cmd_setpso_res = EncodeBeforeRender<wmtcmd_compute_setpso>();
+  cmd_setpso_res.type = WMTComputeCommandSetPSO;
+  cmd_setpso_res.pso = pCmdSig->render_resolver;
+  cmd_setpso_res.threadgroup_size = {pCmdSig->render_resolver.maxTotalThreadsPerThreadgroup(), 1, 1};
+
+  auto &cmd_argbuf_res = EncodeBeforeRender<wmtcmd_compute_setbuffer>();
+  cmd_argbuf_res.type = WMTComputeCommandSetBuffer;
+  cmd_argbuf_res.buffer = gpu_heap_buffer_;
+  cmd_argbuf_res.offset = Offset;
+  cmd_argbuf_res.index = 30;
+
+  if (!draws) {
+    auto &cmd_write_icb = EncodeBeforeRender<wmtcmd_compute_useresource>();
+    cmd_write_icb.type = WMTComputeCommandUseResource;
+    cmd_write_icb.usage = WMTResourceUsageWrite;
+    cmd_write_icb.resource = icb;
+  }
+
+  if (statistics_cuts) {
+    auto pipeline = pCmdSig->StatisticsResolver();
+    auto &set = EncodeBeforeRender<wmtcmd_compute_setpso>();
+    set.type = WMTComputeCommandSetPSO;
+    set.pso = pipeline;
+    set.threadgroup_size = {pipeline.threadExecutionWidth(), 1, 1};
+    auto &scan = EncodeBeforeRender<wmtcmd_compute_dispatch>();
+    scan.type = WMTComputeCommandDispatch;
+    scan.size = {MaxCount, 1, 1};
+    auto &restore = EncodeBeforeRender<wmtcmd_compute_setpso>();
+    restore.type = WMTComputeCommandSetPSO;
+    restore.pso = pCmdSig->render_resolver;
+    restore.threadgroup_size = {pCmdSig->render_resolver.maxTotalThreadsPerThreadgroup(), 1, 1};
+  }
+
+  auto &cmd_dispatch_res = EncodeBeforeRender<wmtcmd_compute_dispatch>();
+  cmd_dispatch_res.type = WMTComputeCommandDispatchThreads;
+  cmd_dispatch_res.size = {std::max<size_t>(MaxCount, 1), 1, 1};
+
+  if (draws)
+    return data;
+
+  auto &cmd_use_icb = EncodeRenderCommand<wmtcmd_render_useresource>();
+  cmd_use_icb.type = WMTRenderCommandUseResource;
+  cmd_use_icb.stages = WMTRenderStageVertex;
+  cmd_use_icb.usage = WMTResourceUsageRead;
+  cmd_use_icb.resource = icb;
+
+  // Metal 4's shader validation zeroes the loads of a render pass's commands run with a range the GPU reads (#165): a
+  // range known now needs none
+  if (runs_max_count) {
+    auto &cmd = EncodeRenderCommand<wmtcmd_render_executecommands>();
+    cmd.type = WMTRenderCommandExecuteCommandsInBuffer;
+    cmd.indirect_command_buffer = icb;
+    cmd.location = 0;
+    cmd.length = MaxCount;
+    return data;
+  }
+
+  auto &cmd = EncodeRenderCommand<wmtcmd_render_executecommands_indirect>();
+  cmd.type = WMTRenderCommandExecuteCommandsInBufferIndirect;
   cmd.indirect_command_buffer = icb;
-  cmd.location = 0;
-  cmd.length = MaxCount;
+  cmd.indirect_buffer = gpu_heap_buffer_;
+  cmd.indirect_buffer_offset = Offset + offsetof(IndirectRenderCommandData, execution_range);
 
-  icb_.push_back(std::move(icb));
 
   return data;
 }
@@ -332,21 +663,16 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
 template <>
 WMT::Reference<WMT::ComputePipelineState>
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::getComputePipeline(std::string name) {
-  auto lib = ctx.device_->GetLib().getLibrary();
-  auto func = lib.newFunction(name.c_str());
-  if (!func)
-    return {};
-  WMT::Reference<WMT::Error> err;
-  auto pso = ctx.device_->GetMTLDevice().newComputePipelineState(func, err);
-  if (err) {
-    ERR("Failed to create compute PSO: ", err.description().getUTF8String());
-  }
-  return pso;
+  return ctx.device_->GetLib().ComputePipeline(name);
 }
 
 template <>
 void
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startComputePass() {
+  if (ctx.share_compute_ && ctx.encoder_current && ctx.encoder_current->type == EncoderType::Compute) {
+    ctx.OrderDispatches();
+    return;
+  }
   ctx.InvalidateCurrentPass();
   auto compute = ctx.AllocatePass<ComputeEncoderData>();
   compute->type = EncoderType::Compute;
@@ -358,7 +684,33 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startComputePass() {
 template <>
 void
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::endPass() {
+  if (ctx.share_compute_ && ctx.encoder_current && ctx.encoder_current->type == EncoderType::Compute) {
+    ctx.OrderDispatches();
+    return;
+  }
   ctx.InvalidateCurrentPass();
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startBlitPass() {
+  auto blit = ctx.AllocatePass<BlitEncoderData>();
+  blit->type = EncoderType::Blit;
+  blit->cmd_head.type = WMTBlitCommandNop;
+  blit->cmd_head.next.set(0);
+  blit->cmd_tail = (wmtcmd_base *)&blit->cmd_head;
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setComputeBuffer(
+    uint32_t index, WMT::Buffer buffer, uint64_t offset
+) {
+  auto &cmd = ctx.EncodeComputeCommand<wmtcmd_compute_setbuffer>();
+  cmd.type = WMTComputeCommandSetBuffer;
+  cmd.buffer = buffer;
+  cmd.offset = offset;
+  cmd.index = index;
 }
 
 template <>
@@ -393,9 +745,10 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setComputeTexture(
 template <>
 void
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setComputeTexelBuffer(
-    uint32_t index, const Rc<Buffer> &buffer, uint64_t viewId, int flags
+    uint32_t index, const Rc<Buffer> &buffer, uint64_t viewId, int flags, uint32_t &first
 ) {
-  auto &dst_ = buffer->view_(viewId);
+  auto [dst_, texel] = buffer->view_(viewId, buffer->current(), first);
+  first = texel;
   auto &settexbuf = ctx.EncodeComputeCommand<wmtcmd_compute_settexture>();
   settexbuf.type = WMTComputeCommandSetTexture;
   settexbuf.texture = dst_.texture;
@@ -428,6 +781,32 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setComputeBytes(uint32_t ind
   return temp;
 }
 
+bool
+MTLD3D12CommandAllocatorImpl::CopyD24(
+    bool to_float, WMT::Buffer src, uint64_t src_offset, UINT src_pitch, WMT::Buffer dst,
+    uint64_t dst_offset, UINT dst_pitch, WMTSize size
+) {
+  SimpleCommandContext<MTLD3D12CommandAllocatorImpl> ctx{*this};
+  auto &pso = d24_copy_pso_[to_float];
+  if (!pso)
+    pso = ctx.getComputePipeline(to_float ? "cs_unpack_d24" : "cs_pack_d24");
+  if (!pso || !src || !dst) {
+    exhausted_ = true;
+    return false;
+  }
+  ctx.endPass();
+  ctx.startComputePass();
+  ctx.setComputePSO(pso, {pso.threadExecutionWidth(), 1, 1});
+  ctx.setComputeBuffer(0, src, src_offset);
+  ctx.setComputeBuffer(1, dst, dst_offset);
+  const UINT pitches[] = {src_pitch, dst_pitch};
+  memcpy(ctx.setComputeBytes(2, sizeof(pitches)), pitches, sizeof(pitches));
+  ctx.dispatch(size);
+  ctx.endPass();
+  ctx.startBlitPass();
+  return true;
+}
+
 template <>
 WMT::Library
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::getDefaultLibrary() {
@@ -440,11 +819,6 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startRenderPass() {
   ctx.InvalidateCurrentPass();
   auto render = ctx.AllocatePass<RenderEncoderData>();
   render->type = EncoderType::Render;
-  render->cmd_head.type = WMTRenderCommandNop;
-  render->cmd_head.next.set(0);
-  render->cmd_tail = (wmtcmd_base *)&render->cmd_head;
-  render->dsv_planar_flags = 0;
-  render->dsv_readonly_flags = 0;
   render->render_target_count = 0;
   render->render_target_width = 16384;
   render->render_target_height = 16384;
@@ -521,6 +895,12 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setDepthStencilState(WMT::De
 template <>
 void
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setScissorRect(WMTScissorRect rect) {
+  // Metal wants a scissor within the pass
+  auto encoder = static_cast<RenderEncoderData *>(ctx.encoder_current);
+  rect.x = std::min<uint64_t>(rect.x, encoder->render_target_width);
+  rect.y = std::min<uint64_t>(rect.y, encoder->render_target_height);
+  rect.width = std::min<uint64_t>(rect.width, encoder->render_target_width - rect.x);
+  rect.height = std::min<uint64_t>(rect.height, encoder->render_target_height - rect.y);
   auto &cmd = ctx.EncodeRenderCommand<wmtcmd_render_setscissorrect>();
   cmd.type = WMTRenderCommandSetScissorRect;
   cmd.scissor_rect = rect;
@@ -531,7 +911,18 @@ void
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setStencilReference(uint8_t stencil_ref) {
   auto &cmd = ctx.EncodeRenderCommand<wmtcmd_render_setstencilref>();
   cmd.type = WMTRenderCommandSetStencilRef;
-  cmd.stencil_ref = stencil_ref;
+  cmd.stencil_ref = cmd.back_stencil_ref = stencil_ref;
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setFragmentTexture(
+    uint32_t index, const Rc<Texture> &texture, uint64_t viewId
+) {
+  auto &settex = ctx.EncodeRenderCommand<wmtcmd_render_settexture>();
+  settex.type = WMTRenderCommandSetFragmentTexture;
+  settex.texture = texture->view(viewId).texture;
+  settex.index = index;
 }
 
 template <>
@@ -561,4 +952,4 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::draw(
   draw.instance_count = instance_count;
 }
 
-}; // namespace dxmt
+}; // namespace mullion

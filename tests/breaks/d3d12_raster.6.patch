@@ -1,0 +1,12 @@
+# the viewport's width and height are swapped.
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -1311,7 +1311,7 @@
+       auto index = builder.CreateAdd(builder.CreateShl(viewport, 1), builder.getInt32(1 + i));
+       return builder.CreateLoad(types._float, builder.CreateGEP(types._float, function->getArg(raster_scale), index));
+     };
+-    auto w = size(0), h = size(1);
++    auto w = size(1), h = size(0);
+     auto sx = builder.CreateFMul(w, builder.CreateFSub(builder.CreateFMul(at(b, 0), at(a, 3)), builder.CreateFMul(at(a, 0), at(b, 3))));
+     auto sy = builder.CreateFMul(h, builder.CreateFSub(builder.CreateFMul(at(b, 1), at(a, 3)), builder.CreateFMul(at(a, 1), at(b, 3))));
+     constexpr float line_width = 1.4f;

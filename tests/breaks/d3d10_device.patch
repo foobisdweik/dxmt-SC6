@@ -1,0 +1,12 @@
+# report success when creating an unsupported D3D10 counter.
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -1238,7 +1238,7 @@
+   // E_INVALIDARG for an out-of-range counter, DXGI_ERROR_UNSUPPORTED for a well-known one the device lacks)
+   if (!pCounterDesc || UINT(pCounterDesc->Counter) > D3D10_COUNTER_TEXTURE_CACHE_HIT_RATE)
+     return E_INVALIDARG;
+-  return DXGI_ERROR_UNSUPPORTED;
++  return S_OK;
+ }
+ 
+ HRESULT STDMETHODCALLTYPE

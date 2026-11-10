@@ -1,0 +1,16 @@
+# swaps mesh and amplification thread pairs without changing their wave lanes
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -1842,7 +1842,11 @@
+           InputAttribute::ThreadId, InputAttribute::ThreadGroupId, InputAttribute::ThreadIdInGroup,
+           InputAttribute::ThreadIdInGroupFlatten
+       };
+-      return attribute(inputs[op - ThreadId], c);
++      auto id = attribute(inputs[op - ThreadId], c);
++      if ((shader->shader_type == D3D12_SB_MESH_SHADER || shader->shader_type == D3D12_SB_AMPLIFICATION_SHADER) &&
++          op == ThreadId && c == 0)
++        id = ir.CreateXor(id, ir.getInt32(1));
++      return id;
+     }
+     if (op == FlattenedThreadIdInGroup)
+       return ir.CreateAdd(

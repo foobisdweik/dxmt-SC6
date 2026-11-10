@@ -10,7 +10,7 @@
 
 #include "wsi_monitor.hpp"
 
-namespace dxmt::wsi {
+namespace mullion::wsi {
 
 HMONITOR getDefaultMonitor() {
   return nullptr;
@@ -45,4 +45,4 @@ bool getDesktopDisplayMode(HMONITOR hMonitor, WsiMode *pMode) {
   return retrieveDisplayMode(hMonitor, ENUM_REGISTRY_SETTINGS, pMode);
 }
 
-} // namespace dxmt::wsi
+} // namespace mullion::wsi

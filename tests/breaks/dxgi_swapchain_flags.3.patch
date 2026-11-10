@@ -1,0 +1,12 @@
+# a D3D12 stereo chain's buffers hold one eye
+--- a/src/d3d12/d3d12_swapchain.cpp
++++ b/src/d3d12/d3d12_swapchain.cpp
+@@ -224,7 +224,7 @@
+         .Width = desc_.Width,
+         .Height = desc_.Height,
+         // a stereo buffer holds the left eye in slice 0, the right one in slice 1
+-        .DepthOrArraySize = UINT16(desc_.Stereo ? 2 : 1),
++        .DepthOrArraySize = 1,
+         .MipLevels = 1,
+         .Format = desc_.Format,
+         .SampleDesc =

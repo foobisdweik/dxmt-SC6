@@ -1,0 +1,12 @@
+# SV_GroupID omits the part origin
+--- a/src/airconv/dxbc_signature.cpp
++++ b/src/airconv/dxbc_signature.cpp
+@@ -1215,8 +1215,6 @@
+     ctx.prologue << make_effect([=](struct context ctx) {
+       auto origin = ctx.function->getArg(index);
+       auto &res = ctx.resource;
+-      if (res.thread_group_id_arg)
+-        res.thread_group_id_arg = ctx.builder.CreateAdd(res.thread_group_id_arg, origin);
+       if (res.thread_id_arg)
+         res.thread_id_arg = ctx.builder.CreateAdd(
+             res.thread_id_arg,

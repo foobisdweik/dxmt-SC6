@@ -1,0 +1,13 @@
+# drops the high byte from native 16-bit wave bit reductions.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2389,7 +2389,8 @@
+           [&](Value *x, Value *y) { return ir.CreateXor(x, y); },
+       };
+       Value *identity[] = {Constant::getAllOnesValue(vty), Constant::getNullValue(vty), Constant::getNullValue(vty)};
+-      ret = reduce(names[kind], a(1), Signedness::Unsigned, false, combine[kind], identity[kind]);
++      auto input = vty->isIntegerTy(16) ? ir.CreateAnd(a(1), ConstantInt::get(vty, UINT8_MAX)) : a(1);
++      ret = reduce(names[kind], input, Signedness::Unsigned, false, combine[kind], identity[kind]);
+       break;
+     }
+     case WaveMultiPrefixOp: {

@@ -1,0 +1,11 @@
+# zeros the first column of RayQuery transform getters.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3650,6 +3650,7 @@
+           column = ir.CreateSelect(
+               ir.CreateICmpEQ(a(3), ConstantInt::get(a(3)->getType(), i)), ir.CreateExtractValue(columns, i), column
+           );
++        column = ir.CreateSelect(ir.CreateICmpEQ(a(3), ir.getInt32(0)), Constant::getNullValue(vector), column);
+         ret = ir.CreateExtractElement(column, a(2));
+       } else if (vector) {
+         ret = ir.CreateExtractElement(ray_query_call(getter->name, vector, {query}), a(2));

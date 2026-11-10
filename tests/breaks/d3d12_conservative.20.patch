@@ -1,0 +1,13 @@
+# the triangle is not clipped
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -173,8 +173,7 @@
+   out.culled = builder.getFalse();
+   for (uint32_t i = 0; i < 2; i++) {
+     auto distance = [&](pvalue v) {
+-      return i ? builder.CreateSelect(clips_depth, sub(at(v, 3), at(v, 2)), f(1))
+-               : builder.CreateSelect(clips_depth, at(v, 2), sub(at(v, 3), f(eye)));
++      return f(1);
+     };
+     std::vector<pvalue> made, kept;
+     for (size_t k = 0; k < polygon.size(); k++) {

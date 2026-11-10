@@ -1,0 +1,13 @@
+# a global realtime queue is made although its priority is reported unsupported
+# family native
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -562,7 +562,7 @@
+     if (pDesc->Flags)
+       WARN("CreateCommandQueue: flags ignored: ", pDesc->Flags);
+     // a priority CheckFeatureSupport reports unsupported (D3D12_FEATURE_COMMAND_QUEUE_PRIORITY)
+-    if (pDesc->Priority == D3D12_COMMAND_QUEUE_PRIORITY_GLOBAL_REALTIME)
++    if (false)
+       return FAIL(E_INVALIDARG);
+     return mullion::CreateCommandQueue(this, pDesc, riid, ppCommandQueue);
+   };

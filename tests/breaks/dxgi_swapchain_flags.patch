@@ -1,0 +1,12 @@
+# shader-input usage loses its back-buffer shader-resource binding
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -184,7 +184,7 @@
+     
+     if (desc_.BufferUsage & DXGI_USAGE_RENDER_TARGET_OUTPUT)
+       backbuffer_desc_.BindFlags |= D3D11_BIND_RENDER_TARGET;
+-    if (desc_.BufferUsage & DXGI_USAGE_SHADER_INPUT)
++    if (desc_.BufferUsage & DXGI_USAGE_UNORDERED_ACCESS)
+       backbuffer_desc_.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
+     if (desc_.BufferUsage & DXGI_USAGE_UNORDERED_ACCESS)
+       backbuffer_desc_.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;

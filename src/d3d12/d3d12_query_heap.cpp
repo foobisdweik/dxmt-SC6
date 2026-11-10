@@ -17,24 +17,71 @@
  */
 
 #include "com/com_pointer.hpp"
+#include "d3d12_device.hpp"
 #include "d3d12_pageable.hpp"
+#include <limits>
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D12QueryHeapImpl : public MTLD3D12Pageable<MTLD3D12QueryHeap> {
 public:
   MTLD3D12QueryHeapImpl(MTLD3D12Device *pDevice) : MTLD3D12Pageable<MTLD3D12QueryHeap>(pDevice) {}
 
+  ~MTLD3D12QueryHeapImpl() {
+    if (results && desc.Type == D3D12_QUERY_HEAP_TYPE_SO_STATISTICS)
+      this->device_->UnregisterResidency(results);
+  }
+
   HRESULT
   Initialize(const D3D12_QUERY_HEAP_DESC *pDesc) {
-    return S_OK;
+    desc = *pDesc;
+    auto metal = this->device_->GetMTLDevice();
+    switch (pDesc->Type) {
+    case D3D12_QUERY_HEAP_TYPE_OCCLUSION: {
+      WMTBufferInfo info{pDesc->Count * sizeof(uint64_t), WMTResourceStorageModePrivate};
+      results = metal.newBuffer(info);
+      return results ? S_OK : FAIL(E_OUTOFMEMORY);
+    }
+    // stream output's last pass adds to these by address (dxbc_converter_gs.cpp)
+    case D3D12_QUERY_HEAP_TYPE_SO_STATISTICS: {
+      result_size = sizeof(D3D12_QUERY_DATA_SO_STATISTICS);
+      WMTBufferInfo info{pDesc->Count * result_size, WMTResourceStorageModePrivate};
+      results = metal.newBuffer(info);
+      if (!results)
+        return FAIL(E_OUTOFMEMORY);
+      results_address = info.gpu_address;
+      return this->device_->RegisterResidency(results);
+    }
+    case D3D12_QUERY_HEAP_TYPE_TIMESTAMP:
+    case D3D12_QUERY_HEAP_TYPE_COPY_QUEUE_TIMESTAMP:
+      timestamps.resize(pDesc->Count);
+      return S_OK;
+    // command lists sum ended pipeline statistics into the heap (sum_pipeline_statistics);
+    // a query never ended reads the zeros written here
+    case D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS:
+    case D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS1: {
+      result_size = pDesc->Type == D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS ? sizeof(D3D12_QUERY_DATA_PIPELINE_STATISTICS)
+                                                                             : sizeof(D3D12_QUERY_DATA_PIPELINE_STATISTICS1);
+      if (pDesc->Count > std::numeric_limits<size_t>::max() / result_size)
+        return FAIL(E_OUTOFMEMORY);
+      WMTBufferInfo info{uint64_t(pDesc->Count) * result_size, WMTResourceStorageModeShared};
+      results = metal.newBuffer(info);
+      if (!results)
+        return FAIL(E_OUTOFMEMORY);
+      memset(info.memory.ptr, 0, info.length);
+      return S_OK;
+    }
+    default:
+      ERR("CreateQueryHeap: query heap type ", pDesc->Type, " is not implemented");
+      return E_NOTIMPL;
+    }
   }
 
   HRESULT
   STDMETHODCALLTYPE
   QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
-      return E_POINTER;
+      return FAIL(E_POINTER);
 
     *ppvObject = nullptr;
 
@@ -48,7 +95,7 @@ public:
       WARN("D3D12QueryHeap: Unknown interface query ", str::format(riid));
     }
 
-    return E_NOINTERFACE;
+    return MTLD3D12Pageable::QueryInterface(riid, ppvObject);
   }
 };
 
@@ -63,4 +110,4 @@ CreateQueryHeap(MTLD3D12Device *pDevice, const D3D12_QUERY_HEAP_DESC *pDesc, REF
   return heap->QueryInterface(riid, ppQueryHeap);
 }
 
-} // namespace dxmt
+} // namespace mullion

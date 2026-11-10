@@ -2,7 +2,7 @@
 #include "d3d11_device.hpp"
 #include "tl/generator.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 using namespace ::tl;
 
@@ -24,4 +24,4 @@ generator<SUBRESOURCE_ENTRY>
 EnumerateSubresources(const D3D11_TEXTURE3D_DESC1 &Desc);
 
 }
-; // namespace dxmt
+; // namespace mullion

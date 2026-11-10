@@ -17,15 +17,15 @@
 #include "../thread.hpp"
 #include "../log/log.hpp"
 
-namespace dxmt {
+namespace mullion {
 
-struct DxmtEq {
+struct MullionEq {
   template <typename T> size_t operator()(const T &a, const T &b) const {
     return a.eq(b);
   }
 };
 
-struct DxmtHash {
+struct MullionHash {
   template <typename T> size_t operator()(const T &object) const {
     return object.hash();
   }
@@ -42,8 +42,8 @@ struct GuidPair {
   bool eq(const GuidPair &other) const { return a == other.a && b == other.b; }
 };
 
-dxmt::mutex g_loggedQueryInterfaceErrorMutex;
-std::unordered_set<GuidPair, DxmtHash, DxmtEq> g_loggedQueryInterfaceErrors;
+mullion::mutex g_loggedQueryInterfaceErrorMutex;
+std::unordered_set<GuidPair, MullionHash, MullionEq> g_loggedQueryInterfaceErrors;
 
 bool logQueryInterfaceError(REFIID objectGuid, REFIID requestedGuid) {
   if (Logger::logLevel() > LogLevel::Warn)
@@ -53,7 +53,7 @@ bool logQueryInterfaceError(REFIID objectGuid, REFIID requestedGuid) {
   return g_loggedQueryInterfaceErrors.emplace(objectGuid, requestedGuid).second;
 }
 
-} // namespace dxmt
+} // namespace mullion
 
 std::ostream &operator<<(std::ostream &os, REFIID guid) {
   os << std::hex << std::setfill('0') << std::setw(8) << guid.Data1 << '-';

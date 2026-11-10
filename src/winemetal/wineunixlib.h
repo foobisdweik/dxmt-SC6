@@ -309,8 +309,15 @@ extern NTSTATUS(WINAPI *__wine_unix_call_dispatcher)(unixlib_handle_t,
                                                      unsigned int, void *);
 extern NTSTATUS WINAPI __wine_init_unix_call(void);
 
-#define WINE_UNIX_CALL(code, args)                                             \
+#define WINE_UNIX_CALL_UNTIMED(code, args)                                     \
   __wine_unix_call_dispatcher(__wine_unixlib_handle, (code), (args))
+/* MULLION_DIAG=profile times every call by its code, named by the thunk that
+ * makes it (winemetal_thunks.c, WMTDiagCallTotals) */
+extern int wmt_diag_calls;
+extern NTSTATUS wmt_diag_call(unsigned int code, void *args, const char *name);
+#define WINE_UNIX_CALL(code, args)                                             \
+  (wmt_diag_calls ? wmt_diag_call((code), (args), __func__)                    \
+                  : WINE_UNIX_CALL_UNTIMED((code), (args)))
 
 #endif /* WINE_UNIX_LIB */
 

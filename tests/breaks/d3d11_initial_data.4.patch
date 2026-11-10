@@ -1,0 +1,13 @@
+# require equal pitches for buffer initial data
+--- a/src/d3d11/d3d11_device.cpp
++++ b/src/d3d11/d3d11_device.cpp
+@@ -418,6 +418,9 @@
+         (pInitialData && !pInitialData->pSysMem))
+       return E_INVALIDARG;
+ 
++    if (pInitialData && pInitialData->SysMemPitch != pInitialData->SysMemSlicePitch)
++      return E_INVALIDARG;
++
+     if ((pDesc->BindFlags & D3D11_BIND_CONSTANT_BUFFER) &&
+         (pDesc->BindFlags != D3D11_BIND_CONSTANT_BUFFER ||
+          pDesc->ByteWidth % (sizeof(float) * D3D11_COMMONSHADER_CONSTANT_BUFFER_COMPONENTS)))

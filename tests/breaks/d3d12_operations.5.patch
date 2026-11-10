@@ -1,0 +1,12 @@
+# half sincos uses fast float, whose infinity result is 0 instead of D3D11.3 22.10.20's NaN
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1037,7 +1037,7 @@
+     auto Wide = Type->isVectorTy()
+                     ? llvm::VectorType::get(ir.getFloatTy(), llvm::cast<llvm::VectorType>(Type)->getElementCount())
+                     : ir.getFloatTy();
+-    Result = ir.CreateFPTrunc(air.CreateFPUnOp(Op, ir.CreateFPExt(Value, Wide), false), Type);
++    Result = ir.CreateFPTrunc(air.CreateFPUnOp(Op, ir.CreateFPExt(Value, Wide), true), Type);
+   } else
+     Result = air.CreateFPUnOp(Op, Value, false);
+   if (Op == llvm::air::AIRBuilder::cos)

@@ -14,7 +14,7 @@
 
 #include "../util_likely.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 /**
  * \brief Reference-counted object
@@ -38,4 +38,4 @@ private:
   std::atomic<uint32_t> m_refCount = {0u};
 };
 
-} // namespace dxmt
+} // namespace mullion

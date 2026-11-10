@@ -1,0 +1,18 @@
+diff --git b/src/d3d12/d3d12_pipeline_graphics.cpp a/src/d3d12/d3d12_pipeline_graphics.cpp
+index 50201fa4..487b9d49 100644
+--- b/src/d3d12/d3d12_pipeline_graphics.cpp
++++ a/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -733,2 +733,5 @@ public:
+       }
++      rt.pixel_format = format_desc.PixelFormat;
++      rtv_mask |= 1u << i;
++
+       auto renderTarget = pDesc->BlendState.RenderTarget[pDesc->BlendState.IndependentBlendEnable ? i : 0];
+@@ -742,7 +745,1 @@ public:
+-      // Windows accepts non-renderable formats as null slots (vkd3d-proton test_render_target_support_validation).
+-      if (!any_bit_set(device_->GetMTLPixelFormatCapability(format_desc.PixelFormat) & FormatCapability::Color))
+-        continue;
+-      rt.pixel_format = format_desc.PixelFormat;
+-      rtv_mask |= 1u << i;
+-
+       // an undeclared output leaves the target alone even with blending (D3D11.3 16.9.1)

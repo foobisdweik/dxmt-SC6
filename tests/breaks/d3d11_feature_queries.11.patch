@@ -1,0 +1,12 @@
+# RGB32 integer formats advertise shader gather4.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -1634,7 +1634,7 @@
+                D3D11_FORMAT_SUPPORT_CAST_WITHIN_BIT_LAYOUT;
+     if (!(metal_format.Flag & MTL_DXGI_FORMAT_TYPELESS)) {
+       Support1 |= D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER | D3D11_FORMAT_SUPPORT_SO_BUFFER |
+-                  D3D11_FORMAT_SUPPORT_SHADER_LOAD | D3D11_FORMAT_SUPPORT_MULTISAMPLE_LOAD;
++                  D3D11_FORMAT_SUPPORT_SHADER_GATHER | D3D11_FORMAT_SUPPORT_SHADER_LOAD | D3D11_FORMAT_SUPPORT_MULTISAMPLE_LOAD;
+       if (Format == DXGI_FORMAT_R32G32B32_FLOAT)
+         Support1 |= D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE;
+     }

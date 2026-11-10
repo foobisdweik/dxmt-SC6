@@ -1,0 +1,12 @@
+# an R32G32B32_TYPELESS texture is refused for shader resources, as its own row of the format table reads
+--- a/src/d3d11/d3d11_resource_helper.cpp
++++ b/src/d3d11/d3d11_resource_helper.cpp
+@@ -398,6 +398,8 @@ CreateMTLTextureDescriptorInternal(
+   if ((BindFlags & D3D11_BIND_SHADER_RESOURCE) && any_bit_set(capability & FormatCapability::DepthStencil) &&
+       !(metal_format.Flag & MTL_DXGI_FORMAT_TYPELESS) && metal_format.PixelFormat == pDescOut->pixel_format)
+     return E_INVALIDARG;
++  if ((BindFlags & D3D11_BIND_SHADER_RESOURCE) && (metal_format.Flag & MTL_DXGI_FORMAT_TYPELESS) && (metal_format.Flag & MTL_DXGI_FORMAT_EMULATED_RGB32))
++    return E_INVALIDARG;
+   // D3D11.3 19.1.4 only permits shader reads of the shared-exponent format, even when Metal can render it
+   if (Format == DXGI_FORMAT_R9G9B9E5_SHAREDEXP && (BindFlags & ~D3D11_BIND_SHADER_RESOURCE))
+     return E_INVALIDARG;

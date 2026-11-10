@@ -1,0 +1,13 @@
+# decode R11G11B10 vertex elements with the shared-exponent unpack operation.
+diff --git a/src/airconv/air_operations.cpp b/src/airconv/air_operations.cpp
+--- a/src/airconv/air_operations.cpp
++++ b/src/airconv/air_operations.cpp
+@@ -170,7 +170,7 @@
+     // dst_type = types._float4;
+     break;
+   case MTLAttributeFormat::FloatRG11B10:
+-    op = "unorm.rg11b10f.v3f32";
++    op = "unorm.rgb9e5.v3f32";
+     src_type = types._int;
+     align = 4;
+     dst_type = types._float3;

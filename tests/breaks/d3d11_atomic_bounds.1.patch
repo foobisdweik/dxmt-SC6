@@ -1,0 +1,12 @@
+# a compare-exchange past a view's end writes past it
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2825,7 +2825,7 @@
+ 
+   if (Buf) {
+     auto IntPtrOffset = LoadAtomicOpAddress(Buf.getValue(), atomic.dst_address);
+-    auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), IntPtrOffset);
++    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {IntPtrOffset});
+     if (air.DiscardWrites && Ptr->getType()->getPointerAddressSpace() != 3) {
+       StoreOperand(atomic.dst, ir.CreateLoad(ir.getInt32Ty(), Ptr));
+       return;

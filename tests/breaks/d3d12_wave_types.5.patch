@@ -1,0 +1,12 @@
+# maps horizontal quad reads to vertical reads
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2330,7 +2330,7 @@
+       break;
+     case QuadOp:
+       // across X, Y or the diagonal: the lane whose quad index differs in bit 0, bit 1, or both
+-      ret = move("quad_shuffle_xor", a(1), {ir.getInt16(constant(a(2)) + 1)});
++      ret = move("quad_shuffle_xor", a(1), {ir.getInt16(constant(a(2)) + 2)});
+       break;
+     case WaveActiveOp:
+     case WavePrefixOp: {

@@ -1,0 +1,15 @@
+# a native 64-bit raw access rounds its byte offset down to eight-byte alignment
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2750,7 +2750,10 @@
+       unsigned bits = element_bits(store ? a(4)->getType() : ty);
+       auto unit = ir.getIntNTy(std::min(bits, 32u));
+       auto parts = bits / unit->getBitWidth();
+-      auto base = ir.CreateUDiv(byte_address(h, a(2), a(3)), ir.getInt64(unit->getBitWidth() / 8));
++      auto address = byte_address(h, a(2), a(3));
++      if (bits == 64 && !b.StructureStride)
++        address = ir.CreateAnd(address, ir.getInt64(~uint64_t(7)));
++      auto base = ir.CreateUDiv(address, ir.getInt64(unit->getBitWidth() / 8));
+       // a load reads only the components its users extract, so nothing is read past what the shader asks for
+       uint32_t mask =
+           store ? constant(a(8)) : used(call) & llvm::maskTrailingOnes<uint32_t>(cast<StructType>(ty)->getNumElements());

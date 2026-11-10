@@ -1,0 +1,13 @@
+# ignore the vertex-buffer offset when deriving the DrawAuto vertex count.
+diff --git a/src/d3d11/d3d11_context_impl.cpp b/src/d3d11/d3d11_context_impl.cpp
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -2106,7 +2106,7 @@
+       task.draw_arguments_va = arguments.gpu_address + arguments.offset;
+       task.warps_buffer = unused.gpu_buffer;
+       task.warps_va = unused.gpu_address + unused.offset;
+-      task.offset = offset;
++      task.offset = 0;
+       task.stride = stride;
+       task.vertex_count_per_warp = 1;
+       if (enc.pipelineStatisticsActive() && status != DrawCallStatus::Ordinary)

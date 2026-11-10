@@ -1,0 +1,12 @@
+# the shared handle loses the Metal event name
+--- a/src/mullion/mullion_fence.cpp
++++ b/src/mullion/mullion_fence.cpp
+@@ -86,7 +86,7 @@
+   D3DKMT_CREATEALLOCATION create = {};
+   create.hDevice = device;
+   create.pPrivateRuntimeData = mach_port_name;
+-  create.PrivateRuntimeDataSize = sizeof(mach_port_name);
++  create.PrivateRuntimeDataSize = 0;
+   create.Flags.StandardAllocation = create.Flags.ExistingSysMem = 1;
+   create.Flags.CreateResource = create.Flags.CreateShared = create.Flags.NtSecuritySharing = 1;
+   D3DDDI_ALLOCATIONINFO2 allocation = {};

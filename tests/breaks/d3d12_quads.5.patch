@@ -1,0 +1,12 @@
+# uses coarse pairs for fine compute derivatives
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3244,7 +3244,7 @@
+     case DerivCoarseY:
+     case DerivFineY:
+       ret = ctx.shader_type == D3D11_SB_COMPUTE_SHADER
+-                ? quad_derivative(a(1), op == DerivCoarseY || op == DerivFineY, op == DerivFineX || op == DerivFineY)
++                ? quad_derivative(a(1), op == DerivCoarseY || op == DerivFineY, false)
+                 : air.CreateDerivative(a(1), op == DerivCoarseY || op == DerivFineY);
+       break;
+     case FAbs:

@@ -1,0 +1,12 @@
+# shrinks stream output views by one DWORD before primitive fitting
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -1145,7 +1145,7 @@
+     SM50_STREAM_OUTPUT_TARGETS targets{};
+     for (unsigned b = 0; b < std::size(so_views_); b++) {
+       targets.address[b] = so_views_[b].BufferLocation;
+-      targets.size[b] = so_views_[b].SizeInBytes;
++      targets.size[b] = so_views_[b].SizeInBytes ? so_views_[b].SizeInBytes - sizeof(UINT) : 0;
+       targets.filled[b] = so_views_[b].BufferFilledSizeLocation;
+       targets.statistics[b] = so_statistics_[b];
+     }

@@ -1,0 +1,12 @@
+# a viewport left of the largest one's center counts as right of it, and grows past its cut
+--- a/src/mullion/mullion_command.hpp
++++ b/src/mullion/mullion_command.hpp
+@@ -85,7 +85,7 @@ EnlargeViewports(std::span<WMTViewport> viewports, double largest) {
+   for (auto &v : viewports)
+     for (auto [origin, size] : {std::pair{v.originX, v.width}, std::pair{v.originY, v.height}})
+       if (size > 0)
+-        reach = std::min(reach, (largest - std::abs(2 * origin + size - largest) / cut) / size);
++        reach = std::min(reach, (largest - (2 * origin + size - largest) / cut) / size);
+   double factor = std::isfinite(reach) && reach >= 1 ? std::exp2(std::floor(std::log2(reach))) : 1;
+   for (auto &v : viewports) {
+     v.originX -= (factor - 1) * v.width / 2, v.originY -= (factor - 1) * v.height / 2;

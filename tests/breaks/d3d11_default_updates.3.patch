@@ -1,0 +1,12 @@
+# structured and raw fetch omit the current storage offset
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -385,7 +385,7 @@
+       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+         if (srv.buffer.ptr()) {
+           auto [srv_alloc, offset] = access<stage>(srv.buffer, srv.slice.byteOffset, srv.slice.byteLength, ResourceAccess::Read);
+-          encoded_buffer[arg.StructurePtrOffset] = srv_alloc->gpuAddress() + offset + srv.slice.byteOffset;
++          encoded_buffer[arg.StructurePtrOffset] = srv_alloc->gpuAddress() + srv.slice.byteOffset;
+           encoded_buffer[arg.StructurePtrOffset + 1] = srv.slice.byteLength;
+           makeResident<stage, kind>(srv.buffer.ptr());
+         } else {

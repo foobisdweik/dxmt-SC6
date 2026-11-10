@@ -1,0 +1,31 @@
+name: Game reports
+
+on:
+  discussion:
+    types: [created, edited, deleted, category_changed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  discussions: read
+
+concurrency: game-reports
+
+jobs:
+  wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+      - run: python3 .github/game-reports.py ${{ github.repository }} > wiki/Games.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - working-directory: wiki
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Games.md
+          git diff --cached --quiet || { git commit -m "Games: from the game reports"; git push; }

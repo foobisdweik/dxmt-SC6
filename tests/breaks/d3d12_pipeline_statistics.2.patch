@@ -1,0 +1,18 @@
+# a resolve consumes the query result, so the next resolve reads zero
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2687,6 +2687,14 @@
+     cmd.dst = dst;
+     cmd.dst_offset = AlignedDstBufferOffset;
+     cmd.copy_length = uint64_t(QueryCount) * heap->result_size;
++    if (Type == D3D12_QUERY_TYPE_PIPELINE_STATISTICS || Type == D3D12_QUERY_TYPE_PIPELINE_STATISTICS1) {
++      auto &clear = allocator_->EncodeBlitCommand<wmtcmd_blit_fillbuffer>();
++      clear.type = WMTBlitCommandFillBuffer;
++      clear.buffer = heap->results;
++      clear.offset = cmd.src_offset;
++      clear.length = cmd.copy_length;
++      clear.value = 0;
++    }
+   };
+ 
+   // the region's work follows the predicate as it is when the region starts

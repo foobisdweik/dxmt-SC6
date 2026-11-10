@@ -1,0 +1,12 @@
+# retains only eight bits of each sixteen-bit clear channel.
+--- a/src/mullion/mullion_command_clear.hpp
++++ b/src/mullion/mullion_command_clear.hpp
+@@ -292,7 +292,7 @@
+     case WMTPixelFormatRGBA16Uint:
+     case WMTPixelFormatRGBA16Sint:
+     case WMTPixelFormatRGBA16Float:
+-      packed[0] = color[0] & 0xffff;
++      packed[0] = color[0] & 0xff;
+       packed[1] = color[1] & 0xffff;
+       packed[2] = color[2] & 0xffff;
+       packed[3] = color[3] & 0xffff;

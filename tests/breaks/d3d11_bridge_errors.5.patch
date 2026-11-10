@@ -1,0 +1,12 @@
+# return the MTLDevice_newBinaryArchive error without ownership
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -2912,7 +2912,7 @@
+   }
+   NSError *err = NULL;
+   params->ret_archive = (obj_handle_t)[(id<MTLDevice>)params->device newBinaryArchiveWithDescriptor:desc error:&err];
+-  params->ret_error = (obj_handle_t)[err retain];
++  params->ret_error = (obj_handle_t)err;
+   [desc release];
+   if (url)
+     [url release];

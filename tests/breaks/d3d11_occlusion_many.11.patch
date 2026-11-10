@@ -1,0 +1,18 @@
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -4689,7 +4689,6 @@
+         enc.endPass();
+       });
+       allocated_encoder_argbuf_size_ = nullptr;
+-      visibility_result_segments_ = 0;
+       pass_scissors_ = pass_viewports_ = 0;
+       break;
+     }
+@@ -4709,6 +4708,7 @@
+       break;
+     }
+
++    visibility_result_segments_ = 0;
+     cmdbuf_state = CommandBufferState::Idle;
+     if (promote_flush && !defer_commit) {
+       Commit();

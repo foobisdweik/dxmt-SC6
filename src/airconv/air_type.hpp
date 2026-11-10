@@ -5,7 +5,7 @@
 #include <cassert>
 #include <map>
 
-namespace dxmt::air {
+namespace mullion::air {
 
 class AirType {
 
@@ -38,11 +38,9 @@ public:
   llvm::Type *_long;
   llvm::Type *_long4;
 
-  llvm::Type *_dxmt_vertex_buffer_entry;
-  llvm::Type *_dxmt_draw_arguments;
-  llvm::Type *_dxmt_draw_indexed_arguments;
-  llvm::Type *_dxmt_stream_output_buffer_entry;
-  llvm::Type *_dxmt_draw_dyn_ib_arguments;
+  llvm::Type *_mullion_vertex_buffer_entry;
+  llvm::Type *_mullion_draw_arguments;
+  llvm::Type *_mullion_draw_indexed_arguments;
 
   llvm::Type *_sampler;
 
@@ -87,4 +85,4 @@ public:
 
   llvm::LLVMContext &context;
 };
-} // namespace dxmt
+} // namespace mullion

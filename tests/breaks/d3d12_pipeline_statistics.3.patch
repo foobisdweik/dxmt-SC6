@@ -1,0 +1,48 @@
+# statistics re-read a simple indirect dispatch's arguments and count at resolve time
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2830,7 +2830,8 @@
+           if (allocator_->records_)
+             allocator_->RecordGPUHeap(mapped, size, "indirect invocations", 0, size);
+           cmd->statistics = allocator_->gpu_heap_buffer_address_ + offset;
+-          indirect_dispatches_.push_back({cmd->statistics, MaxCommandCount});
++          indirect_dispatches_.push_back({allocator_->gpu_heap_buffer_address_ +
++              (reinterpret_cast<char *>(cmd) - static_cast<char *>(allocator_->gpu_heap_)), MaxCommandCount});
+         }
+       }
+       cmd->max_count_buffer = CountBufferAddress;
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -939,6 +939,15 @@
+   device const PipelineStatisticsResult *count;
+ };
+ 
++struct DeferredDispatch {
++  ulong cmd_buf, max_count;
++  device const uint *count;
++  device const uint *arguments;
++  ulong samplers, roots;
++  uint root_stride;
++  packed_uint3 threads;
++};
++
+ [[kernel]] void sum_pipeline_statistics(constant PipelineStatisticsSum *sums [[buffer(0)]],
+                                         constant IndirectInvocations *dispatches [[buffer(1)]],
+                                         device ulong *results [[buffer(2)]],
+@@ -957,9 +966,13 @@
+     result[0] += draws[k].count->vertices;
+     result[2] += draws[k].count->vertices;
+   }
+-  for (uint k = sum.first_dispatch; k < sum.first_dispatch + sum.dispatch_count; k++)
+-    for (ulong c = 0; c < dispatches[k].length; c++)
+-      result[10] += dispatches[k].counts[c];
++  for (uint k = sum.first_dispatch; k < sum.first_dispatch + sum.dispatch_count; k++) {
++    device const DeferredDispatch &dispatch = *reinterpret_cast<device const DeferredDispatch *>(dispatches[k].counts);
++    uint commands = dispatch.count ? min(ulong(*dispatch.count), dispatch.max_count) : dispatch.max_count;
++    if (commands)
++      result[10] += ulong(dispatch.arguments[0]) * dispatch.arguments[1] * dispatch.arguments[2] *
++                    dispatch.threads.x * dispatch.threads.y * dispatch.threads.z;
++  }
+   for (uint k = sum.first_predicated; k < sum.first_predicated + sum.predicated_count; k++) {
+     constant PredicatedStatistics &count = predicated[k];
+     if (*count.skips)

@@ -1,0 +1,764 @@
+// contract: profiling records each pass's stages, pipelines and targets, each present and each submission without
+// changing results, including each pipeline run's draw/dispatch, vertex and index counts. "When the GPU starts or
+// finishes a stage, it samples the counters" (Apple, Sampling GPU data into counter
+// sample buffers, Sample counters at stage boundaries). queries retain "The value should be sampled at the instant
+// that the GPU is finished with all the preceding workload." (D3D11.3 20.4.3). the record follows the profile contract.
+// vertex and index counts include instances: "same set repeated for each Instance" (D3D11.3 8.4 and 8.6).
+#include "d3d12_test.hpp"
+#include "../../src/winemetal/winemetal.h"
+#include <dxgi1_4.h>
+#include <wincrypt.h>
+#include <algorithm>
+#include <array>
+#include <charconv>
+#include <cmath>
+#include <climits>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
+#include <map>
+#include <set>
+#include <sstream>
+#include <tuple>
+// the system counter mach_absolute_time reads on Apple silicon runs at 24 MHz (CNTFRQ_EL0, which a Windows program
+// cannot read)
+constexpr UINT64 host_hz = 24000000;
+
+static constexpr UINT frames = 4, concurrent_frames = 12, width = 8, height = 4, turns = 4096, threads = 32;
+static constexpr UINT indices[] = {0, 1, 2}, instances[] = {1, 2};
+// how long the first frame's fence is kept from the queue that waits for it, which has that time to encode the
+// frame's two small lists: nothing tells an application that a list is encoded
+static constexpr DWORD held_ms = 200;
+static const char hlsl[] = R"hlsl(
+float4 vs(uint id : SV_VertexID) : SV_Position {
+  float2 uv = float2((id << 1) & 2, id & 2);
+  return float4(uv * float2(2, -2) + float2(-1, 1), 0, 1);
+}
+float4 red() : SV_Target { return float4(1, 0, 0, 1); }
+float4 green() : SV_Target { return float4(0, 1, 0, 1); }
+RWStructuredBuffer<uint> result : register(u0);
+cbuffer Args : register(b0) { uint seed; uint slot; }
+[numthreads(THREADS, 1, 1)] void cs(uint id : SV_DispatchThreadID) {
+  uint value = seed + id;
+  [loop] for (uint i = 0; i < TURNS; i++) value = value * 1664525u + 1013904223u;
+  result[slot * THREADS + id] = value;
+}
+)hlsl";
+
+static std::string
+sha1(const std::string &code) {
+  auto dll = LoadLibraryA("advapi32.dll");
+  auto acquire = (decltype(&CryptAcquireContextA))GetProcAddress(dll, "CryptAcquireContextA");
+  auto create = (decltype(&CryptCreateHash))GetProcAddress(dll, "CryptCreateHash");
+  auto hash = (decltype(&CryptHashData))GetProcAddress(dll, "CryptHashData");
+  auto get = (decltype(&CryptGetHashParam))GetProcAddress(dll, "CryptGetHashParam");
+  auto destroy = (decltype(&CryptDestroyHash))GetProcAddress(dll, "CryptDestroyHash");
+  auto release = (decltype(&CryptReleaseContext))GetProcAddress(dll, "CryptReleaseContext");
+  HCRYPTPROV provider = 0;
+  HCRYPTHASH state = 0;
+  BYTE bytes[160 / CHAR_BIT]; // FIPS 180-4, SHA-1: a 160-bit digest
+  DWORD size = sizeof(bytes);
+  std::string name;
+  if (expect(acquire && create && hash && get && destroy && release &&
+                 acquire(&provider, nullptr, nullptr, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) &&
+                 create(provider, CALG_SHA1, 0, 0, &state) && hash(state, (const BYTE *)code.data(), code.size(), 0) &&
+                 get(state, HP_HASHVAL, bytes, &size, 0),
+             "SHA-1 failed")) {
+    for (auto byte : bytes) {
+      char hex[3];
+      snprintf(hex, sizeof(hex), "%02x", byte);
+      name += hex;
+    }
+    name += ' ';
+  }
+  if (state)
+    destroy(state);
+  if (provider)
+    release(provider, 0);
+  FreeLibrary(dll);
+  return name;
+}
+
+// the profile's clock is nanoseconds
+static UINT64
+nanoseconds(UINT64 ticks, UINT64 frequency) {
+  return ticks / frequency * 1'000'000'000 + ticks % frequency * 1'000'000'000 / frequency;
+}
+
+static UINT64
+now() {
+  LARGE_INTEGER ticks, frequency;
+  QueryPerformanceCounter(&ticks);
+  QueryPerformanceFrequency(&frequency);
+  return nanoseconds(ticks.QuadPart, frequency.QuadPart);
+}
+
+static int
+child(char **argv, const ComPtr<ID3D12Device> &device, const std::string &vs, const std::string (&ps)[2],
+      const std::string (&cs)[2]) {
+  std::ofstream facts(std::string(argv[3]) + "\\facts");
+  for (auto &code : ps)
+    facts << sha1(vs) + sha1(code) << '\n';
+  for (auto &code : cs)
+    facts << sha1(code) << '\n';
+  auto bridge = LoadLibraryA("winemetal.dll");
+  auto write = (UINT (*)(const char *, const char *, UINT64))GetProcAddress(bridge, "WMTDiagWrite");
+  const UINT pid = write ? write(nullptr, nullptr, 0) : 0;
+  char setting[32]{};
+  GetEnvironmentVariableA("MULLION_DIAG", setting, sizeof(setting));
+  const bool profiling = !strcmp(setting, "profile");
+  if (profiling && pid)
+    std::ofstream(std::string(argv[3]) + "\\mullion-" + std::to_string(pid) + ".diag") << "stale\n";
+  facts << pid << '\n' << now() << '\n';
+
+  auto devices = (UINT64 (*)())GetProcAddress(bridge, "WMTCopyAllDevices");
+  auto object = (UINT64 (*)(UINT64, UINT64))GetProcAddress(bridge, "NSArray_object");
+  auto make = (UINT64 (*)(UINT64, UINT, bool))GetProcAddress(bridge, "MTLCounterSampleBuffer_newTimestampBuffer");
+  auto release = (void (*)(UINT64))GetProcAddress(bridge, "NSObject_release");
+  if (!expect(devices && object && make && release, "counter sample buffer bridge unavailable"))
+    return verdict();
+  auto all = devices(), metal = object(all, 0);
+  UINT capacity = 1;
+  for (;;) {
+    auto sample_buffer = make(metal, capacity * 2, true);
+    if (!sample_buffer)
+      break;
+    release(sample_buffer);
+    capacity *= 2;
+  }
+  release(all);
+  const UINT burst = capacity + 1;
+  facts << capacity << '\n';
+  D3D12_ROOT_PARAMETER params[2]{{D3D12_ROOT_PARAMETER_TYPE_UAV}, {D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS}};
+  params[1].Constants = {0, 0, 2};
+  auto rs = root_signature(device.Get(), {UINT(std::size(params)), params});
+  if (!expect(rs != nullptr, "root signature failed"))
+    return verdict();
+  ComPtr<ID3D12PipelineState> graphics[2], compute[2];
+  for (UINT i = 0; i < std::size(graphics); i++) {
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{rs.Get(), bytecode(vs), bytecode(ps[i])};
+    desc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    desc.SampleMask = ~0u;
+    desc.RasterizerState = {D3D12_FILL_MODE_SOLID, D3D12_CULL_MODE_NONE};
+    desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    desc.NumRenderTargets = 1;
+    desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc = {1, 0};
+    CHECK(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&graphics[i])));
+    D3D12_COMPUTE_PIPELINE_STATE_DESC of{rs.Get(), bytecode(cs[i])};
+    CHECK(device->CreateComputePipelineState(&of, IID_PPV_ARGS(&compute[i])));
+  }
+  ComPtr<ID3D12CommandQueue> queues[2];
+  D3D12_COMMAND_QUEUE_DESC queue_desc{D3D12_COMMAND_LIST_TYPE_DIRECT};
+  for (auto &queue : queues)
+    CHECK(device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&queue)));
+  ComPtr<ID3D12CommandAllocator> allocators[2];
+  ComPtr<ID3D12GraphicsCommandList> lists[2];
+  for (UINT i = 0; i < std::size(lists); i++) {
+    CHECK(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocators[i])));
+    CHECK(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocators[i].Get(), nullptr,
+                                    IID_PPV_ARGS(&lists[i])));
+  }
+  ComPtr<IDXGIFactory4> factory;
+  CHECK(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
+  WNDCLASSA wc{0, DefWindowProcA, 0, 0, GetModuleHandleA(nullptr), nullptr, nullptr, nullptr, nullptr, "d3d12_profile"};
+  RegisterClassA(&wc);
+  HWND windows[2];
+  ComPtr<IDXGISwapChain3> chains[2];
+  ComPtr<ID3D12Resource> backs[2];
+  ComPtr<ID3D12DescriptorHeap> rtvs;
+  D3D12_DESCRIPTOR_HEAP_DESC rtv_desc{D3D12_DESCRIPTOR_HEAP_TYPE_RTV, UINT(std::size(backs))};
+  CHECK(device->CreateDescriptorHeap(&rtv_desc, IID_PPV_ARGS(&rtvs)));
+  auto rtv = rtvs->GetCPUDescriptorHandleForHeapStart();
+  for (UINT i = 0; i < std::size(chains); i++) {
+    windows[i] = CreateWindowA(wc.lpszClassName, wc.lpszClassName, WS_OVERLAPPEDWINDOW, 0, 0, 160, 120, nullptr,
+                               nullptr, wc.hInstance, nullptr);
+    if (!expect(windows[i] != nullptr, "window creation failed"))
+      return verdict();
+    DXGI_SWAP_CHAIN_DESC1 desc{
+        width, height, DXGI_FORMAT_R8G8B8A8_UNORM, FALSE, {1, 0}, DXGI_USAGE_RENDER_TARGET_OUTPUT, 2};
+    desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    ComPtr<IDXGISwapChain1> chain;
+    CHECK(factory->CreateSwapChainForHwnd(queues[i].Get(), windows[i], &desc, nullptr, nullptr, &chain));
+    CHECK(chain.As(&chains[i]));
+    CHECK(chains[i]->GetBuffer(0, IID_PPV_ARGS(&backs[i])));
+    D3D12_CPU_DESCRIPTOR_HANDLE handle{rtv.ptr + i * device->GetDescriptorHandleIncrementSize(rtv_desc.Type)};
+    device->CreateRenderTargetView(backs[i].Get(), nullptr, handle);
+  }
+  auto target_desc = backs[0]->GetDesc();
+  D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
+  UINT64 size;
+  device->GetCopyableFootprints(&target_desc, 0, 1, 0, &footprint, nullptr, nullptr, &size);
+  auto pixels = buffer(device.Get(), D3D12_HEAP_TYPE_READBACK, size, D3D12_RESOURCE_STATE_COPY_DEST);
+  auto output = buffer(device.Get(), D3D12_HEAP_TYPE_DEFAULT, sizeof(UINT) * threads * 2,
+                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+  auto bytes =
+      buffer(device.Get(), D3D12_HEAP_TYPE_READBACK, sizeof(UINT) * threads * 2, D3D12_RESOURCE_STATE_COPY_DEST);
+  D3D12_QUERY_HEAP_DESC query_desc{D3D12_QUERY_HEAP_TYPE_TIMESTAMP, 2};
+  auto queries = buffer(device.Get(), D3D12_HEAP_TYPE_READBACK, std::size(compute) * query_desc.Count * sizeof(UINT64),
+                        D3D12_RESOURCE_STATE_COPY_DEST);
+  if (!expect(pixels && output && bytes && queries, "readback allocation failed"))
+    return verdict();
+  ComPtr<ID3D12QueryHeap> timestamps;
+  CHECK(device->CreateQueryHeap(&query_desc, IID_PPV_ARGS(&timestamps)));
+  auto list = lists[0].Get();
+  transition(list, backs[0].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+  const float black[4] = {0, 0, 0, 1};
+  list->ClearRenderTargetView(rtv, black, 0, nullptr);
+  list->SetGraphicsRootSignature(rs.Get());
+  list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+  D3D12_VIEWPORT viewport{0, 0, width, height, 0, 1};
+  list->RSSetViewports(1, &viewport);
+  list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  auto index_buffer = buffer(device.Get(), D3D12_HEAP_TYPE_UPLOAD, sizeof(indices), D3D12_RESOURCE_STATE_GENERIC_READ);
+  if (!expect(index_buffer != nullptr, "index buffer allocation failed"))
+    return verdict();
+  void *index_data;
+  CHECK(index_buffer->Map(0, nullptr, &index_data));
+  memcpy(index_data, indices, sizeof(indices));
+  index_buffer->Unmap(0, nullptr);
+  D3D12_INDEX_BUFFER_VIEW index_view{index_buffer->GetGPUVirtualAddress(), sizeof(indices), DXGI_FORMAT_R32_UINT};
+  list->IASetIndexBuffer(&index_view);
+  // a draw whose arguments the GPU reads is a call of its pipeline like the others
+  const D3D12_DRAW_ARGUMENTS indirect{std::size(indices), 1, 0, 0};
+  D3D12_INDIRECT_ARGUMENT_DESC argument{D3D12_INDIRECT_ARGUMENT_TYPE_DRAW};
+  const D3D12_COMMAND_SIGNATURE_DESC signature_desc{sizeof(indirect), 1, &argument};
+  ComPtr<ID3D12CommandSignature> signature;
+  CHECK(device->CreateCommandSignature(&signature_desc, nullptr, IID_PPV_ARGS(&signature)));
+  auto arguments = buffer(device.Get(), D3D12_HEAP_TYPE_UPLOAD, sizeof(indirect), D3D12_RESOURCE_STATE_GENERIC_READ);
+  if (!expect(arguments != nullptr, "argument buffer allocation failed"))
+    return verdict();
+  void *argument_data;
+  CHECK(arguments->Map(0, nullptr, &argument_data));
+  memcpy(argument_data, &indirect, sizeof(indirect));
+  arguments->Unmap(0, nullptr);
+  for (UINT i = 0; i < std::size(graphics); i++) {
+    D3D12_RECT scissor{LONG(i * width / 2), 0, LONG((i + 1) * width / 2), height};
+    list->RSSetScissorRects(1, &scissor);
+    list->SetPipelineState(graphics[i].Get());
+    list->DrawInstanced(0, 1, 0, 0);
+    for (auto count : instances)
+      list->DrawInstanced(std::size(indices), count, 0, 0);
+    list->DrawIndexedInstanced(std::size(indices), instances[i], 0, 0, 0);
+    list->ExecuteIndirect(signature.Get(), 1, arguments.Get(), 0, nullptr, 0);
+  }
+  list->SetComputeRootSignature(rs.Get());
+  list->SetComputeRootUnorderedAccessView(0, output->GetGPUVirtualAddress());
+  for (UINT i = 0; i < std::size(compute); i++) {
+    list->EndQuery(timestamps.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+    list->SetPipelineState(compute[i].Get());
+    UINT args[] = {7, i};
+    list->SetComputeRoot32BitConstants(1, std::size(args), args, 0);
+    for (UINT dispatch = 0; dispatch < std::size(instances); dispatch++)
+      list->Dispatch(1, 1, 1);
+    list->EndQuery(timestamps.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
+    list->ResolveQueryData(timestamps.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, query_desc.Count, queries.Get(),
+                           i * query_desc.Count * sizeof(UINT64));
+  }
+  transition(list, output.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+  list->CopyResource(bytes.Get(), output.Get());
+  transition(list, output.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+  transition(list, backs[0].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+  D3D12_TEXTURE_COPY_LOCATION source{backs[0].Get(), D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX},
+      dest{pixels.Get(), D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT, {.PlacedFootprint = footprint}};
+  list->CopyTextureRegion(&dest, 0, 0, 0, &source, nullptr);
+  transition(list, backs[0].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PRESENT);
+  CHECK(list->Close());
+  CHECK(lists[1]->Close());
+  std::ofstream result(std::string(argv[3]) + "\\pixels", std::ios::binary);
+  ComPtr<ID3D12Fence> held;
+  CHECK(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&held)));
+  UINT64 frequency;
+  CHECK(queues[0]->GetTimestampFrequency(&frequency));
+  for (UINT frame = 0; frame < frames; frame++) {
+    step("child frame %u: replay two pipelines, two kernels and timestamps", frame);
+    ID3D12CommandList *submitted[] = {lists[0].Get(), lists[1].Get()};
+    if (!frame) {
+      CHECK(queues[0]->Wait(held.Get(), 1));
+      // a wait for a value the fence has had holds nothing more
+      CHECK(queues[0]->Wait(held.Get(), 0));
+    }
+    queues[0]->ExecuteCommandLists(std::size(submitted), submitted);
+    if (!frame) {
+      Sleep(held_ms);
+      facts << now() << '\n';
+      CHECK(held->Signal(1));
+    }
+    ComPtr<ID3D12Fence> fence;
+    CHECK(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)));
+    auto event = CreateEventA(nullptr, FALSE, FALSE, nullptr);
+    CHECK(queues[0]->Signal(fence.Get(), 1));
+    CHECK(fence->SetEventOnCompletion(1, event));
+    expect(WaitForSingleObject(event, 60000) == WAIT_OBJECT_0, "GPU timed out");
+    CloseHandle(event);
+    CHECK(device->GetDeviceRemovedReason());
+    UINT *words;
+    CHECK(bytes->Map(0, nullptr, (void **)&words));
+    for (UINT slot = 0; slot < 2; slot++)
+      for (UINT id = 0; id < threads; id++) {
+        UINT want = 7 + id;
+        for (UINT i = 0; i < (slot ? turns : 1); i++)
+          want = want * 1664525u + 1013904223u;
+        expect(words[slot * threads + id] == want, "kernel output wrong at %u/%u", slot, id);
+      }
+    result.write((const char *)words, bytes->GetDesc().Width);
+    bytes->Unmap(0, nullptr);
+    UINT8 *rgba;
+    CHECK(pixels->Map(0, nullptr, (void **)&rgba));
+    for (UINT y = 0; y < height; y++)
+      for (UINT x = 0; x < width; x++) {
+        const UINT8 want[4] = {UINT8(x < width / 2 ? 255 : 0), UINT8(x < width / 2 ? 0 : 255), 0, 255};
+        const auto at = rgba + y * footprint.Footprint.RowPitch + x * sizeof(want);
+        expect(!memcmp(at, want, sizeof(want)), "pixel wrong at %u/%u", x, y);
+        result.write((const char *)at, sizeof(want));
+      }
+    pixels->Unmap(0, nullptr);
+    UINT64 *clock;
+    CHECK(queries->Map(0, nullptr, (void **)&clock));
+    for (UINT i = 0; i < std::size(compute); i++)
+      expect(clock[i * query_desc.Count + 1] > clock[i * query_desc.Count],
+             "timestamp query did not bracket kernel %u", i);
+    auto long_query = clock + (std::size(compute) - 1) * query_desc.Count;
+    facts << nanoseconds(long_query[0], frequency) << ' ' << nanoseconds(long_query[1], frequency) << '\n';
+    queries->Unmap(0, nullptr);
+    CHECK(chains[0]->Present(0, 0));
+  }
+  step("child: more passes than one counter buffer holds, with timestamp queries in the same command buffer");
+  CHECK(allocators[1]->Reset());
+  CHECK(lists[1]->Reset(allocators[1].Get(), nullptr));
+  auto many = lists[1].Get();
+  many->EndQuery(timestamps.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+  auto other_rtv = rtv;
+  other_rtv.ptr += device->GetDescriptorHandleIncrementSize(rtv_desc.Type);
+  transition(many, backs[1].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+  for (UINT i = 0; i < burst; i++)
+    many->ClearRenderTargetView(other_rtv, black, 0, nullptr);
+  many->EndQuery(timestamps.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
+  many->ResolveQueryData(timestamps.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, 2, queries.Get(), 0);
+  transition(many, backs[1].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+  CHECK(submit(device.Get(), queues[1].Get(), many));
+  UINT64 *clock;
+  CHECK(queries->Map(0, nullptr, (void **)&clock));
+  expect(clock[1] > clock[0], "overflow lost application timestamps");
+  CHECK(queues[1]->GetTimestampFrequency(&frequency));
+  facts << nanoseconds(clock[0], frequency) << '\n' << nanoseconds(clock[1], frequency) << '\n';
+  queries->Unmap(0, nullptr);
+  auto go = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+  struct Present {
+    IDXGISwapChain3 *chain;
+    HANDLE go;
+  } present{chains[1].Get(), go};
+  auto thread = CreateThread(
+      nullptr, 0,
+      [](void *argument) WINAPI -> DWORD {
+        auto &present = *(Present *)argument;
+        if (WaitForSingleObject(present.go, 60000) != WAIT_OBJECT_0)
+          return 1;
+        for (UINT i = 0; i < concurrent_frames; i++)
+          if (FAILED(present.chain->Present(0, 0)))
+            return 1;
+        return 0;
+      },
+      &present, 0, nullptr);
+  if (!expect(go && thread, "present thread creation failed"))
+    return verdict();
+  SetEvent(go);
+  for (UINT i = 0; i < concurrent_frames; i++)
+    expect(SUCCEEDED(chains[0]->Present(0, 0)), "concurrent present failed");
+  if (!expect(WaitForSingleObject(thread, 60000) == WAIT_OBJECT_0, "present thread timed out"))
+    ExitProcess(verdict());
+  DWORD status = 1;
+  GetExitCodeThread(thread, &status);
+  expect(status == 0, "second queue present failed");
+  CloseHandle(thread);
+  CloseHandle(go);
+  for (auto &chain : chains)
+    chain.Reset();
+  for (auto &queue : queues)
+    queue.Reset();
+  for (auto window : windows)
+    DestroyWindow(window);
+  facts << now() << '\n';
+  FreeLibrary(bridge);
+  return verdict();
+}
+
+static std::vector<std::string>
+fields(const std::string &line, char separator = '\t') {
+  std::vector<std::string> result;
+  std::istringstream stream(line);
+  std::string field;
+  while (std::getline(stream, field, separator))
+    result.push_back(field);
+  return result;
+}
+
+static UINT64
+number(const std::string &field) {
+  UINT64 value = 0;
+  auto parsed = std::from_chars(field.data(), field.data() + field.size(), value);
+  expect(parsed.ec == std::errc{} && parsed.ptr == field.data() + field.size(), "bad number: %s", field.c_str());
+  return value;
+}
+
+int
+main(int argc, char **argv) {
+  Compiler compiler;
+  if (!front_end(argc, argv, compiler)) {
+    printf("skipped: dxcompiler.dll not found\n");
+    return 77;
+  }
+  auto vs = compiler.compile(hlsl, "vs", "vs", {"TURNS=1", "THREADS=" + std::to_string(threads)});
+  std::string ps[] = {compiler.compile(hlsl, "red", "ps", {"TURNS=1", "THREADS=" + std::to_string(threads)}),
+                      compiler.compile(hlsl, "green", "ps", {"TURNS=1", "THREADS=" + std::to_string(threads)})};
+  std::string cs[] = {
+      compiler.compile(hlsl, "cs", "cs", {"TURNS=1", "THREADS=" + std::to_string(threads)}),
+      compiler.compile(hlsl, "cs", "cs", {"TURNS=" + std::to_string(turns), "THREADS=" + std::to_string(threads)})};
+  if (!expect(!vs.empty() && !ps[0].empty() && !ps[1].empty() && !cs[0].empty() && !cs[1].empty(),
+              "HLSL did not compile"))
+    return verdict();
+  if (argc > 4 && !strcmp(argv[4], "shaders"))
+    return verdict();
+  ComPtr<ID3D12Device> device;
+  CHECK(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)));
+  if (argc > 3 && !strcmp(argv[2], "child"))
+    return child(argv, device, vs, ps, cs);
+  char temporary[MAX_PATH], directory[MAX_PATH], exe[MAX_PATH];
+  GetTempPathA(sizeof(temporary), temporary);
+  GetModuleFileNameA(nullptr, exe, sizeof(exe));
+  auto unix_name =
+      (char *(__cdecl *)(const WCHAR *))GetProcAddress(GetModuleHandleA("kernel32.dll"), "wine_get_unix_file_name");
+  if (!expect(unix_name != nullptr, "Wine path conversion unavailable"))
+    return verdict();
+  std::string baseline;
+  // the last run's records go to a directory that is not there: the profile says so once, in the log, and the
+  // pictures stay the same
+  const char *settings[] = {nullptr, nullptr, "profiles", "profile", "profile", "profile"};
+  for (UINT run = 0; run < std::size(settings); run++) {
+    auto setting = settings[run];
+    const bool unwritable = run == std::size(settings) - 1;
+    const bool profiling = setting && !strcmp(setting, "profile");
+    step("child MULLION_DIAG=%s, run %u", setting ? setting : "unset", run);
+    if (!expect(temporary_directory(temporary, "prf", directory), "no temporary directory"))
+      return verdict();
+    WCHAR wide[MAX_PATH];
+    MultiByteToWideChar(CP_ACP, 0, directory, -1, wide, std::size(wide));
+    char *path = unix_name(wide);
+    if (!expect(path != nullptr, "Wine path conversion failed"))
+      return verdict();
+    SetEnvironmentVariableA("MULLION_DIAG_PATH", (std::string(path) + (unwritable ? "/missing" : "")).c_str());
+    HeapFree(GetProcessHeap(), 0, path);
+    SetEnvironmentVariableA("MULLION_DIAG", setting);
+    SetEnvironmentVariableA("MULLION_LOG_PATH", unwritable ? directory : "none");
+    SetEnvironmentVariableA("MULLION_D3D12_GPU_ERRORS", run == std::size(settings) - 2 ? "1" : nullptr);
+    SetEnvironmentVariableA("MULLION_D3D12_ISOLATE", nullptr);
+    std::string command =
+        std::string("\"") + exe + "\" " + (argc > 1 ? argv[1] : "dxil") + " child \"" + directory + "\"";
+    STARTUPINFOA startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!expect(CreateProcessA(exe, command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process),
+                "child did not start"))
+      return verdict();
+    auto waited = WaitForSingleObject(process.hProcess, 120000);
+    if (waited != WAIT_OBJECT_0) {
+      TerminateProcess(process.hProcess, 1);
+      WaitForSingleObject(process.hProcess, 60000);
+    }
+    DWORD status = 1;
+    GetExitCodeProcess(process.hProcess, &status);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    expect(waited == WAIT_OBJECT_0 && status == 0, "child ended with %lu after wait %lu", status, waited);
+    if (status == 77)
+      return 77;
+    std::ifstream pixels(std::string(directory) + "\\pixels", std::ios::binary);
+    std::string output((std::istreambuf_iterator<char>(pixels)), {});
+    if (!run)
+      baseline = output;
+    expect(!output.empty() && output == baseline, "profile changed pixels or buffers");
+    pixels.close();
+    if (unwritable) {
+      std::ifstream log(std::string(directory) + "\\d3d12_profile_d3d12.log");
+      std::string text((std::istreambuf_iterator<char>(log)), {});
+      size_t said = 0;
+      for (size_t at = text.find("could not be written"); at != std::string::npos; at = text.find("could not be written", at + 1))
+        said++;
+      expect(said == 1, "a profile that cannot write its records said so %zu times, want once", said);
+      continue;
+    }
+    std::ifstream facts(std::string(directory) + "\\facts");
+    std::string names[4];
+    for (auto &name : names)
+      std::getline(facts, name);
+    UINT pid = 0, capacity = 0;
+    UINT64 began = 0, ended = 0, query_start = 0, query_end = 0, signaled = 0;
+    facts >> pid >> began >> capacity >> signaled;
+    std::array<UINT64, 2> sampled_queries[frames]{};
+    for (UINT frame = 0; frame < frames; frame++) {
+      auto &query = sampled_queries[frame];
+      facts >> query[0] >> query[1];
+      expect(query[1] > query[0], "empty query interval: %llu..%llu", query[0], query[1]);
+    }
+    facts >> query_start >> query_end >> ended;
+    expect(facts.good(), "child facts incomplete");
+    facts.close();
+    std::string render_runs[2], compute_runs[2];
+    for (UINT i = 0; i < std::size(render_runs); i++) {
+      render_runs[i] = names[i] + '*' + std::to_string(std::size(instances) + 2) + '*' +
+                       std::to_string(std::size(indices) * (instances[0] + instances[1])) + '*' +
+                       std::to_string(std::size(indices) * instances[i]);
+      compute_runs[i] = names[i + std::size(render_runs)] + '*' + std::to_string(std::size(instances)) + "*0*0";
+    }
+    using Key = std::pair<std::string, UINT64>;
+    std::map<Key, std::vector<std::string>> buffers;
+    std::map<Key, std::array<UINT64, 4>> calibrations;
+    std::vector<std::vector<std::string>> passes, presents, targets;
+    std::map<std::string, UINT> frame_counts;
+    UINT files = 0, clocks = 0, spans = 0, statistics = 0, totals = 0, made = 0;
+    // the bridge's calls a 'unix' record counts, each named once before (mullion_diag.hpp's Calls)
+    std::set<UINT64> named;
+    std::map<UINT64, UINT> list_counts;
+    UINT64 last_frame = 0, held_began = ~UINT64(0), held_took = 0;
+    for (auto &entry : std::filesystem::directory_iterator(directory)) {
+      if (entry.path().extension() != ".diag")
+        continue;
+      files++;
+      expect(entry.path().filename() == "mullion-" + std::to_string(pid) + ".diag", "wrong unix process id");
+      std::ifstream file(entry.path());
+      std::string line;
+      while (std::getline(file, line)) {
+        auto row = fields(line);
+        if (!expect(!row.empty(), "empty record line"))
+          continue;
+        if (row[0] == "clock" && expect(row.size() == 3, "malformed clock")) {
+          clocks++;
+          expect(began <= number(row[1]) && number(row[1]) <= ended && number(row[2]), "clock outside run");
+        } else if (row[0] == "calibration" && expect(row.size() == 7, "malformed calibration")) {
+          std::array<UINT64, 4> clock{number(row[3]), number(row[4]), number(row[5]), number(row[6])};
+          if (expect(clock[2] > clock[0] && clock[3] > clock[1], "calibration clocks did not advance"))
+            expect(calibrations.emplace(Key{row[1], number(row[2])}, clock).second, "duplicate calibration");
+        } else if (row[0] == "cmdbuf" && expect(row.size() == 7, "malformed command buffer")) {
+          expect(buffers.emplace(Key{row[1], number(row[2])}, row).second, "duplicate command buffer");
+          expect(began <= number(row[3]) && number(row[3]) <= number(row[4]) && number(row[4]) <= ended,
+                 "command buffer CPU clocks outside run");
+          expect(number(row[5]) <= number(row[6]), "command buffer GPU times reversed");
+        } else if (row[0] == "frame" && expect(row.size() == 5, "malformed frame")) {
+          number(row[4]);
+          expect(number(row[3]) >= last_frame, "concurrent frames out of time order");
+          expect(began <= number(row[3]) && number(row[3]) <= ended, "frame clock outside run");
+          last_frame = number(row[3]);
+          frame_counts[row[1]]++;
+          presents.push_back(row);
+        } else if (row[0] == "pass" && expect(row.size() == 9 || row.size() == 11, "malformed pass")) {
+          passes.push_back(row);
+        } else if (row[0] == "target") {
+          targets.push_back(row);
+        } else if (row[0] == "gpu") {
+          // the driver's statistics at the frame's end, name=value each
+          statistics++;
+          for (size_t i = 1; i < row.size(); i++)
+            if (auto at = row[i].find('='); expect(at && at != row[i].npos, "malformed statistic %s", row[i].c_str()))
+              number(row[i].substr(at + 1));
+        } else if (row[0] == "call" && expect(row.size() == 3 && !row[2].empty(), "malformed call")) {
+          expect(named.insert(number(row[1])).second, "call %s named twice", row[1].c_str());
+        } else if (row[0] == "unix") {
+          totals++;
+          for (size_t i = 1; i < row.size(); i++)
+            if (auto call = fields(row[i], ':'); expect(call.size() == 3, "malformed call total %s", row[i].c_str())) {
+              expect(named.count(number(call[0])) && number(call[1]), "call total %s unnamed or empty", row[i].c_str());
+              number(call[2]);
+            }
+        } else if (row[0] == "span" && row.size() >= 6 && row[1] != "execute") {
+          expect(row[1] == "encode" || row[1] == "present" || row[1] == "wait" || row[1] == "pipeline",
+                 "unexpected span kind %s", row[1].c_str());
+          made += row[1] == "pipeline";
+          expect(number(row[3]) && began <= number(row[4]) && number(row[4]) + number(row[5]) <= ended,
+                 "%s span outside run", row[1].c_str());
+        } else if (row[0] == "span" && expect(row.size() == 6, "malformed span")) {
+          spans++;
+          list_counts[number(row[2])]++;
+          expect(number(row[3]) && number(row[5]) && began <= number(row[4]) &&
+                     number(row[4]) + number(row[5]) <= ended,
+                 "execute span outside run");
+          if (number(row[4]) < held_began)
+            held_began = number(row[4]), held_took = number(row[5]);
+        } else if (row[0] == "buffer" && expect(row.size() == 4, "malformed buffer creation")) {
+          expect(number(row[1]) && number(row[2]) && number(row[3]), "empty buffer creation");
+        } else {
+          expect(false, "unexpected record kind %s (stale record was not truncated)", row[0].c_str());
+        }
+      }
+    }
+    expect(files == UINT(profiling), "got %u records, want %u", files, UINT(profiling));
+    if (profiling) {
+      if (!expect(calibrations.size() == buffers.size() &&
+                      std::all_of(buffers.begin(), buffers.end(), [&](auto &entry) {
+                        return calibrations.count(entry.first);
+                      }),
+                  "command buffer calibration missing"))
+        return verdict();
+      // Apple, Converting GPU timestamps into CPU time: interpolate between paired samples around the work.
+      auto host_time = [&](const Key &key, UINT64 sample) {
+        auto &[cpu0, gpu0, cpu1, gpu1] = calibrations.at(key);
+        auto delta = sample < gpu0 ? -static_cast<long double>(gpu0 - sample)
+                                  : static_cast<long double>(sample - gpu0);
+        return cpu0 + delta * (cpu1 - cpu0) / (gpu1 - gpu0);
+      };
+      // the calibrations' host times come from a clock of 24 MHz on Apple silicon (mach_absolute_time), so a stage
+      // converted with them may land up to a tick, outside the command buffer's GPU times
+      const UINT64 host_tick = (1000000000 + host_hz - 1) / host_hz;
+      expect(clocks == 2, "one clock pair per queue");
+      expect(spans == frames + 1 && list_counts[2] == frames && list_counts[1] == 1, "execute spans lost list counts");
+      expect(made >= std::size(names), "%u pipeline spans, want one for each of %zu pipelines", made, std::size(names));
+      // ID3D12CommandQueue::Wait: "waits until the specified fence reaches or exceeds the specified value": the
+      // lists behind it run after the signal; their encoding does not wait for it, so the GPU has them at once
+      expect(held_began + held_took <= signaled, "lists behind a Wait were encoded %lld ns after the fence's signal",
+             (long long)(held_began + held_took - signaled));
+      for (auto &[key, row] : buffers)
+        expect(number(row[3]) < held_began || number(row[3]) >= signaled,
+               "command buffer committed ahead of a Wait's fence");
+      expect(presents.size() == frames + 2 * concurrent_frames && frame_counts.size() == 2, "presents missing");
+      expect(statistics == presents.size() && totals == presents.size(), "frames without GPU statistics or call totals");
+      if (!presents.empty()) {
+        const auto queue = presents.front()[1];
+        expect(frame_counts[queue] == frames + concurrent_frames, "main queue presents misattributed");
+        for (auto &[other, count] : frame_counts)
+          if (other != queue)
+            expect(count == concurrent_frames, "second queue presents misattributed");
+      }
+      std::set<Key> presented;
+      for (auto &row : presents) {
+        Key key{row[1], number(row[2])};
+        expect(buffers.count(key) && presented.insert(key).second, "present has no unique command buffer");
+        if (buffers.count(key))
+          expect(number(row[3]) <= number(buffers[key][3]), "frame follows its commit");
+      }
+      std::map<std::string, UINT> kinds;
+      std::map<Key, std::vector<const std::vector<std::string> *>> by_buffer;
+      std::map<std::string, std::vector<UINT64>> kernel_times;
+      std::map<std::string, UINT> run_counts;
+      std::set<std::tuple<Key, std::string, UINT64>> seen;
+      UINT unsampled = 0;
+      for (auto &row : passes) {
+        Key key{row[1], number(row[2])};
+        kinds[row[4]]++;
+        by_buffer[key].push_back(&row);
+        expect(seen.emplace(key, row[4], number(row[3])).second, "duplicate pass");
+        if (!expect(buffers.count(key), "pass has no command buffer"))
+          continue;
+        expect(!presented.count(key), "presenter's own pass was sampled");
+        expect(row.size() == (row[4] == "Render" ? 11u : 9u), "wrong stage count");
+        expect(number(row[5]) > 0, "empty CPU encoding time");
+        UINT64 gpu = 0;
+        auto &cmdbuf = buffers[key];
+        const auto start = number(cmdbuf[5]), finish = number(cmdbuf[6]);
+        const UINT64 rounding =
+            UINT64(std::ceil(std::nextafter(double(finish) / 1e9, std::numeric_limits<double>::infinity()) * 1e9 -
+                             finish)) +
+            1;
+        for (size_t i = 7; i + 1 < row.size(); i += 2) {
+          auto a = number(row[i]), b = number(row[i + 1]);
+          if (a == ~UINT64(0) || b == ~UINT64(0)) {
+            expect(a == ~UINT64(0) && b == ~UINT64(0), "partial stage sample");
+            unsampled++;
+          } else {
+            expect(a <= b && host_time(key, a) + rounding + host_tick >= start &&
+                       host_time(key, b) <= finish + rounding + host_tick,
+                   "stage %llu to %llu outside command buffer %llu to %llu", a, b, start, finish);
+            gpu += b - a;
+          }
+        }
+        if (row[4] == "Render")
+          expect(std::none_of(row.begin() + 7, row.end(), [](auto &time) { return number(time) == ~UINT64(0); }),
+                 "render stages were not sampled");
+        auto runs = fields(row[6], '|');
+        if (row[4] == "Render")
+          expect(runs.size() == 2 && runs[0] == render_runs[0] && runs[1] == render_runs[1],
+                 "render pipelines missing or out of order");
+        else if (row[4] == "Compute") {
+          expect(runs.size() == 1 && (runs[0] == compute_runs[0] || runs[0] == compute_runs[1]),
+                 "compute pipeline wrong");
+          if (runs.size() == 1) {
+            auto &times = kernel_times[runs[0]];
+            if (runs[0] == compute_runs[1] && times.size() < frames) {
+              auto &query = sampled_queries[times.size()];
+              expect(query[0] <= number(row[7]) && number(row[8]) <= query[1],
+                     "application query %llu to %llu does not bracket the sampled kernel %llu to %llu", query[0],
+                     query[1], number(row[7]), number(row[8]));
+              auto at = size_t(&row - passes.data());
+              if (expect(at > 0, "kernel has no query pass before it")) {
+                // a query has the clock as the pass before it ends (20.4.3): the one before the kernel follows a
+                // resolve, so its pass is a blit, and the one after it has the kernel's end
+                auto &before = passes[at - 1];
+                expect(before[1] == row[1] && before[2] == row[2] && before[4] == "Blit" && query[0] != ~UINT64(0) &&
+                           query[1] != ~UINT64(0) && query[0] == number(before[8]) && query[1] == number(row[8]),
+                       "application timestamps shifted from the kernel's pass and the query pass before it");
+              }
+            }
+            times.push_back(gpu);
+          }
+        } else
+          expect(row[6].empty(), "non-application pipeline recorded");
+        for (auto &run_name : runs)
+          run_counts[run_name]++;
+      }
+      // a frame's clear is its render pass's load action, and that pass ends with the first kernel's first query:
+      // the queries and the resolve between the kernels are a blit, and the queries, resolve and copies after them
+      // another. the burst's clears stay passes; its queries are a blit at the list's start and the last clear's end
+      expect(kinds["Render"] == frames && kinds["Compute"] == 2 * frames && kinds["Clear"] == capacity + 1 &&
+                 kinds["Blit"] == 2 * frames + 1 && kinds.size() == 4,
+             "pass kinds or counts differ from recording");
+      expect(unsampled > 0, "overflow did not use unsampled sentinel");
+      for (UINT i = 0; i < std::size(render_runs); i++)
+        expect(run_counts[render_runs[i]] == frames && run_counts[compute_runs[i]] == frames,
+               "pipeline lost on list replay");
+      // a render or clear pass names its one target, as D3D11's profile has them: the back buffer of a queue's swap
+      // chain, cleared on load and stored
+      std::map<std::tuple<Key, UINT64>, UINT> attachments;
+      std::set<std::string> textures;
+      for (auto &row : targets)
+        if (expect(row.size() == 15, "malformed target")) {
+          attachments[{Key{row[1], number(row[2])}, number(row[3])}]++;
+          textures.insert(row[6]);
+          expect(row[4] == "color" && !number(row[5]) && number(row[6]) && number(row[7]) == width &&
+                     number(row[8]) == height && number(row[9]) == WMTPixelFormatRGBA8Unorm && !number(row[10]) &&
+                     !number(row[11]) && number(row[12]) == 1 && number(row[13]) == WMTLoadActionClear &&
+                     number(row[14]) == WMTStoreActionStore,
+                 "target metadata wrong");
+        }
+      for (auto &row : passes)
+        expect(attachments[{Key{row[1], number(row[2])}, number(row[3])}] ==
+                   UINT(row[4] == "Render" || row[4] == "Clear"),
+               "pass lost or gained targets");
+      expect(targets.size() == kinds["Render"] + kinds["Clear"] && textures.size() == frame_counts.size(),
+             "targets lost or mixed");
+      for (UINT frame = 0; frame < frames; frame++) {
+        auto &fast = kernel_times[compute_runs[0]], &slow = kernel_times[compute_runs[1]];
+        if (expect(fast.size() == frames && slow.size() == frames, "kernel samples missing"))
+          expect(slow[frame] > fast[frame] && fast[frame] > 0, "long kernel not slower in frame %u", frame);
+      }
+      UINT overflow_buffers = 0;
+      for (auto &[key, group] : by_buffer)
+        if (group.size() > capacity) {
+          overflow_buffers++;
+          expect(group.size() == capacity + 2, "overflow command buffer split or lost passes");
+          auto &cmdbuf = buffers[key];
+          const auto finish = number(cmdbuf[6]);
+          const UINT64 rounding =
+              UINT64(std::ceil(std::nextafter(double(finish) / 1e9, std::numeric_limits<double>::infinity()) * 1e9 -
+                               finish)) +
+              1;
+          expect(host_time(key, query_start) + rounding + host_tick >= number(cmdbuf[5]) &&
+                     host_time(key, query_end) <= finish + rounding + host_tick,
+                 "application queries do not share overflow command buffer");
+        }
+      expect(overflow_buffers == 1, "no intact overflow command buffer");
+    }
+    std::error_code error;
+    std::filesystem::remove_all(directory, error);
+    expect(!error, "could not remove test directory");
+  }
+  return verdict();
+}

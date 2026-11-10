@@ -1,0 +1,15 @@
+# cull distances cull the next mesh primitive instead of the one tested
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3694,7 +3694,10 @@
+           }
+           culled = ir.CreateOr(culled, out);
+         }
+-        air.CreateSetMeshPrimitiveCulled(primitive, ir.CreateICmpNE(culled, ir.getInt8(0)));
++        air.CreateSetMeshPrimitiveCulled(
++            ir.CreateURem(ir.CreateAdd(primitive, ir.getInt32(1)), ir.getInt32(shader->mesh_max_primitives)),
++            ir.CreateICmpNE(culled, ir.getInt8(0))
++        );
+       });
+     ir.CreateBr(epilogue);
+   }

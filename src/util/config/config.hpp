@@ -14,7 +14,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace dxmt {
+namespace mullion {
 
   /**
    * \brief Tri-state

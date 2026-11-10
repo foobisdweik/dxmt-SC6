@@ -1,0 +1,12 @@
+# a load past the end reads the view's first unit
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -3253,7 +3253,7 @@
+   // values spill. a null view starts at the device's zero-filled buffer (GetNullBuffer)
+   auto Out = ir.CreateIsNull(Ptr);
+   auto Value = Load(ir.CreateSelect(Out, ir.CreatePointerCast(Buffer.Pointer, Ptr->getType()), Ptr));
+-  return ir.CreateSelect(Out, llvm::Constant::getNullValue(Type), Value);
++  return Value;
+ }
+ 
+ // a load of several units from Base, which Read emits. a structured load whose last unit, at Last, is past the end is

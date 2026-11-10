@@ -1,0 +1,12 @@
+# truncates programmable gather offsets to five signed bits
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2432,7 +2432,7 @@
+   // immediate texel offsets span [-8, 7] (D3D11_COMMONSHADER_TEXEL_OFFSET_MAX_NEGATIVE/POSITIVE), as Metal's native
+   // offset does; gather4_po honors the low 6 bits of each offset, signed (D3D11.3 22.4.4)
+   constexpr int64_t ImmediateOffsetMin = -8, ImmediateOffsetMax = 7;
+-  constexpr unsigned ProgrammableOffsetBits = 6;
++  constexpr unsigned ProgrammableOffsetBits = 5;
+   auto OffsetTy = cast<FixedVectorType>(Offset->getType());
+   auto Native = [](Constant *C) {
+     auto I = dyn_cast_or_null<ConstantInt>(C);

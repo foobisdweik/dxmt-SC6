@@ -1,0 +1,12 @@
+# the Direct3D 12 queue does not wait for a Direct3D 11 chunk it follows
+--- a/src/d3d11/d3d11_on12.cpp
++++ b/src/d3d11/d3d11_on12.cpp
+@@ -205,7 +205,7 @@
+         completed();
+       done->Signal(value);
+     };
+-    queue_->Wait(done_.ptr(), done_value_);
++    ;
+   }
+ 
+   IUnknown *container_;

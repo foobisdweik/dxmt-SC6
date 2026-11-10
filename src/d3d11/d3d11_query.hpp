@@ -1,74 +1,12 @@
 #pragma once
 #include "com/com_guid.hpp"
 #include "d3d11_device_child.hpp"
-#include "dxmt_occlusion_query.hpp"
+#include "mullion_buffer.hpp"
+#include "mullion_query.hpp"
 #include "log/log.hpp"
 #include "../d3d10/d3d10_query.hpp"
 
-namespace dxmt {
-
-template <typename Query>
-class MTLD3DQueryBase : public MTLD3D11DeviceChild<Query> {
-public:
-  MTLD3DQueryBase(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *desc)
-      : MTLD3D11DeviceChild<Query>(pDevice), desc_(*desc),
-        d3d10_(this, pDevice->GetImmediateContextPrivate()) {}
-  ~MTLD3DQueryBase(){};
-
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-                                           void **ppvObject) final {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11Query)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    if (riid == __uuidof(ID3D10DeviceChild) || riid == __uuidof(ID3D10Query)) {
-      *ppvObject = ref(&d3d10_);
-      return S_OK;
-    }
-
-    if (logQueryInterfaceError(__uuidof(ID3D11Query), riid)) {
-      Logger::warn("D3D11Query::QueryInterface: Unknown interface query");
-      Logger::warn(str::format(riid));
-    }
-
-    return E_NOINTERFACE;
-  };
-
-  void STDMETHODCALLTYPE GetDesc(D3D11_QUERY_DESC *pDesc) final {
-    if (pDesc) {
-      pDesc->Query = desc_.Query;
-      pDesc->MiscFlags = desc_.MiscFlags;
-    }
-  };
-
-  void STDMETHODCALLTYPE GetDesc1(D3D11_QUERY_DESC1 *pDesc) final {
-    if (pDesc) {
-      *pDesc = desc_;
-    }
-  };
-
-protected:
-  D3D11_QUERY_DESC1 desc_;
-  MTLD3D10Query d3d10_;
-};
-
-template <typename DataType>
-class MTLD3D11DummyQuery : public MTLD3DQueryBase<ID3D11Query1> {
-public:
-  MTLD3D11DummyQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *desc)
-      : MTLD3DQueryBase<ID3D11Query1>(pDevice, desc) {}
-
-  virtual UINT STDMETHODCALLTYPE GetDataSize() override {
-    return sizeof(DataType);
-  };
-};
+namespace mullion {
 
 /**
 
@@ -102,22 +40,94 @@ enum class QueryState {
    */
   Issued,
   /**
-    Default state, or when data is ready
+    When data is ready
    */
   Signaled,
   Undefined,
+};
+
+class MTLD3D11Query : public ID3D11Query1 {
+public:
+  QueryState state_ = QueryState::Undefined;
+  // MULLION_DIAG=profile: when GetData first found the query unfinished in this frame, and the frame
+  uint64_t polled = 0, polled_frame = 0;
+
+  // the context's hold on what is bound: without the application's count, which holds the device
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
+};
+
+template <typename Query>
+class MTLD3DQueryBase : public MTLD3D11DeviceChild<Query> {
+public:
+  MTLD3DQueryBase(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *desc)
+      : MTLD3D11DeviceChild<Query>(pDevice), desc_(*desc),
+        d3d10_(this, pDevice->GetImmediateContextPrivate()) {}
+  ~MTLD3DQueryBase(){};
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    // a predicate is a query of a predicate's kind
+    bool predicate = desc_.Query == D3D11_QUERY_OCCLUSION_PREDICATE ||
+                     (desc_.Query >= D3D11_QUERY_SO_OVERFLOW_PREDICATE &&
+                      desc_.Query <= D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM3 &&
+                      (desc_.Query - D3D11_QUERY_SO_OVERFLOW_PREDICATE) %
+                              (D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM1 -
+                               D3D11_QUERY_SO_OVERFLOW_PREDICATE_STREAM0) == 0);
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) || riid == __uuidof(ID3D11Asynchronous) ||
+        riid == __uuidof(ID3D11Query) || riid == __uuidof(ID3D11Query1) ||
+        (predicate && riid == __uuidof(ID3D11Predicate))) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(ID3D10DeviceChild) || riid == __uuidof(ID3D10Asynchronous) || riid == __uuidof(ID3D10Query) ||
+        (predicate && riid == __uuidof(ID3D10Predicate))) {
+      *ppvObject = ref(&d3d10_);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(ID3D11Query), riid)) {
+      Logger::warn("D3D11Query::QueryInterface: Unknown interface query");
+      Logger::warn(str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  };
+
+  void STDMETHODCALLTYPE GetDesc(D3D11_QUERY_DESC *pDesc) final {
+    if (pDesc) {
+      pDesc->Query = desc_.Query;
+      pDesc->MiscFlags = desc_.MiscFlags;
+    }
+  };
+
+  void STDMETHODCALLTYPE GetDesc1(D3D11_QUERY_DESC1 *pDesc) final {
+    if (pDesc) {
+      *pDesc = desc_;
+    }
+  };
+
+protected:
+  D3D11_QUERY_DESC1 desc_;
+  MTLD3D10Query d3d10_;
 };
 
 enum class EventState {
   Pending,
   Signaled,
   Stall,
-  Invalid,
 };
 
 constexpr size_t kEventStallThreshold = 64;
 
-struct MTLD3D11EventQuery : public ID3D11Query1 {
+struct MTLD3D11EventQuery : public MTLD3D11Query {
   virtual void Issue(uint64_t current_seq_id) = 0;
   virtual EventState CheckEventState(uint64_t coherent_seq_id) = 0;
 };
@@ -131,16 +141,14 @@ public:
   UINT STDMETHODCALLTYPE GetDataSize() override { return sizeof(DataType); };
 
   void Issue(uint64_t current_seq_id) override {
-    state = QueryState::Issued;
+    state_ = QueryState::Issued;
     should_be_signaled_at = current_seq_id;
     stall_counter = 0;
   }
 
   EventState CheckEventState(uint64_t coherent_seq_id) override {
-    if (state == QueryState::Undefined)
-      return EventState::Invalid;
     if (should_be_signaled_at <= coherent_seq_id) {
-      state = QueryState::Signaled;
+      state_ = QueryState::Signaled;
       stall_counter = 0;
       return EventState::Signaled;
     }
@@ -155,13 +163,16 @@ public:
   };
 
 private:
-  QueryState state = QueryState::Undefined;
   uint32_t stall_counter = 0;
   uint64_t should_be_signaled_at = 0;
 };
 
-class MTLD3D11OcclusionQuery : public ID3D11Query1 {
+// pipeline statistics use visibility for completion, with shader executions and strip corrections captured on the GPU
+class MTLD3D11OcclusionQuery : public MTLD3D11Query {
 public:
+  // the context's counts as the range began, and the range's counts
+  D3D11_QUERY_DATA_PIPELINE_STATISTICS begun{}, counts{};
+
   virtual HRESULT GetData(void *data) = 0;
   virtual VisibilityResultQuery *Begin() = 0;
   virtual VisibilityResultQuery *End() = 0;
@@ -172,11 +183,11 @@ HRESULT CreateOcclusionQuery(MTLD3D11Device *pDevice,
                               const D3D11_QUERY_DESC1 *pDesc,
                               ID3D11Query1 **ppQuery);
 
-class MTLD3D11TimestampQuery : public ID3D11Query1 {
+class MTLD3D11TimestampQuery : public MTLD3D11Query {
 public:
   virtual HRESULT GetData(void *data) = 0;
   virtual TimestampQuery *End() = 0;
-  /* the command chunk the last End() was encoded into */
+  /* SC6 fork: the command chunk that the last End() was encoded into, and the first GPU event issued after it */
   uint64_t chunk_seq = 0;
   uint64_t following_event = 0;
 };
@@ -185,4 +196,18 @@ HRESULT CreateTimestampQuery(MTLD3D11Device *pDevice,
                               const D3D11_QUERY_DESC1 *pDesc,
                               ID3D11Query1 **ppQuery);
 
-} // namespace dxmt
+// the SO_STATISTICS and SO_OVERFLOW_PREDICATE queries, of one stream or (the unnumbered predicate) of all
+class MTLD3D11StreamOutputQuery : public MTLD3D11Query {
+public:
+  // two copies of the context's stream output statistics: as the query began, then as it ended
+  virtual const Rc<Buffer> &Snapshots() = 0;
+  // the query ended, and its second copy is there once `event` is signaled
+  virtual void Issue(uint64_t event) = 0;
+  virtual HRESULT GetData(void *data, uint64_t signaled_event) = 0;
+};
+
+HRESULT CreateStreamOutputQuery(MTLD3D11Device *pDevice,
+                                const D3D11_QUERY_DESC1 *pDesc,
+                                ID3D11Query1 **ppQuery);
+
+} // namespace mullion

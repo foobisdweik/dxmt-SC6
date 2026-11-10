@@ -1,7 +1,7 @@
 #include "d3d11_inspection.hpp"
 #include "log/log.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
     : m_device(pDevice) {
@@ -53,7 +53,7 @@ MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
   m_d3d11Options.ExtendedResourceSharing = TRUE;
   m_d3d11Options.SAD4ShaderInstructions = TRUE;
   m_d3d11Options.FlagsForUpdateAndCopySeenByDriver = TRUE;
-#ifdef DXMT_NO_PRIVATE_API
+#ifdef MULLION_NO_PRIVATE_API
   m_d3d11Options.OutputMergerLogicOp = FALSE;
 #else
   m_d3d11Options.OutputMergerLogicOp = TRUE;
@@ -79,11 +79,11 @@ MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
   m_d3d9Shadow.SupportsDepthAsTextureWithLessEqualComparisonFilter = TRUE;
 
   m_d3d11Options1.ClearViewAlsoSupportsDepthOnlyFormats = TRUE;
-  m_d3d11Options1.MapOnDefaultBuffers = TRUE;
-  /**
-  TODO: supported by Apple10 family
-  */
-  m_d3d11Options1.MinMaxFiltering = FALSE;
+  // a default resource's memory is the GPU's alone
+  m_d3d11Options1.MapOnDefaultBuffers = FALSE;
+  // minimum and maximum filters: Metal's reductionMode where the device honours it, else the shader's
+  // (SM50_SAMPLER_REDUCTION)
+  m_d3d11Options1.MinMaxFiltering = TRUE;
   m_d3d11Options1.TiledResourcesTier = D3D11_TILED_RESOURCES_NOT_SUPPORTED;
 
   m_d3d11Options2.TiledResourcesTier = D3D11_TILED_RESOURCES_NOT_SUPPORTED;
@@ -91,8 +91,9 @@ MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
       D3D11_CONSERVATIVE_RASTERIZATION_NOT_SUPPORTED;
   m_d3d11Options2.PSSpecifiedStencilRefSupported = TRUE;
   m_d3d11Options2.ROVsSupported = TRUE;
-  m_d3d11Options2.MapOnDefaultTextures = TRUE;
-  m_d3d11Options2.StandardSwizzle = TRUE;
+  m_d3d11Options2.MapOnDefaultTextures = FALSE;
+  // Metal lays texels out its own way
+  m_d3d11Options2.StandardSwizzle = FALSE;
   m_d3d11Options2.TypedUAVLoadAdditionalFormats = TRUE;
   /**
   It's an intention to not report UMA
@@ -155,4 +156,4 @@ HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,
   }
 }
 
-} // namespace dxmt
+} // namespace mullion

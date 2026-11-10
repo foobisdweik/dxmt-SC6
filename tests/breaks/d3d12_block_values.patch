@@ -1,0 +1,12 @@
+# BC3 linear texels are decoded with the sRGB transfer function.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -988,7 +988,7 @@
+     break;
+   }
+   case DXGI_FORMAT_BC3_UNORM: {
+-    description.PixelFormat = WMTPixelFormatBC3_RGBA;
++    description.PixelFormat = WMTPixelFormatBC3_RGBA_sRGB;
+     description.Flag = MTL_DXGI_FORMAT_BC;
+     description.BlockSize = 16;
+     break;

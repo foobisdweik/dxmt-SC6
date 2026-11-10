@@ -1,0 +1,14 @@
+# an integer multiply-add leaves out its addend
+diff --git a/src/airconv/nt/dxbc_converter_base.cpp b/src/airconv/nt/dxbc_converter_base.cpp
+index b18d6177..b7cf09e7 100644
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1233,7 +1233,7 @@ Converter::operator()(const InstIntegerMAD &mad) {
+   auto B = LoadOperand(mad.src1, Mask);
+   auto C = LoadOperand(mad.src2, Mask);
+ 
+-  auto Result = ir.CreateAdd(ir.CreateMul(A, B), C);
++  auto Result = ir.CreateMul(A, B);
+ 
+   StoreOperand(mad.dst, Result);
+ }

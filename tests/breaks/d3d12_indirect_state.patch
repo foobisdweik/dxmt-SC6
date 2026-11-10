@@ -1,0 +1,12 @@
+# leave the final changed root constant uncleared after ExecuteIndirect.
+--- a/src/d3d12/d3d12_command_signature.cpp
++++ b/src/d3d12/d3d12_command_signature.cpp
+@@ -567,7 +567,7 @@
+         auto parameter_index = arg.Constant.RootParameterIndex;
+         auto rootsig = static_cast<MTLD3D12RootSignature *>(pRootSignature);
+         auto offset = rootsig->SlotQwordOffsets[parameter_index];
+-        ResetRootDwords.emplace_back(offset * 2 + arg.Constant.DestOffsetIn32BitValues, arg.Constant.Num32BitValuesToSet);
++        ResetRootDwords.emplace_back(offset * 2 + arg.Constant.DestOffsetIn32BitValues, arg.Constant.Num32BitValuesToSet - 1);
+         for (unsigned j = 0; j < arg.Constant.Num32BitValuesToSet; j++) {
+           source << "reinterpret_cast<device uint *>(rootsig_qwords + " << offset << ")["
+                  << (j + arg.Constant.DestOffsetIn32BitValues) << "] = arg.constant_" << i << "_" << j << ";\n";

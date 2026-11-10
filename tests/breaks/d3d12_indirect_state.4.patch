@@ -1,0 +1,12 @@
+# advance each indirect root UAV by one word.
+--- a/src/d3d12/d3d12_command_signature.cpp
++++ b/src/d3d12/d3d12_command_signature.cpp
+@@ -595,7 +595,7 @@
+         auto rootsig = static_cast<MTLD3D12RootSignature *>(pRootSignature);
+         auto offset = rootsig->SlotQwordOffsets[parameter_index];
+         ResetRootDwords.emplace_back(offset * 2, 2);
+-        source << "rootsig_qwords[" << offset << "] = arg.uav_" << i << ";\n";
++        source << "rootsig_qwords[" << offset << "] = arg.uav_" << i << " + sizeof(uint);\n";
+         break;
+       }
+       default:

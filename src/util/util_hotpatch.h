@@ -9,9 +9,9 @@
 #pragma once
 
 #if defined(DECLSPEC_CHPE_PATCHABLE)
-#define DXMT_HOTPATCHABLE DECLSPEC_CHPE_PATCHABLE
+#define MULLION_HOTPATCHABLE DECLSPEC_CHPE_PATCHABLE
 #elif defined(__arm64ec__)
-#define DXMT_HOTPATCHABLE __attribute__((hybrid_patchable))
+#define MULLION_HOTPATCHABLE __attribute__((hybrid_patchable))
 #else
-#define DXMT_HOTPATCHABLE
+#define MULLION_HOTPATCHABLE
 #endif

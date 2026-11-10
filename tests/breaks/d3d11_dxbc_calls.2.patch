@@ -1,0 +1,12 @@
+# reverses the taken and untaken branches of conditional returns.
+--- a/src/airconv/dxbc_converter_cfg.cpp
++++ b/src/airconv/dxbc_converter_cfg.cpp
+@@ -246,7 +246,7 @@
+                         : instance_ctx.empty() ? bb_return
+                                                : instance_ctx.top()->sync;
+       auto after_retc = fresh_bb("after_retc");
+-      bb_current->target = BasicBlockConditionalBranch{readCondition(Inst, 0, phase), ret_target, after_retc};
++      bb_current->target = BasicBlockConditionalBranch{readCondition(Inst, 0, phase), after_retc, ret_target};
+       bb_current = after_retc;
+       break;
+     }

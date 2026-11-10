@@ -1,0 +1,14 @@
+# omit the unsigned byte-address wrap before locating an indirect index.
+diff --git a/src/d3d12/d3d12_command_signature.cpp b/src/d3d12/d3d12_command_signature.cpp
+--- a/src/d3d12/d3d12_command_signature.cpp
++++ b/src/d3d12/d3d12_command_signature.cpp
+@@ -428,8 +428,7 @@
+         // Metal does not apply the view bounds or D3D's unsigned byte-address wrap (D3D11.3 8.6.1, 8.19.1, 8.19.2)
+         source << "{\n";
+         source << "uint ib_size = ib32bit ? sizeof(uint) : sizeof(ushort);\n";
+-        source << "uint ib_there = ib_bytes / ib_size, ib_start = (arg.draw_indexed.start_index_location * ib_size) / "
+-                  "ib_size;\n";
++        source << "uint ib_there = ib_bytes / ib_size, ib_start = arg.draw_indexed.start_index_location;\n";
+         source << "uint ib_count = ib_start < ib_there ? min(arg.draw_indexed.index_count_per_instance, ib_there - "
+                   "ib_start) : 0;\n";
+         source << "if (ib_count) {\n";

@@ -1,0 +1,12 @@
+# writes a copied hidden counter into the next default-buffer argument word.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1222,7 +1222,7 @@
+           cmd.src = counter_buffer->buffer();
+           cmd.src_offset = counter_offset;
+           cmd.dst = dst_buffer->buffer();
+-          cmd.dst_offset = DstAlignedByteOffset + dst_offset;
++          cmd.dst_offset = DstAlignedByteOffset + dst_offset + sizeof(UINT);
+         });
+       }
+     }

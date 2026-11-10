@@ -1,3 +1,5 @@
+#include "mullion_diag.hpp"
+#include "mullion_window.hpp"
 #include "d3d11_swapchain.hpp"
 #include "com/com_guid.hpp"
 #include "config/config.hpp"
@@ -6,10 +8,12 @@
 #include "dxgi_object.hpp"
 #include "dxgi_output.hpp"
 #include "d3d11_context.hpp"
-#include "dxmt_context.hpp"
-#include "dxmt_hud_state.hpp"
-#include "dxmt_statistics.hpp"
-#include "dxmt_presenter.hpp"
+#include "mullion_context.hpp"
+#include "mullion_hud_state.hpp"
+#include "mullion_statistics.hpp"
+#include "mullion_presenter.hpp"
+#include "mullion_format.hpp"
+#include "dxgi_swapchain_settings.hpp"
 #include "log/log.hpp"
 #include "d3d11_resource.hpp"
 #include "d3d11_device.hpp"
@@ -21,11 +25,12 @@
 #include "wsi_monitor.hpp"
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
-#include "dxmt_info.hpp"
-#include "dxmt_presenter.hpp"
+#include "mullion_info.hpp"
+#include "mullion_presenter.hpp"
 #include <atomic>
 #include <cfloat>
 #include <format>
+#include <vector>
 
 /**
 Ref: https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgiswapchain2-setmaximumframelatency
@@ -33,24 +38,7 @@ This value is 1 by default.
 */
 constexpr size_t kSwapchainLatency = 1;
 
-namespace dxmt {
-
-WMTPixelFormat ConvertSwapChainFormat(DXGI_FORMAT format) {
-  switch (format) {
-  case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
-  case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
-    return WMTPixelFormatBGRA8Unorm_sRGB;
-  case DXGI_FORMAT_B8G8R8A8_UNORM:
-  case DXGI_FORMAT_R8G8B8A8_UNORM:
-    return WMTPixelFormatBGRA8Unorm;
-  case DXGI_FORMAT_R10G10B10A2_UNORM:
-    return WMTPixelFormatRGB10A2Unorm;
-  case DXGI_FORMAT_R16G16B16A16_FLOAT:
-    return WMTPixelFormatRGBA16Float;
-  default:
-    return WMTPixelFormatInvalid;
-  }
-}
+namespace mullion {
 
 WMTColorSpace ConvertColorSpace(DXGI_COLOR_SPACE_TYPE color_space, bool hdr) {
   switch (color_space) {
@@ -115,7 +103,7 @@ public:
 };
 
 template <bool EnableMetalFX>
-class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D11Device> {
+class MTLD3D11SwapChain final : public MTLDXGISubObject<IMTLDXGISwapChain, MTLD3D11Device> {
 public:
   MTLD3D11SwapChain(
       IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, IMTLDXGIDevice *pDXGIDevice,
@@ -132,11 +120,14 @@ public:
       monitor_(wsi::getWindowMonitor(hWnd)),
       hud(WMT::DeveloperHUDProperties::instance()) {
 
-    native_view_ = WMT::CreateMetalViewFromHWND((intptr_t)hWnd, pDevice->GetMTLDevice(), layer_weak_);
+    // frames can go to the window through GDI instead, as they do when a window gets no Metal view: slower, and
+    // readable from the window
+    if (!Config::getInstance().getOption<bool>("dxgi.presentThroughGDI", false))
+      native_view_ = WMT::CreateMetalViewFromHWND((intptr_t)hWnd, follower_.placement(hWnd), pDevice->GetMTLDevice(), layer_weak_);
+    follower_.follow(hWnd, native_view_, true);
 
     if (!native_view_) {
-      ERR("Failed to create metal view, it seems like your Wine has no exported symbols needed by DXMT.");
-      abort();
+      WARN("No Metal view for this window; presenting through GDI (slower).");
     }
 
     if constexpr (EnableMetalFX) {
@@ -144,8 +135,8 @@ public:
     }
 
     presenter = Rc(new Presenter(pDevice->GetMTLDevice(), layer_weak_,
-                                 pDevice->GetDXMTDevice().queue().cmd_library,
-                                 scale_factor, desc_.SampleDesc.Count,
+                                 pDevice->GetMullionDevice().queue().cmd_library,
+                                 scale_factor, desc_.SampleDesc.Count, hWnd,
                                  Config::getInstance().getOption<bool>("dxgi.metalDisplaySync", false)));
 
     frame_latency = kSwapchainLatency;
@@ -161,11 +152,8 @@ public:
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
     }
 
-    if (pFullscreenDesc) {
-      fullscreen_desc_ = *pFullscreenDesc;
-    } else {
-      fullscreen_desc_.Windowed = true;
-    }
+    fullscreen_desc_ = pFullscreenDesc ? *pFullscreenDesc : DXGI_SWAP_CHAIN_FULLSCREEN_DESC{};
+    fullscreen_desc_.Windowed = TRUE;
 
     preferred_max_frame_rate =
         Config::getInstance().getOption<int>("d3d11.preferredMaxFrameRate", 0);
@@ -186,31 +174,33 @@ public:
       .Width = desc_.Width,
       .Height = desc_.Height,
       .MipLevels = 1,
-      .ArraySize = 1,
+      // a stereo buffer holds the left eye in slice 0, the right one in slice 1
+      .ArraySize = desc_.Stereo ? 2u : 1u,
       .Format = desc_.Format,
       .SampleDesc = desc_.SampleDesc,
       .Usage = D3D11_USAGE_DEFAULT,
-      .BindFlags = D3D11_BIND_RENDER_TARGET,
+      .BindFlags = {},
       .CPUAccessFlags = {},
       .MiscFlags = {},
       .TextureLayout = {},
     };
     
+    if (desc_.BufferUsage & DXGI_USAGE_RENDER_TARGET_OUTPUT)
+      backbuffer_desc_.BindFlags |= D3D11_BIND_RENDER_TARGET;
     if (desc_.BufferUsage & DXGI_USAGE_SHADER_INPUT)
       backbuffer_desc_.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
     if (desc_.BufferUsage & DXGI_USAGE_UNORDERED_ACCESS)
       backbuffer_desc_.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
-
-    // FIXME: check HRESULT!
-    ResizeBuffers(0, desc_.Width, desc_.Height, DXGI_FORMAT_UNKNOWN, desc_.Flags);
-    if (!fullscreen_desc_.Windowed)
-      EnterFullscreenMode(nullptr);
   };
 
   ~MTLD3D11SwapChain() {
+    if (!fullscreen_desc_.Windowed)
+      static_cast<MTLDXGIOutput *>(target_.ptr())->SetFullscreen(false);
     device_context_->WaitUntilGPUIdle();
     WMT::ReleaseMetalView(native_view_);
     native_view_ = {};
+    if (diag::profile)
+      diag::LatencyClosed(present_semaphore_);
     CloseHandle(present_semaphore_);
   };
 
@@ -227,7 +217,7 @@ public:
         riid == __uuidof(IDXGISwapChain) || riid == __uuidof(IDXGISwapChain1) ||
         riid == __uuidof(IDXGISwapChain2) ||
         riid == __uuidof(IDXGISwapChain3) ||
-        riid == __uuidof(IDXGISwapChain4)) {
+        riid == __uuidof(IDXGISwapChain4) || riid == __uuidof(IMTLDXGISwapChain)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -239,13 +229,21 @@ public:
     return E_NOINTERFACE;
   };
 
+  HRESULT STDMETHODCALLTYPE
+  SetWindowReservation(IUnknown *reservation) final {
+    if (!reservation || window_reservation_)
+      return DXGI_ERROR_INVALID_CALL;
+    window_reservation_ = reservation;
+    return S_OK;
+  }
+
   HRESULT
   STDMETHODCALLTYPE
   GetParent(REFIID riid, void **parent) final {
     return factory_->QueryInterface(riid, parent);
   };
 
-  DXMT_HOTPATCHABLE
+  MULLION_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   Present(UINT sync_interval, UINT flags) final {
@@ -255,25 +253,30 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetBuffer(UINT buffer_idx, REFIID riid, void **surface) final {
-    if (buffer_idx == 0) {
-      return backbuffer_->QueryInterface(riid, surface);
-    } else {
-      ERR("Non zero-index buffer is not supported");
-      return DXGI_ERROR_UNSUPPORTED;
-    }
+    std::lock_guard<d3d11_device_mutex> lock(device_->mutex);
+    if (buffer_idx >= backbuffers_.size())
+      return DXGI_ERROR_INVALID_CALL;
+    return backbuffers_[buffer_idx]->QueryInterface(riid, surface);
   };
 
-  DXMT_HOTPATCHABLE
+  MULLION_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   SetFullscreenState(BOOL Fullscreen, IDXGIOutput *pTarget) final {
+    if (!Fullscreen && pTarget)
+      return DXGI_ERROR_INVALID_CALL;
+    ModeSetGuard::ModeSetInProgress modeset_inprogress(modeset_guard_);
+    if (modeset_inprogress)
+      return !!Fullscreen == !fullscreen_desc_.Windowed ? S_OK : DXGI_STATUS_MODE_CHANGE_IN_PROGRESS;
     Com<IDXGIOutput1> target;
 
     if (pTarget) {
       DXGI_OUTPUT_DESC desc;
 
-      pTarget->QueryInterface(IID_PPV_ARGS(&target));
-      target->GetDesc(&desc);
+      if (HRESULT hr = pTarget->QueryInterface(IID_PPV_ARGS(&target)); FAILED(hr))
+        return hr;
+      if (HRESULT hr = target->GetDesc(&desc); FAILED(hr))
+        return hr;
 
       if (!fullscreen_desc_.Windowed && Fullscreen && monitor_ != desc.Monitor) {
         HRESULT hr = LeaveFullscreenMode();
@@ -287,14 +290,12 @@ public:
     else if (!fullscreen_desc_.Windowed && !Fullscreen)
       return LeaveFullscreenMode();
 
+    if (target && !fullscreen_desc_.Windowed)
+      target_ = std::move(target);
     return S_OK;
   };
 
   HRESULT EnterFullscreenMode(IDXGIOutput1* pTarget) {
-    ModeSetGuard::ModeSetInProgress modeset_inprogress(modeset_guard_);
-    if (modeset_inprogress)
-      return DXGI_STATUS_MODE_CHANGE_IN_PROGRESS;
-
     Com<IDXGIOutput1> output = pTarget;
 
     if (!wsi::isWindow(hWnd))
@@ -307,67 +308,62 @@ public:
       }
     }
 
-    std::unique_lock<dxmt::mutex> lock(mutex_);
+    if (!GetWindowRect(hWnd, &window_state_.rect))
+      return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
+
+    DXGI_OUTPUT_DESC desc;
+    if (HRESULT hr = output->GetDesc(&desc); FAILED(hr))
+      return hr;
 
     DXGI_MODE_DESC1 preferred_display_mode = {
         desc_.Width,
         desc_.Height,
         fullscreen_desc_.RefreshRate,
         desc_.Format,
-        DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-        DXGI_MODE_SCALING_UNSPECIFIED
+        fullscreen_desc_.ScanlineOrdering,
+        fullscreen_desc_.Scaling
     };
-    if (FAILED(ChangeDisplayMode(output.ptr(), &preferred_display_mode))) {
+    // SC6 fork: dxgi.keepDesktopMode=True treats every swap chain as if it lacked ALLOW_MODE_SWITCH. Fullscreen then
+    // keeps the desktop's display mode and only covers the screen with the window, so a back buffer smaller than the
+    // screen reaches MetalFX instead of making Wine switch the whole display to that size.
+    static const bool keep_desktop_mode = Config::getInstance().getOption<bool>("dxgi.keepDesktopMode", false);
+    bool modeSwitch = !keep_desktop_mode && (desc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) != 0u;
+    if (modeSwitch && FAILED(ChangeDisplayMode(output.ptr(), &preferred_display_mode))) {
       ERR("DXGI: EnterFullscreenMode: Failed to change display mode");
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
     }
 
-    // Update swap chain description
-    fullscreen_desc_.Windowed = FALSE;
-    
-    // Move the window so that it covers the entire output
-    bool modeSwitch = (desc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) != 0u;
-
-    DXGI_OUTPUT_DESC desc;
-    output->GetDesc(&desc);
-
-    monitor_ = desc.Monitor;
-    target_  = std::move(output);
-
-    lock = {};
-
     if (!wsi::enterFullscreenMode(desc.Monitor, hWnd, &window_state_, modeSwitch)) {
+      if (modeSwitch && FAILED(RestoreDisplayMode(desc.Monitor)))
+        ERR("DXGI: EnterFullscreenMode: Failed to restore display mode");
       ERR("DXGI: EnterFullscreenMode: Failed to enter fullscreen mode");
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
     }
-
+    std::lock_guard<mullion::mutex> lock(mutex_);
+    fullscreen_desc_.Windowed = FALSE;
+    static_cast<MTLDXGIOutput *>(output.ptr())->SetFullscreen(true);
+    monitor_ = desc.Monitor;
+    target_ = std::move(output);
     return S_OK;
   }
   
   
   HRESULT LeaveFullscreenMode() {
-    ModeSetGuard::ModeSetInProgress modeset_inprogress(modeset_guard_);
-    if (modeset_inprogress)
-      return DXGI_STATUS_MODE_CHANGE_IN_PROGRESS;
-
-    std::lock_guard<dxmt::mutex> lock(mutex_);
-
-    if (FAILED(RestoreDisplayMode(monitor_)))
+    if (HRESULT hr = RestoreDisplayMode(monitor_); FAILED(hr)) {
       WARN("DXGI: LeaveFullscreenMode: Failed to restore display mode");
+      return hr;
+    }
 
-    // Restore internal state
-    fullscreen_desc_.Windowed = TRUE;
-    target_  = nullptr;
-    monitor_ = wsi::getWindowMonitor(hWnd);
-    
-    if (!wsi::isWindow(hWnd))
-      return S_OK;
-    
-    if (!wsi::leaveFullscreenMode(hWnd, &window_state_, true)) {
+    if (wsi::isWindow(hWnd) && !wsi::leaveFullscreenMode(hWnd, &window_state_, true)) {
       ERR("DXGI: LeaveFullscreenMode: Failed to exit fullscreen mode");
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
     }
-    
+    auto monitor = wsi::getWindowMonitor(hWnd);
+    std::lock_guard<mullion::mutex> lock(mutex_);
+    fullscreen_desc_.Windowed = TRUE;
+    static_cast<MTLDXGIOutput *>(target_.ptr())->SetFullscreen(false);
+    target_ = nullptr;
+    monitor_ = monitor;
     presenter->changeGammaRamp(nullptr);
 
     return S_OK;
@@ -382,11 +378,6 @@ public:
 
     DXGI_MODE_DESC1 preferred_mode = *pDisplayMode;
     DXGI_MODE_DESC1 selected_mode = {};
-
-    if (!(desc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH)) {
-      preferred_mode.Width = 0;
-      preferred_mode.Height = 0;
-    }
 
     if (preferred_mode.Format == DXGI_FORMAT_UNKNOWN)
       preferred_mode.Format = desc_.Format;
@@ -409,7 +400,8 @@ public:
       selected_mode.RefreshRate.Denominator = 1;
 
     DXGI_OUTPUT_DESC output_desc;
-    pOutput->GetDesc(&output_desc);
+    if (HRESULT hr = pOutput->GetDesc(&output_desc); FAILED(hr))
+      return hr;
     wsi::WsiMode wsi_mode{
         selected_mode.Width,
         selected_mode.Height,
@@ -477,70 +469,124 @@ public:
     return S_OK;
   };
 
-  DXMT_HOTPATCHABLE
+  MULLION_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   ResizeBuffers(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format,
                 UINT flags) final {
-    /* BufferCount ignored */
-    if (Width == 0 || Height == 0) {
-      wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
+    // 0 and DXGI_FORMAT_UNKNOWN keep what there is (the window's size for a size of 0), and the flags are the swap
+    // chain's from now on, except that tearing is allowed for a swap chain's whole life (IDXGISwapChain::ResizeBuffers).
+    // a resize that is refused leaves the swap chain as it was
+    std::unique_lock<d3d11_device_mutex> lock(device_->mutex);
+    auto format = Format == DXGI_FORMAT_UNKNOWN ? desc_.Format : Format;
+    if ((desc_.SwapEffect == DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL || desc_.SwapEffect == DXGI_SWAP_EFFECT_FLIP_DISCARD) &&
+        !IsFlipSwapChainFormat(format))
+      return DXGI_ERROR_INVALID_CALL;
+    UINT support;
+    if (FAILED(device_->CheckFormatSupport(format, &support)) || !(support & D3D11_FORMAT_SUPPORT_DISPLAY) ||
+        BufferCount > DXGI_MAX_SWAP_CHAIN_BUFFERS)
+      return E_INVALIDARG;
+    if ((flags ^ desc_.Flags) &
+        (DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING | DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT))
+      return DXGI_ERROR_INVALID_CALL;
+    if (BufferCount == 1 && desc_.SwapEffect >= DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL)
+      return DXGI_ERROR_INVALID_CALL;
+    for (const auto &buffer : backbuffers_)
+      if (buffer->GetPrivateRefCount() > 1)
+        return DXGI_ERROR_INVALID_CALL;
+    if (!backbuffers_.empty()) {
+      // queued commands can release their textures; retained command lists cannot (IDXGISwapChain::ResizeBuffers)
+      device_context_->WaitUntilGPUIdle();
+      for (const auto &buffer : backbuffers_)
+        if (buffer->texture()->refCount() > 1)
+          return DXGI_ERROR_INVALID_CALL;
+    }
+    auto desc = desc_;
+    auto backbuffer_desc = backbuffer_desc_;
+    wsi::getWindowSize(hWnd, &desc.Width, &desc.Height);
+    if (Width)
+      desc.Width = Width;
+    if (Height)
+      desc.Height = Height;
+    if (Format != DXGI_FORMAT_UNKNOWN)
+      desc.Format = Format;
+    if (BufferCount)
+      desc.BufferCount = BufferCount;
+    desc.Flags = flags;
+    UINT dimension_limit = device_->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0
+                               ? D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION
+                               : D3D10_REQ_TEXTURE2D_U_OR_V_DIMENSION;
+    if (desc.Width > dimension_limit || desc.Height > dimension_limit)
+      return E_INVALIDARG;
+    if ((flags & DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE) &&
+        ((format != DXGI_FORMAT_B8G8R8A8_UNORM && format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) ||
+         desc.SampleDesc.Count != 1))
+      return DXGI_ERROR_INVALID_CALL;
+
+    if (desc.Width == 0 || desc.Height == 0) {
+      backbuffer_desc.Width = 1;
+      backbuffer_desc.Height = 1;
     } else {
-      desc_.Width = Width;
-      desc_.Height = Height;
+      backbuffer_desc.Width = desc.Width;
+      backbuffer_desc.Height = desc.Height;
     }
-    if (Format != DXGI_FORMAT_UNKNOWN) {
-      if (ConvertSwapChainFormat(Format) != WMTPixelFormatInvalid)
-        desc_.Format = Format;
+    backbuffer_desc.Format = desc.Format;
+    backbuffer_desc.MiscFlags = flags & DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE ? D3D11_RESOURCE_MISC_GDI_COMPATIBLE : 0;
+
+    bool sequential =
+        desc.SwapEffect == DXGI_SWAP_EFFECT_SEQUENTIAL || desc.SwapEffect == DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    std::vector<Com<D3D11ResourceCommon, false>> backbuffers(sequential ? desc.BufferCount : 1);
+    for (UINT i = 0; i < backbuffers.size(); i++) {
+      Com<D3D11ResourceCommon> buffer;
+      // a back buffer's views may take any format of its type group (D3D11_FORMAT_SUPPORT_BACK_BUFFER_CAST)
+      HRESULT hr = mullion::CreateDeviceTexture2D(
+          device_, &backbuffer_desc, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&buffer),
+          CastsAcrossLayouts(device_->GetMTLDevice(), desc.Format, false) ? WMTTextureUsagePixelFormatView
+                                                                          : WMTTextureUsageUnknown
+      );
+      if (FAILED(hr))
+        return hr;
+      buffer->dxgi_usage_ = desc.BufferUsage | DXGI_USAGE_BACK_BUFFER | (i ? DXGI_USAGE_READ_ONLY : 0) |
+                           (sequential ? 0 : DXGI_USAGE_DISCARD_ON_PRESENT);
+      backbuffers[i] = buffer.prvRef();
     }
-
-    backbuffer_ = nullptr;
-    if (desc_.Width == 0 || desc_.Height == 0) {
-      backbuffer_desc_.Width = 1;
-      backbuffer_desc_.Height = 1;
-    } else {
-      backbuffer_desc_.Width = desc_.Width;
-      backbuffer_desc_.Height = desc_.Height;
-    }
-
-    ApplyLayerProps();
-
-    backbuffer_desc_.Format = desc_.Format;
-
-    backbuffer_ = nullptr;
-    if (FAILED(dxmt::CreateDeviceTexture2D(
-            device_, &backbuffer_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&backbuffer_)
-        )))
-      return E_FAIL;
-    // CreateDeviceTexture2D returns public reference, change to private one here
-    backbuffer_->AddRefPrivate();
-    backbuffer_->Release();
 
     if constexpr (EnableMetalFX) {
-      D3D11_TEXTURE2D_DESC1 upscaled_desc_ = backbuffer_desc_;
+      Com<D3D11ResourceCommon> upscaled;
+      D3D11_TEXTURE2D_DESC1 upscaled_desc_ = backbuffer_desc;
+      // the display's (or the window's) resolution; the factor where the layer has no size yet
       upscaled_desc_.Height *= scale_factor;
       upscaled_desc_.Width *= scale_factor;
-      upscaled_backbuffer_ = nullptr;
-      if (FAILED(dxmt::CreateDeviceTexture2D(
-              device_, &upscaled_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&upscaled_backbuffer_)
-          )))
-        return E_FAIL;
+      presenter->upscaleOutputSize(desc.Width, desc.Height, upscaled_desc_.Width, upscaled_desc_.Height);
+      upscaled_desc_.ArraySize = 1;
+      HRESULT hr = mullion::CreateDeviceTexture2D(
+          device_, &upscaled_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&upscaled)
+      );
+      if (FAILED(hr))
+        return hr;
 
       WMTFXSpatialScalerInfo info;
-      info.input_height = desc_.Height;
-      info.input_width = desc_.Width;
-      info.output_height = desc_.Height * scale_factor;
-      info.output_width = desc_.Width * scale_factor;
-      info.color_format = backbuffer_->texture()->pixelFormat();
-      info.output_format =upscaled_backbuffer_->texture()->pixelFormat();
-      metalfx_scaler = new SpatialScaler(device_->GetMTLDevice(), info);
-      D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
+      info.input_height = desc.Height;
+      info.input_width = desc.Width;
+      info.output_height = upscaled_desc_.Height;
+      info.output_width = upscaled_desc_.Width;
+      info.color_format = backbuffers[0]->texture()->pixelFormat();
+      info.output_format = upscaled->texture()->pixelFormat();
+      Rc<SpatialScaler> scaler = new SpatialScaler(device_->GetMTLDevice(), info);
+      D3D11_ASSERT(scaler && "otherwise metalfx failed to initialize");
+      upscaled_backbuffer_ = std::move(upscaled);
+      metalfx_scaler = std::move(scaler);
     }
 
+    desc_ = desc;
+    backbuffer_desc_ = backbuffer_desc;
+    backbuffers_ = std::move(backbuffers);
+    settings_.Resized();
+    ApplyLayerProps();
     return S_OK;
   };
 
-  DXMT_HOTPATCHABLE
+  MULLION_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   ResizeTarget(const DXGI_MODE_DESC *pDesc) final {
@@ -550,7 +596,9 @@ public:
     if (!wsi::isWindow(hWnd))
       return DXGI_ERROR_INVALID_CALL;
 
-    std::unique_lock<dxmt::mutex> lock(mutex_);
+    ModeSetGuard::ModeSetInProgress modeset_inprogress(modeset_guard_);
+    if (modeset_inprogress)
+      return DXGI_STATUS_MODE_CHANGE_IN_PROGRESS;
 
     // Promote display mode
     DXGI_MODE_DESC1 newDisplayMode = {};
@@ -561,36 +609,51 @@ public:
     newDisplayMode.ScanlineOrdering = pDesc->ScanlineOrdering;
     newDisplayMode.Scaling = pDesc->Scaling;
 
-    // Update the swap chain description
-    if (newDisplayMode.RefreshRate.Numerator != 0)
-      fullscreen_desc_.RefreshRate = newDisplayMode.RefreshRate;
-
-    fullscreen_desc_.ScanlineOrdering = newDisplayMode.ScanlineOrdering;
-    fullscreen_desc_.Scaling = newDisplayMode.Scaling;
-
     if (fullscreen_desc_.Windowed) {
-      lock = {};
-      wsi::resizeWindow(hWnd, &window_state_, newDisplayMode.Width,
-                        newDisplayMode.Height);
+      if (!wsi::resizeWindow(hWnd, &window_state_, newDisplayMode.Width, newDisplayMode.Height))
+        return DXGI_ERROR_INVALID_CALL;
     } else {
-      ChangeDisplayMode(target_.ptr(), &newDisplayMode);
-      lock = {};
-      wsi::updateFullscreenWindow(monitor_, hWnd, false);
+      RECT bounds{}, rect{};
+      if (!wsi::getDesktopCoordinates(monitor_, &bounds) || !GetWindowRect(hWnd, &rect))
+        return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
+      auto state = window_state_;
+      if (rect.right - rect.left != bounds.right - bounds.left ||
+          rect.bottom - rect.top != bounds.bottom - bounds.top) {
+        state.rect = rect;
+        state.style = GetWindowLongW(hWnd, GWL_STYLE);
+        state.exstyle = GetWindowLongW(hWnd, GWL_EXSTYLE);
+      }
+      if (desc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH)
+        if (HRESULT hr = ChangeDisplayMode(target_.ptr(), &newDisplayMode); FAILED(hr))
+          return hr;
+      if (!wsi::updateFullscreenWindow(monitor_, hWnd, &state, false))
+        return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
+      window_state_ = state;
     }
-
+    std::lock_guard<mullion::mutex> lock(mutex_);
+    if (pDesc->RefreshRate.Numerator != 0)
+      fullscreen_desc_.RefreshRate = pDesc->RefreshRate;
+    fullscreen_desc_.ScanlineOrdering = pDesc->ScanlineOrdering;
+    fullscreen_desc_.Scaling = pDesc->Scaling;
     return S_OK;
   };
 
   void ApplyLayerProps() {
+    settings_.Update(desc_, fullscreen_desc_.Windowed, hWnd, *presenter);
     auto target_color_space =
         ConvertColorSpace(desc_.Format == DXGI_FORMAT_R16G16B16A16_FLOAT
                               ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
                               : colorspace_,
                           LayerSupportEDR());
-    if (presenter->changeLayerProperties(
-            ConvertSwapChainFormat(desc_.Format), target_color_space, desc_.Width * scale_factor,
-            desc_.Height * scale_factor, desc_.SampleDesc.Count
-        ))
+    double width = settings_.target_width * scale_factor, height = settings_.target_height * scale_factor;
+    // the target scaled as MetalFX scales the buffer: a window the picture keeps its size in has its own size
+    if constexpr (EnableMetalFX) {
+      if (upscaled_backbuffer_) {
+        width = settings_.target_width * double(upscaled_backbuffer_->texture()->width()) / desc_.Width;
+        height = settings_.target_height * double(upscaled_backbuffer_->texture()->height()) / desc_.Height;
+      }
+    }
+    if (presenter->changeLayerProperties(desc_.Format, target_color_space, width, height, desc_.SampleDesc.Count))
       device_context_->WaitUntilGPUIdle();
   };
 
@@ -645,14 +708,15 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetFrameStatistics(DXGI_FRAME_STATISTICS *stats) final {
-    DEBUG("DXGISwapChain::GetFrameStatistics: stub");
-    std::unique_lock<d3d11_device_mutex> lock(device_->mutex);
-    stats->PresentCount = presentation_count_;
-    stats->SyncRefreshCount = presentation_count_;
-    stats->PresentRefreshCount = presentation_count_;
-    stats->SyncGPUTime = {};
-    stats->SyncQPCTime = {};
-    return S_OK;
+    if (!stats)
+      return E_INVALIDARG;
+    // a windowed bitblt model swap chain has none (IDXGISwapChain::GetFrameStatistics)
+    if (desc_.SwapEffect < DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL && fullscreen_desc_.Windowed)
+      return DXGI_ERROR_INVALID_CALL;
+    wsi::WsiMode mode;
+    if (!wsi::getCurrentDisplayMode(monitor_, &mode) || !mode.refreshRate.numerator || !mode.refreshRate.denominator)
+      return DXGI_ERROR_FRAME_STATISTICS_DISJOINT;
+    return presenter->frameStatistics(stats, double(mode.refreshRate.numerator) / mode.refreshRate.denominator);
   };
 
   HRESULT
@@ -735,15 +799,24 @@ public:
     return SyncFrameState();
   };
 
-  DXMT_HOTPATCHABLE
+  MULLION_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
+    auto began = diag::profile ? diag::Now() : 0;
     if (SyncInterval > 4)
       return DXGI_ERROR_INVALID_CALL;
+    if (((PresentFlags & DXGI_PRESENT_ALLOW_TEARING) &&
+         (SyncInterval || !(desc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) || !fullscreen_desc_.Windowed)) ||
+        ((PresentFlags & DXGI_PRESENT_STEREO_PREFER_RIGHT) && !desc_.Stereo) ||
+        (PresentFlags & (DXGI_PRESENT_STEREO_TEMPORARY_MONO | DXGI_PRESENT_RESTRICT_TO_OUTPUT)))
+      return DXGI_ERROR_INVALID_CALL;
+    FLIGHT_HEAVY(Present, "swap chain %p: Present, interval %llu, flags %#llx", this, uint64_t(SyncInterval), uint64_t(PresentFlags));
+    trace::PresentTrace traced(presents_, this, SyncInterval, PresentFlags);
 
     HRESULT hr = S_OK;
+    follower_.follow(hWnd, native_view_);
     bool window_minimized = wsi::isMinimized(hWnd);
     if ((window_minimized || desc_.Width == 0 || desc_.Height == 0)
         // MSDN: You will not receive DXGI_STATUS_OCCLUDED if you're using a flip model swap chain.
@@ -755,12 +828,24 @@ public:
       hr = DXGI_STATUS_OCCLUDED;
     if (PresentFlags & DXGI_PRESENT_TEST)
       return hr;
+    // a window the picture keeps its size in may have another size by now
+    if (settings_.Update(desc_, fullscreen_desc_.Windowed, hWnd, *presenter))
+      ApplyLayerProps();
 
     if (should_exit_fs)
       SetFullscreenState(FALSE, nullptr);
 
     std::unique_lock<d3d11_device_mutex> lock(device_->mutex);
 
+    // the frame presented last is the last buffer, which the frame shown keeps where it is not new
+    if (hr == S_OK && desc_.SwapEffect >= DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL && backbuffers_.size() > 1)
+      for (auto [to, from] : PresentCopies(pPresentParameters, desc_.Width, desc_.Height)) {
+        D3D11_BOX box{UINT(to.left + from.x), UINT(to.top + from.y), 0, UINT(to.right + from.x), UINT(to.bottom + from.y), 1};
+        for (UINT eye = 0; eye < backbuffer_desc_.ArraySize; eye++)
+          device_context_->CopySubresourceRegion(
+              backbuffers_[0].ptr(), eye, to.left, to.top, 0, backbuffers_.back().ptr(), eye, &box
+          );
+      }
     device_context_->PrepareFlush();
     if (hr == DXGI_STATUS_OCCLUDED) {
       // flush commands without presenting
@@ -768,8 +853,9 @@ public:
       return hr;
     }
 
+    // SC6 fork: dxgi.nativeFullscreen asks macOS to show the borderless window in native fullscreen, every 60
+    // presents. The call is asynchronous and returns what the previous check saw.
     if (native_fullscreen_ && native_fullscreen_presents_++ % 60 == 0) {
-      // Asynchronous: returns what the previous check saw.
       auto state = WMTRequestNativeFullscreen((intptr_t)hWnd, true);
       if (state != native_fullscreen_state_) {
         WARN("DXGISwapChain: native fullscreen state ", (int)native_fullscreen_state_, " -> ", (int)state);
@@ -783,16 +869,23 @@ public:
                                                : init_refresh_rate_),
                  preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0);
 
-    auto &cmd_queue = device_->GetDXMTDevice().queue();
+    auto &cmd_queue = device_->GetMullionDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
     chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
+    if (!native_view_)
+      chunk->completed = [presenter = presenter, vsync_duration] { presenter->drawToWindow(vsync_duration); };
     if (target_) {
       auto output = static_cast<MTLDXGIOutput *>(target_.ptr());
       presenter->changeGammaRamp(output->GetGammaRamp());
     }
+    // the output is mono: a stereo buffer shows its left eye, or its right one when the present prefers it
+    auto &shown = backbuffers_[0]->texture();
+    auto eye = shown->createView(
+        {shown->pixelFormat(), WMTTextureType2D, 0, 1, PresentFlags & DXGI_PRESENT_STEREO_PREFER_RIGHT ? 1u : 0u, 1}
+    );
     if constexpr (EnableMetalFX) {
       chunk->emitcc([
-        this, vsync_duration, backbuffer = backbuffer_->texture(),
+        this, vsync_duration, backbuffer = backbuffers_[0]->texture(), eye,
         sync_state = SyncFrame(++presentation_count_),
         upscaled = upscaled_backbuffer_->texture(),
         scaler = this->metalfx_scaler, state = presenter->synchronizeLayerProperties()
@@ -803,8 +896,10 @@ public:
         scaler_info.input_height = backbuffer->height();
         scaler_info.output_width = upscaled->width();
         scaler_info.output_height = upscaled->height();
-        ctx.upscale(backbuffer, upscaled, scaler);
-        ctx.present(upscaled, presenter, vsync_duration, state.metadata);
+        ctx.upscale(backbuffer, eye, upscaled, scaler);
+        ctx.present(upscaled, upscaled->fullView, presenter, vsync_duration, std::move(state));
+        if (diag::profile)
+          diag::LatencyReleased(present_semaphore_);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
@@ -812,18 +907,40 @@ public:
       chunk->emitcc([
         this, vsync_duration, state = presenter->synchronizeLayerProperties(),
         sync_state = SyncFrame(++presentation_count_),
-        backbuffer = backbuffer_->texture()
+        backbuffer = backbuffers_[0]->texture(), eye
       ](ArgumentEncodingContext &ctx) mutable {
-        ctx.present(backbuffer, presenter, vsync_duration, state.metadata);
+        ctx.present(backbuffer, eye, presenter, vsync_duration, std::move(state));
+        if (diag::profile)
+          diag::LatencyReleased(present_semaphore_);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
+    }
+    if (!(PresentFlags & DXGI_PRESENT_DO_NOT_SEQUENCE)) {
+      if (desc_.SwapEffect >= DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL)
+        device_context_->UnbindResource(backbuffers_[0].ptr());
+      if (backbuffers_.size() > 1) {
+        std::vector<Rc<Texture>> textures(backbuffers_.size());
+        for (UINT i = 0; i < textures.size(); i++)
+          textures[i] = backbuffers_[i]->texture();
+        chunk->emitcc([textures = std::move(textures), retired_views = std::vector<TextureViewRef>{}]
+                      (ArgumentEncodingContext &) mutable {
+          Rc<TextureAllocation> allocation = textures[0]->current();
+          for (UINT i = 1; i < textures.size(); i++)
+            textures[i - 1]->rename(Rc<TextureAllocation>(textures[i]->current()), retired_views);
+          textures.back()->rename(std::move(allocation), retired_views);
+        });
+      }
     }
     device_context_->Commit();
 
     lock.unlock(); // since PresentBoundary() will and should only stall current thread
 
     cmd_queue.PresentBoundary();
+    if (diag::profile) {
+      diag::Write(diag::Line("span", "present", "", GetCurrentThreadId(), began, diag::Now() - began));
+      diag::LatencyPresented(present_semaphore_);
+    }
 
     return hr;
   };
@@ -832,38 +949,6 @@ public:
     hud.begin();
     auto &frame = statistics.at(frame_id - 1); // show the previous one frame statistics
     auto &average = statistics.average();
-    Flags<FeatureCompatibility> flags = frame.compatibility_flags;
-    char text[] = "---------------------------";
-    if (flags.test(FeatureCompatibility::UnsupportedGeometryDraw)) {
-      text[3] = 'G';
-    }
-    if (flags.test(FeatureCompatibility::UnsupportedTessellationOutputPrimitive)) {
-      text[5] = 'T';
-      text[6] = 'O';
-    }
-    if (flags.test(FeatureCompatibility::UnsupportedIndirectTessellationDraw)) {
-      text[8] = 'I';
-      text[9] = 'T';
-    }
-    if (flags.test(FeatureCompatibility::UnsupportedGeometryTessellationDraw)) {
-      text[11] = 'G';
-      text[12] = 'T';
-    }
-    if (flags.test(FeatureCompatibility::UnsupportedDrawAuto)) {
-      text[14] = 'A';
-    }
-    if (flags.test(FeatureCompatibility::UnsupportedPredication)) {
-      text[16] = 'P';
-    }
-    if (flags.test(FeatureCompatibility::UnsupportedStreamOutputAppending)) {
-      text[18] = 'S';
-      text[19] = 'A';
-    }
-    if (flags.test(FeatureCompatibility::UnsupportedMultipleStreamOutput)) {
-      text[21] = 'M';
-      text[22] = 'S';
-    }
-    hud.printLine(text);
     hud.printLine(std::format(
         "Commit: {:2} -{:4.1f} -{:4.1f}", std::min(frame.command_buffer_count, 99u),
         std::min(average.commit_interval.count() / 1000000.0, 99.9),
@@ -908,8 +993,8 @@ public:
     }
     hud.end();
 
-    // DXMT_LOG_FRAME_STATS=1: also write the averages to the log every 120
-    // frames, so profiling runs can be compared without reading the HUD.
+    // SC6 fork: DXMT_LOG_FRAME_STATS=1 also writes the averages to the log every 120 frames, so profiling runs can
+    // be compared without reading the HUD
     static const bool log_stats = env::getEnvVar("DXMT_LOG_FRAME_STATS") == "1";
     if (log_stats && frame_id % 120 == 0) {
       WARN(std::format(
@@ -931,16 +1016,17 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetRestrictToOutput(IDXGIOutput **ppRestrictToOutput) final {
-    InitReturnPtr(ppRestrictToOutput);
-    ERR("DXGISwapChain1::GetRestrictToOutput: not implemented");
-    return E_NOTIMPL;
+    if (!ppRestrictToOutput)
+      return E_INVALIDARG;
+    // a swap chain here is restricted to no output
+    *ppRestrictToOutput = nullptr;
+    return S_OK;
   };
 
   HRESULT
   STDMETHODCALLTYPE
   SetBackgroundColor(const DXGI_RGBA *pColor) final {
-    ERR("DXGISwapChain1::SetBackgroundColor: not implemented");
-    return E_NOTIMPL;
+    return settings_.SetBackgroundColor(pColor);
   };
 
   HRESULT
@@ -948,16 +1034,14 @@ public:
   GetBackgroundColor(DXGI_RGBA *pColor) final {
     if (!pColor)
       return E_INVALIDARG;
-    // TODO(swapchain): check if native returns transparent or opaque black
-    *pColor = {0, 0, 0, 0};
+    *pColor = settings_.background;
     return S_OK;
   };
 
   HRESULT
   STDMETHODCALLTYPE
   SetRotation(DXGI_MODE_ROTATION Rotation) final {
-    ERR("DXGISwapChain1::SetRotation: not implemented");
-    return E_NOTIMPL;
+    return settings_.SetRotation(desc_, Rotation);
   };
 
   HRESULT
@@ -965,30 +1049,29 @@ public:
   GetRotation(DXGI_MODE_ROTATION *pRotation) final {
     if (!pRotation)
       return E_INVALIDARG;
-    *pRotation = DXGI_MODE_ROTATION_IDENTITY;
+    *pRotation = settings_.rotation;
     return S_OK;
   };
 
   HRESULT STDMETHODCALLTYPE
   SetSourceSize(UINT Width, UINT Height) override {
-    ERR("DXGISwapChain2::SetSourceSize: not implemented");
-    return E_NOTIMPL;
+    return settings_.SetSourceSize(desc_, Width, Height);
   };
 
   HRESULT STDMETHODCALLTYPE
   GetSourceSize(UINT *pWidth, UINT *pHeight) override {
-    if (pWidth)
-      *pWidth = desc_.Width;
-    if (pHeight)
-      *pHeight = desc_.Height;
-    return S_OK;
+    return settings_.GetSourceSize(desc_, pWidth, pHeight);
   };
 
   HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT max_latency) override {
+    if (!(desc_.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT))
+      return DXGI_ERROR_INVALID_CALL;
     if (max_latency == 0 || max_latency > DXGI_MAX_SWAP_CHAIN_BUFFERS) {
-      return E_INVALIDARG;
+      return DXGI_ERROR_INVALID_CALL;
     }
     if (max_latency > frame_latency) {
+      if (diag::profile)
+        diag::LatencyReleased(present_semaphore_);
       ReleaseSemaphore(present_semaphore_, max_latency - frame_latency,
                        nullptr);
     }
@@ -998,6 +1081,8 @@ public:
   };
 
   HRESULT STDMETHODCALLTYPE GetMaximumFrameLatency(UINT *max_latency) override {
+    if (!(desc_.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT))
+      return DXGI_ERROR_INVALID_CALL;
     if (max_latency) {
       *max_latency = frame_latency;
     }
@@ -1016,20 +1101,20 @@ public:
                          &result, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
       return nullptr;
     }
+    if (diag::profile)
+      diag::LatencyTaken(present_semaphore_);
 
     return result;
   };
 
   HRESULT STDMETHODCALLTYPE
   SetMatrixTransform(const DXGI_MATRIX_3X2_F *matrix) override {
-    ERR("DXGISwapChain2::SetMatrixTransform: not implemented");
-    return E_NOTIMPL;
+    return DXGI_ERROR_INVALID_CALL;
   };
 
   HRESULT STDMETHODCALLTYPE
   GetMatrixTransform(DXGI_MATRIX_3X2_F *matrix) override {
-    ERR("DXGISwapChain2::GetMatrixTransform: not implemented");
-    return E_NOTIMPL;
+    return DXGI_ERROR_INVALID_CALL;
   };
 
   HRESULT STDMETHODCALLTYPE CheckColorSpaceSupport(
@@ -1043,11 +1128,10 @@ public:
   };
 
   UINT STDMETHODCALLTYPE GetCurrentBackBufferIndex() override {
-    // TODO(swapchain): can be non-zero once sequential swapchain is implemented
     return 0;
   }
 
-  DXMT_HOTPATCHABLE
+  MULLION_HOTPATCHABLE
   HRESULT STDMETHODCALLTYPE ResizeBuffers1(UINT BufferCount, UINT Width, UINT Height,
                          DXGI_FORMAT Format, UINT SwapChainFlags,
                          const UINT *pCreationNodeMask,
@@ -1058,6 +1142,10 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) override {
+    UINT support = 0;
+    CheckColorSpaceSupport(ColorSpace, &support);
+    if (!(support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT))
+      return E_INVALIDARG;
     auto target_color_space = ConvertColorSpace(ColorSpace, LayerSupportEDR());
     if (presenter->changeLayerColorSpace(target_color_space))
       device_context_->WaitUntilGPUIdle();
@@ -1068,18 +1156,9 @@ public:
   HRESULT STDMETHODCALLTYPE SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type,
                                            UINT Size,
                                            void *pMetaData) override {
-                                            return S_OK;
-    if (Type == DXGI_HDR_METADATA_TYPE_NONE) {
-      presenter->changeHDRMetadata(nullptr);
-      return S_OK;
-    }
-    if (Type == DXGI_HDR_METADATA_TYPE_HDR10) {
-      if (Size != sizeof(WMTHDRMetadata))
-        return E_INVALIDARG;
-      presenter->changeHDRMetadata(reinterpret_cast<const WMTHDRMetadata *>(pMetaData));
-      return S_OK;
-    }
-    return DXGI_ERROR_UNSUPPORTED;
+    // the metadata is for a monitor to adjust its output by and "may be ignored" (IDXGISwapChain4::SetHDRMetaData):
+    // it does not change the pixels presented
+    return S_OK;
   }
 
 private:
@@ -1092,19 +1171,22 @@ private:
   Com<IDXGIFactory1> factory_;
   Com<IMTLDXGIDevice> dxgi_device_;
   WMT::Object native_view_;
+  WindowFollower follower_;
   WMT::MetalLayer layer_weak_;
   ULONG presentation_count_;
   DXGI_SWAP_CHAIN_DESC1 desc_;
+  trace::Presents presents_;
+  SwapChainSettings settings_;
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
   D3D11_TEXTURE2D_DESC1 backbuffer_desc_;
   IMTLD3D11DeviceContext* device_context_;
-  Com<D3D11ResourceCommon, false> backbuffer_;
+  std::vector<Com<D3D11ResourceCommon, false>> backbuffers_;
   HANDLE present_semaphore_;
   std::unique_ptr<CpuFence> frame_latency_fence_;
   HWND hWnd;
   HMONITOR monitor_;
   Com<IDXGIOutput1> target_;
-  wsi::DXMTWindowState window_state_;
+  wsi::MullionWindowState window_state_;
   uint32_t frame_latency;
   DXGI_COLOR_SPACE_TYPE colorspace_ = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
   double init_refresh_rate_ = DBL_MAX;
@@ -1112,12 +1194,13 @@ private:
   HUDState hud;
   Rc<Presenter> presenter;
   ModeSetGuard modeset_guard_;
-  dxmt::mutex mutex_;
+  mullion::mutex mutex_;
 
   bool handle_alt_tab_;
   bool native_fullscreen_ = false;
   uint64_t native_fullscreen_presents_ = 0;
   WMTNativeFullscreenState native_fullscreen_state_ = WMTNativeFullscreenUnknown;
+  Com<IUnknown> window_reservation_;
 
   std::conditional<EnableMetalFX, Rc<SpatialScaler>, std::monostate>::type metalfx_scaler;
   std::conditional<EnableMetalFX, Com<D3D11ResourceCommon>, std::monostate>::type upscaled_backbuffer_;
@@ -1135,48 +1218,64 @@ CreateSwapChain(
     return DXGI_ERROR_INVALID_CALL;
   InitReturnPtr(ppSwapChain);
 
-  DWORD window_process_id;
-  GetWindowThreadProcessId(hWnd, &window_process_id);
-  if (GetProcessId(GetCurrentProcess()) != window_process_id) {
-    ERR("CreateSwapChain: cross-process swapchain not supported yet");
-    return E_FAIL;
-  }
-
   Com<IMTLDXGIDevice> layer_factory;
   if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {
     ERR("CreateSwapChain: failed to get IMTLDXGIDevice");
     return E_FAIL;
   }
-  if ((pDesc->SwapEffect != DXGI_SWAP_EFFECT_DISCARD &&
-       pDesc->SwapEffect != DXGI_SWAP_EFFECT_FLIP_DISCARD) &&
-      pDesc->BufferCount != 1) {
-    WARN("CreateSwapChain: unsupported swap effect ", pDesc->SwapEffect, " with backbuffer size ", pDesc->BufferCount);
+  if (!pDesc->BufferCount || pDesc->BufferCount > DXGI_MAX_SWAP_CHAIN_BUFFERS)
+    return DXGI_ERROR_INVALID_CALL;
+  switch (pDesc->SwapEffect) {
+  case DXGI_SWAP_EFFECT_DISCARD:
+  case DXGI_SWAP_EFFECT_SEQUENTIAL:
+    break;
+  case DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL:
+  case DXGI_SWAP_EFFECT_FLIP_DISCARD:
+    // DXGI_SWAP_CHAIN_DESC1 requires at least two buffers and no multisampling for flip effects
+    if (pDesc->BufferCount < 2 || pDesc->SampleDesc.Count != 1 || pDesc->SampleDesc.Quality)
+      return DXGI_ERROR_INVALID_CALL;
+    break;
+  default:
+    return DXGI_ERROR_INVALID_CALL;
   }
-  if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1" ||
+  Com<IDXGISwapChain1> swapchain;
+  // d3d11.metalSpatialUpscale in the config turns it on as the environment variable does, so a
+  // program started by another (a launcher, a game client) follows the config file it reads at start
+  if (env::getEnvVar("MULLION_METALFX_SPATIAL_SWAPCHAIN") == "1" ||
       Config::getInstance().getOption<bool>("d3d11.metalSpatialUpscale", false)) {
     if (pDevice->GetMTLDevice().supportsFXSpatialScaler()) {
-      *ppSwapChain = new MTLD3D11SwapChain<true>(
+      swapchain = Com<IDXGISwapChain1>::transfer(new MTLD3D11SwapChain<true>(
           pFactory, pDevice, layer_factory.ptr(), hWnd, pDesc, pFullscreenDesc
-      );
-      return S_OK;
+      ));
     } else {
       WARN("MetalFX spatial scaler is not supported on this device");
     }
   }
-  *ppSwapChain = new MTLD3D11SwapChain<false>(
-      pFactory, pDevice, layer_factory.ptr(), hWnd, pDesc, pFullscreenDesc
-  );
+  if (!swapchain)
+    swapchain = Com<IDXGISwapChain1>::transfer(new MTLD3D11SwapChain<false>(
+        pFactory, pDevice, layer_factory.ptr(), hWnd, pDesc, pFullscreenDesc
+    ));
+  HRESULT hr = swapchain->ResizeBuffers(0, pDesc->Width, pDesc->Height, DXGI_FORMAT_UNKNOWN, pDesc->Flags);
+  if (FAILED(hr))
+    return hr;
+  if (pFullscreenDesc && !pFullscreenDesc->Windowed) {
+    hr = swapchain->SetFullscreenState(TRUE, nullptr);
+    if (FAILED(hr))
+      return hr;
+  }
+  *ppSwapChain = swapchain.takeOwnership();
   return S_OK;
 };
 
-} // namespace dxmt
-// SC6 fork: copies the presenter's HDR status (see DXMTSC6PresentStatus) for
-// the sc6vrr DLL. Returns the number of bytes copied.
+} // namespace mullion
+
+// SC6 fork: copies the presenter's HDR status (see DXMTSC6PresentStatus) for the sc6vrr DLL. Returns the number of
+// bytes copied.
 extern "C" __declspec(dllexport) uint32_t STDMETHODCALLTYPE
-DXMT_SC6_GetPresentStatus(dxmt::DXMTSC6PresentStatus *out, uint32_t size) {
+DXMT_SC6_GetPresentStatus(mullion::DXMTSC6PresentStatus *out, uint32_t size) {
   if (!out || size < sizeof(uint32_t))
     return 0;
-  uint32_t n = std::min<uint32_t>(size, sizeof(dxmt::DXMTSC6PresentStatus));
-  memcpy(out, &dxmt::g_sc6_present_status, n);
+  uint32_t n = std::min<uint32_t>(size, sizeof(mullion::DXMTSC6PresentStatus));
+  memcpy(out, &mullion::g_sc6_present_status, n);
   return n;
 }

@@ -1,0 +1,12 @@
+# ignores the vertex element offset in padded D3D11 layouts.
+--- a/src/d3d11/d3d11_input_layout.cpp
++++ b/src/d3d11/d3d11_input_layout.cpp
+@@ -73,7 +73,7 @@
+ 
+     attribute.Slot = desc.InputSlot;
+     attribute.Index = inputSig.Register;
+-    attribute.Offset = aligned_byte_offset;
++    attribute.Offset = 0;
+     // the layout stride is provided in IASetVertexBuffer
+     attribute.StepFunction = desc.InputSlotClass;
+     attribute.InstanceStepRate =

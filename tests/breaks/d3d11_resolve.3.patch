@@ -1,0 +1,12 @@
+# A resolve folded into an earlier render pass runs there, before the encoders it waits for.
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -1098,7 +1098,7 @@
+           break;
+         // a resolve folded into the render pass runs where the resolve was, after the encoders it waits for, which
+         // the render pass moved past
+-        if (encoders[i]->type == EncoderType::Null)
++        if (false)
+           std::swap(encoders[k], encoders[i]), k = i;
+       }
+     }

@@ -1,0 +1,14 @@
+# a 32-bit typeless texture of BGRA8 or BGRX8 has no pixel format view for its R32 views: Metal's validation refuses
+# the view (faults.py --validate)
+# family native
+--- a/src/d3d12/d3d12_texture.cpp
++++ b/src/d3d12/d3d12_texture.cpp
+@@ -162,7 +162,7 @@ PopulateWMTTextureInfo(MTLD3D12Device *Device, WMTTextureInfo &InfoOut, const D3
+   if (Desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) {
+     Usage |= WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
+     // an R32 view of the texture is a view in another layout (CastsToR32UnorderedAccess)
+-    if (CastsToR32UnorderedAccess(Desc.Format))
++    if (CastsToR32UnorderedAccess(Desc.Format) && false)
+       Usage |= WMTTextureUsagePixelFormatView;
+     // and so does a uint clear of a format whose values cannot hold all its bit patterns (GetUIntClearWrite)
+     auto pixel = WMTPixelFormat(ORIGINAL_FORMAT(InfoOut.pixel_format));

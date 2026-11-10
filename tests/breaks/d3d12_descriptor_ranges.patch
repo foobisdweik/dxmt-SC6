@@ -1,0 +1,12 @@
+# drops destination ranges whose size array is null
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -914,7 +914,7 @@
+     dst_range_idx = dst_idx = 0;
+     src_range_idx = src_idx = 0;
+     while (dst_range_idx < DstDescriptorRangeCount && src_range_idx < SrcDescriptorRangeCount) {
+-      dst_range_size = DstDescriptorRangeSizes ? DstDescriptorRangeSizes[dst_range_idx] : 1;
++      dst_range_size = DstDescriptorRangeSizes ? DstDescriptorRangeSizes[dst_range_idx] : 0;
+       src_range_size = SrcDescriptorRangeSizes ? SrcDescriptorRangeSizes[src_range_idx] : 1;
+ 
+       copy_count = std::min(dst_range_size - dst_idx, src_range_size - src_idx);

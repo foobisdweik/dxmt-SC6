@@ -1,0 +1,13 @@
+# pipeline statistics resolve zeros even when the query enclosed draws and dispatches
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -953,7 +953,8 @@
+   constant PipelineStatisticsSum &sum = sums[i];
+   device ulong *result = results + ulong(sum.query) * sum.size;
+   for (uint k = 0; k < sum.size; k++)
+-    result[k] = sum.counts[k];
++    result[k] = 0;
++  return;
+   for (uint k = sum.first_draw; k < sum.first_draw + sum.draw_count; k++) {
+     result[7] += draws[k].count->pixels;
+     result[1] += draws[k].count->primitives;

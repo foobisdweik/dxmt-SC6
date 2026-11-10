@@ -1,0 +1,13 @@
+# a static sampler is taken for one that is not anisotropic, and its biased samples keep Metal's own LOD
+# family native
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2334,7 +2334,7 @@
+   // when the shader runs
+   if (auto Known = KnownSamplers.find(SamplerMetadata); Known != KnownSamplers.end()) {
+     auto Own = SamplerBiases.find(Bias);
+-    if (!Known->second.Anisotropic ||
++    if (true ||
+         (!Known->second.Biased && Own != SamplerBiases.end() && Own->second == SamplerMetadata))
+       return Biased();
+   }

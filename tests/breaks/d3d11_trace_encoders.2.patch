@@ -1,0 +1,13 @@
+# omit standalone resolve traces
+diff --git a/src/mullion/mullion_context.cpp b/src/mullion/mullion_context.cpp
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -1411,7 +1411,7 @@
+                                             : cmdbuf.renderCommandEncoder(info);
+         encoder.setLabel(WMT::String::string("ResolvePass", WMTUTF8StringEncoding));
+         auto index = metal_encoder_count++;
+-        if (diag::errors || diag::trace_encoders) {
++        if (diag::errors) {
+           auto label = str::format(
+               "resolve ", seqId, ".", index, ": ", data->src.texture().width(), "x", data->src.texture().height(),
+               ", 0 draws (0 geometry, 0 tessellation)"

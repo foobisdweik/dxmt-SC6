@@ -1,0 +1,12 @@
+# omits the read declaration for a counter-only UAV buffer pointer.
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -444,7 +444,7 @@
+       auto &uav = UAVBindingSet[arg.SM50BindingSlot];
+       bool read = (arg.Flags >> 10) & 1, write = (arg.Flags >> 10) & 2;
+       // a counter-only UAV still has a read-only buffer pointer in the argument table.
+-      read |= !write;
++      read |= false;
+       int access_flags =  ((arg.Flags >> 10) & 3) | ResourceAccess::UAV;
+       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER)
+         access_flags |= ResourceAccess::ReadWrite;

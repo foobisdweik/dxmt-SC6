@@ -1,0 +1,17 @@
+# A filled size is stored as 64 bits, over the word after it.
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -1363,11 +1363,8 @@
+       if (slots & (1u << b))
+         when(builder.CreateICmpNE(field(2, b), builder.getInt64(0)), [&] {
+           builder.CreateStore(
+-              builder.CreateTrunc(
+-                  builder.CreateAdd(snapshot[b], builder.CreateMul(written, builder.getInt64(uint64_t(per_primitive) * so->strides[b]))),
+-                  types._int
+-              ),
+-              device(types._int, field(2, b))
++                builder.CreateAdd(snapshot[b], builder.CreateMul(written, builder.getInt64(uint64_t(per_primitive) * so->strides[b]))),
++              device(types._long, field(2, b))
+           );
+         });
+   });

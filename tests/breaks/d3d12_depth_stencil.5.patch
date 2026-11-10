@@ -1,0 +1,12 @@
+# ranges from the first viewport only
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -920,7 +920,7 @@
+         auto &viewport = viewports[i < num_viewports ? i : 0];
+         metal_viewport[i] = {viewport.TopLeftX, viewport.TopLeftY, viewport.Width,
+                              viewport.Height,   viewport.MinDepth, viewport.MaxDepth};
+-        ranges[2 * i] = viewport.MinDepth, ranges[2 * i + 1] = viewport.MaxDepth;
++        ranges[2 * i] = viewports[0].MinDepth, ranges[2 * i + 1] = viewports[0].MaxDepth;
+       }
+       auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_setviewports>();
+       cmd.type = WMTRenderCommandSetViewports;

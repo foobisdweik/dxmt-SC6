@@ -1,0 +1,12 @@
+# the mesh stage takes front faces as clockwise whatever the pipeline does
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -922,7 +922,7 @@
+         data->viewports[i][0] = viewports[i].TopLeftX, data->viewports[i][1] = viewports[i].TopLeftY,
+         data->viewports[i][2] = viewports[i].Width, data->viewports[i][3] = viewports[i].Height;
+       data->state[0] = pso_graphics_->depth_clip_mode == WMTDepthClipModeClip;
+-      data->state[1] = pso_graphics_->winding == WMTWindingCounterClockwise;
++      data->state[1] = 0;
+       if (allocator_->records_)
+         allocator_->RecordGPUHeap(mapped, sizeof(*data), "conservative viewports");
+       EncodeBuffer(WMTRenderCommandSetMeshBuffer, offset, SM50_BINDING_INDEX_VIEWPORTS);

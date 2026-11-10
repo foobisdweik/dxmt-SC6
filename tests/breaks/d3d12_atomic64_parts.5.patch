@@ -1,0 +1,12 @@
+# ExecuteIndirect bypasses the split dispatch path
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2585,7 +2585,7 @@
+     bool rays = sig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_RAYS;
+     if (rays || sig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH) {
+       IndirectComputeCommandData *cmd;
+-      bool parts = !rays && pso_compute_ && pso_compute_->groups_work_together;
++      bool parts = false;
+       uint32_t ray_flags = 0;
+       if (rays) {
+         // the resolver runs first, in the pass of the dispatches; without a pipeline it has no commands

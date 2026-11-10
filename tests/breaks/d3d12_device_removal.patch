@@ -1,0 +1,12 @@
+# loses the removed-device fence sentinel
+--- a/src/d3d12/d3d12_fence.cpp
++++ b/src/d3d12/d3d12_fence.cpp
+@@ -81,7 +81,7 @@
+   UINT64 STDMETHODCALLTYPE
+   GetCompletedValue() {
+     // "if the device has been removed, the return value will be UINT64_MAX" (ID3D12Fence::GetCompletedValue)
+-    return FAILED(device_->GetDeviceRemovedReason()) ? UINT64_MAX : completion->value.load();
++    return FAILED(device_->GetDeviceRemovedReason()) ? 0 : completion->value.load();
+   }
+ 
+   HRESULT STDMETHODCALLTYPE

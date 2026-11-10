@@ -1,0 +1,12 @@
+# front-facing winding is reversed.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -456,7 +456,7 @@
+     cmd.scole_scale = desc_.SlopeScaledDepthBias;
+     cmd.depth_bias_clamp = desc_.DepthBiasClamp;
+ 
+-    cmd.winding = desc_.FrontCounterClockwise ? WMTWindingCounterClockwise: WMTWindingClockwise;
++    cmd.winding = desc_.FrontCounterClockwise ? WMTWindingClockwise: WMTWindingCounterClockwise;
+ 
+     if (desc_.AntialiasedLineEnable) {
+       // nop , we don't support this

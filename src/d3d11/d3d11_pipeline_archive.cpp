@@ -1,13 +1,13 @@
 #include "d3d11_pipeline_archive.hpp"
 #include "d3d11_pipeline.hpp"
-#include "dxmt_shader_cache.hpp"
+#include "mullion_shader_cache.hpp"
 #include "config/config.hpp"
 #include "log/log.hpp"
 #include "util_env.hpp"
 #include "util_string.hpp"
 #include <cstring>
 
-namespace dxmt {
+namespace mullion {
 
 namespace {
 
@@ -15,8 +15,8 @@ namespace {
    length, the SHA-1 of its bytes, and the bytes. The hash detects a damaged
    file and also identifies duplicate records. */
 constexpr char kListMagic[8] = {'D', 'X', 'M', 'T', 'P', 'S', 'O', 'L'};
-/* Bump when PipelineRecord or the meaning of a stored field changes. */
-constexpr uint32_t kListFormatVersion = 1;
+/* Bump when PipelineRecord or the meaning of a stored field changes. 2: Mullion's extra pipeline key fields. */
+constexpr uint32_t kListFormatVersion = 2;
 constexpr uint32_t kMaxRecords = 16384;
 /* Write the files only after this long without a newly added pipeline, so
    that serialization does not compete with a burst of compiles. */
@@ -99,6 +99,14 @@ PipelineRecord::FromGraphicsDesc(const MTL_GRAPHICS_PIPELINE_DESC &desc, Pipelin
   out.index_buffer_format = desc.IndexBufferFormat;
   out.sample_mask = desc.SampleMask;
   out.gs_passthrough = desc.GSPassthrough;
+  out.centered_samples = desc.CenteredSamples;
+  out.single_raster_sample = desc.SingleRasterSample;
+  out.paired_samples = desc.PairedSamples;
+  out.clip_distances = desc.ClipDistances;
+  out.input_primitive = desc.InputPrimitive;
+  out.pass_through = desc.PassThrough;
+  out.quad_lines = desc.QuadLines;
+  out.pipeline_statistics = desc.PipelineStatistics;
   desc.BlendState->GetDesc1(&out.blend);
   if (desc.InputLayout) {
     MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC *elements;
@@ -131,6 +139,14 @@ PipelineRecord::Serialize(std::vector<uint8_t> &out) const {
   w.u32(index_buffer_format);
   w.u32(sample_mask);
   w.u32(gs_passthrough);
+  w.u32(centered_samples);
+  w.u32(single_raster_sample);
+  w.u32(paired_samples);
+  w.u32(clip_distances);
+  w.u32(input_primitive);
+  w.u32(pass_through);
+  w.u32(quad_lines);
+  w.u32(pipeline_statistics);
   /* field by field: the struct has padding bytes with undefined content */
   w.u32(blend.AlphaToCoverageEnable ? 1 : 0);
   w.u32(blend.IndependentBlendEnable ? 1 : 0);
@@ -183,8 +199,13 @@ PipelineRecord::Deserialize(const uint8_t *data, size_t size) {
     ok = ok && r.u32(color_formats[i]);
   ok = ok && r.u32(depth_stencil_format) && r.u32(topology_class) && r.u32(rasterization_enabled) &&
        r.u32(sample_count) && r.u32(gs_strip_topology) && r.u32(index_buffer_format) && r.u32(sample_mask) &&
-       r.u32(gs_passthrough);
-  if (!ok || num_color_attachments > 8 || topology_class > WMTPrimitiveTopologyClassTriangle ||
+       r.u32(gs_passthrough) && r.u32(centered_samples) && r.u32(single_raster_sample) && r.u32(paired_samples) &&
+       r.u32(clip_distances) && r.u32(input_primitive) && r.u32(pass_through) && r.u32(quad_lines) &&
+       r.u32(pipeline_statistics);
+  if (!ok || centered_samples > 1 || single_raster_sample > 1 || paired_samples > 1 ||
+      pass_through > 1 || quad_lines > 1 || pipeline_statistics > 1)
+    return false;
+  if (num_color_attachments > 8 || topology_class > WMTPrimitiveTopologyClassTriangle ||
       rasterization_enabled > 1 || sample_count > 32 || gs_strip_topology > 1 ||
       index_buffer_format > SM50_INDEX_BUFFER_FORMAT_UINT32)
     return false;
@@ -246,9 +267,9 @@ std::unique_ptr<PipelineArchive>
 PipelineArchive::Create(WMT::Device device, WMTMetalVersion metal_version) {
   if (!Config::getInstance().getOption<bool>("d3d11.pipelineArchive", false))
     return nullptr;
-  auto dir = ShaderCache::cacheDirectory();
+  auto dir = ShaderCacheDirectory();
   if (dir.empty()) {
-    WARN("PipelineArchive: disabled, because DXMT_SHADER_CACHE=0 disables disk caches");
+    WARN("PipelineArchive: disabled, because MULLION_SHADER_CACHE=0 disables disk caches");
     return nullptr;
   }
   if (g_archive_owned.exchange(true)) {
@@ -271,12 +292,12 @@ PipelineArchive::PipelineArchive(WMT::Device device, std::string archive_path, s
       "PipelineArchive: loaded ", archive_loaded_ ? "an existing" : "an empty", " archive and ", loaded_records_,
       " recorded pipelines for warm-up"
   );
-  saver_ = dxmt::thread([this]() { SaverThread(); });
+  saver_ = mullion::thread([this]() { SaverThread(); });
 }
 
 PipelineArchive::~PipelineArchive() {
   {
-    std::unique_lock<dxmt::mutex> lock(saver_mutex_);
+    std::unique_lock<mullion::mutex> lock(saver_mutex_);
     saver_stop_ = true;
   }
   saver_cond_.notify_all();
@@ -337,8 +358,8 @@ PipelineArchive::LoadList() {
   r.u32(metal_version);
   r.u32(count);
   if (memcmp(magic, kListMagic, sizeof(magic)) || format != kListFormatVersion ||
-      airconv_version != (uint32_t)kDXMTShaderCacheVersion) {
-    WARN("PipelineArchive: ignoring ", list_path_, ", because it was written by another DXMT version");
+      airconv_version != (uint32_t)kMullionShaderCacheVersion) {
+    WARN("PipelineArchive: ignoring ", list_path_, ", because it was written by another version");
     return;
   }
 
@@ -487,7 +508,7 @@ PipelineArchive::Record(const PipelineRecord &record) {
   record.Serialize(blob);
   auto digest = Sha1HashState::compute(blob.data(), blob.size());
   {
-    std::lock_guard<dxmt::mutex> lock(records_mutex_);
+    std::lock_guard<mullion::mutex> lock(records_mutex_);
     if (record_blobs_.size() >= kMaxRecords)
       return;
     if (!known_records_.insert(digest).second)
@@ -500,7 +521,7 @@ PipelineArchive::Record(const PipelineRecord &record) {
 
 void
 PipelineArchive::OnShaderCreated(const Sha1Digest &shader, std::vector<PipelineRecord> &ready) {
-  std::lock_guard<dxmt::mutex> lock(warm_mutex_);
+  std::lock_guard<mullion::mutex> lock(warm_mutex_);
   auto iter = warm_waiting_.find(shader);
   if (iter == warm_waiting_.end())
     return;
@@ -525,7 +546,7 @@ PipelineArchive::MarkChanged() {
 
 void
 PipelineArchive::SaveIfDirty() {
-  std::lock_guard<dxmt::mutex> save_lock(save_mutex_);
+  std::lock_guard<mullion::mutex> save_lock(save_mutex_);
   if (archive_handle_ && archive_dirty_.exchange(false)) {
     WMT::Reference<WMT::Error> err;
     {
@@ -541,10 +562,10 @@ PipelineArchive::SaveIfDirty() {
     std::vector<uint8_t> data;
     ByteWriter w(data);
     {
-      std::lock_guard<dxmt::mutex> lock(records_mutex_);
+      std::lock_guard<mullion::mutex> lock(records_mutex_);
       w.bytes(kListMagic, sizeof(kListMagic));
       w.u32(kListFormatVersion);
-      w.u32(kDXMTShaderCacheVersion);
+      w.u32(kMullionShaderCacheVersion);
       w.u32(0); /* reserved; the file name has the Metal version */
       w.u32(record_blobs_.size());
       for (auto &blob : record_blobs_) {
@@ -564,7 +585,7 @@ void
 PipelineArchive::LogStats(const char *when) {
   uint64_t records;
   {
-    std::lock_guard<dxmt::mutex> lock(records_mutex_);
+    std::lock_guard<mullion::mutex> lock(records_mutex_);
     records = record_blobs_.size();
   }
   WARN(
@@ -576,11 +597,11 @@ PipelineArchive::LogStats(const char *when) {
 
 void
 PipelineArchive::SaverThread() {
-  env::setThreadName("dxmt-pso-archive");
+  env::setThreadName("mullion-pso-archive");
   auto last_log = clock::now();
   while (true) {
     {
-      std::unique_lock<dxmt::mutex> lock(saver_mutex_);
+      std::unique_lock<mullion::mutex> lock(saver_mutex_);
       saver_cond_.wait_for(lock, kSaverWakeInterval, [this]() { return saver_stop_; });
       if (saver_stop_)
         break;
@@ -599,4 +620,4 @@ PipelineArchive::SaverThread() {
   }
 }
 
-} // namespace dxmt
+} // namespace mullion

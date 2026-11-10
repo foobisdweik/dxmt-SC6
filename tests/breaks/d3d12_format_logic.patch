@@ -1,0 +1,13 @@
+# use OR instead of XOR in the D3D12 output merger.
+diff --git a/src/d3d12/d3d12_pipeline_graphics.cpp b/src/d3d12/d3d12_pipeline_graphics.cpp
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -72,7 +72,7 @@ constexpr WMTLogicOperation kLogicOpMap[] = {
+     WMTLogicOperationClear,        WMTLogicOperationSet,         WMTLogicOperationCopy,
+     WMTLogicOperationCopyInverted, WMTLogicOperationNoOp,        WMTLogicOperationInvert,
+     WMTLogicOperationAnd,          WMTLogicOperationNand,        WMTLogicOperationOr,
+-    WMTLogicOperationNor,          WMTLogicOperationXor,         WMTLogicOperationEquiv,
++    WMTLogicOperationNor,          WMTLogicOperationOr,          WMTLogicOperationEquiv,
+     WMTLogicOperationAndReverse,   WMTLogicOperationAndInverted, WMTLogicOperationOrReverse,
+     WMTLogicOperationOrInverted,
+ };

@@ -1,0 +1,13 @@
+# CPU writes derive the volume slice pitch from rows and discard independent slice padding.
+--- a/src/d3d12/d3d12_texture.cpp
++++ b/src/d3d12/d3d12_texture.cpp
+@@ -423,6 +423,9 @@
+ 
+     if (box.left == box.right || box.top == box.bottom || box.front == box.back)
+       return S_OK;
++
++    if (desc_.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D && !(Format.Flag & MTL_DXGI_FORMAT_BC))
++      SrcSlicePitch = SrcRowPitch * (box.bottom - box.top);
+ 
+     if (Format.Flag & MTL_DXGI_FORMAT_BC) {
+       if ((box.left | box.right | box.top | box.bottom) & (block_width - 1))

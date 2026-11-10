@@ -1,0 +1,33 @@
+{
+ "test_create_device": {
+  "verdict": "crashed",
+  "at": "d3d12_test.exe: func_d3d12 at d3d12.c:1577:38"
+ },
+ "test_desktop_window": {
+  "verdict": "passed"
+ },
+ "test_draw": {
+  "verdict": "passed"
+ },
+ "test_interfaces": {
+  "verdict": "passed"
+ },
+ "test_invalid_command_queue_types": {
+  "verdict": "passed"
+ },
+ "test_ordinals": {
+  "verdict": "passed"
+ },
+ "test_swapchain_backbuffer_index": {
+  "verdict": "passed"
+ },
+ "test_swapchain_draw": {
+  "verdict": "passed"
+ },
+ "test_swapchain_refcount": {
+  "verdict": "passed"
+ },
+ "test_swapchain_size_mismatch": {
+  "verdict": "passed"
+ }
+}

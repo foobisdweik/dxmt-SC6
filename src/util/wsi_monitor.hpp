@@ -13,7 +13,7 @@
 #include <windows.h>
 #include <cstdint>
 
-namespace dxmt::wsi {
+namespace mullion::wsi {
 
 /**
  * \brief Rational number. Eg. 2/3
@@ -119,4 +119,4 @@ inline void getMonitorClientSize(HMONITOR hMonitor, UINT *pWidth,
     *pHeight = rect.bottom - rect.top;
 }
 
-} // namespace dxmt::wsi
+} // namespace mullion::wsi

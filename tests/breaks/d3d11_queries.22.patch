@@ -1,0 +1,11 @@
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -1099,7 +1099,7 @@
+ 
+   auto count = vro_state_.reset();
+   if (count || std::any_of(pending_queries_.begin(), pending_queries_.end(), [=](auto &query) {
+-        return !query->statistics.empty() || query->queryEndAt() == seqId;
++        return !query->statistics.empty();
+       })) {
+     readbacks.visibility = std::make_unique<VisibilityResultReadback>(
+         device_, seqId, count, pending_queries_, std::move(visibility_result_offsets_)

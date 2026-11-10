@@ -1,0 +1,12 @@
+# Write masks name the logical channels, not the stored ones.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -1613,7 +1613,7 @@
+   unsigned stored = 0;
+   for (unsigned i = 0; i < channels.size(); i++)
+     if (mask & (WMTColorWriteMaskRed >> i))
+-      stored |= WMTColorWriteMaskRed >> channels[i];
++      stored |= WMTColorWriteMaskRed >> i;
+   return WMTColorWriteMask(stored);
+ }
+ 

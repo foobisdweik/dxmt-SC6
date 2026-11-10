@@ -12,11 +12,12 @@
 #include <utility>
 
 #include "log.hpp"
+#include "trace.hpp"
 
 #include "../util_env.hpp"
 #include "util_string.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 Logger::Logger(const std::string &fileName)
     : m_minLevel(getMinLogLevel()), m_fileName(fileName) {}
@@ -47,15 +48,37 @@ void Logger::log(LogLevel level, const std::string &message) {
   s_instance.emitMsg(level, message);
 }
 
-void Logger::emitMsg(LogLevel level, const std::string &message) {
-  if (level >= m_minLevel) {
-    std::lock_guard<dxmt::mutex> lock(m_mutex);
+// the bytes of a line that fit Wine's 1020 with a newline and the terminator
+constexpr size_t kWineLine = 1018;
 
-    static std::array<const char *, 5> s_prefixes = {
-        {"trace: ", "debug: ", "info:  ", "warn:  ", "err:   "}};
+// MULLION_TRACE_<CATEGORY>: the trace log has the warnings and errors whatever MULLION_LOG_LEVEL is (a game's own output
+// may go nowhere), MULLION_TRACE_API its info and debug lines too, and MULLION_TRACE_API=heavy its trace lines
+static bool Traced(LogLevel level) {
+  if (!trace::Any())
+    return false;
+  if (level >= LogLevel::Warn)
+    return true;
+  return trace::On(trace::Api) && (level >= LogLevel::Debug || trace::Heavy(trace::Api));
+}
+
+void Logger::emitMsg(LogLevel level, const std::string &message) {
+  static std::array<const char *, 5> s_prefixes = {
+      {"trace: ", "debug: ", "info:  ", "warn:  ", "err:   "}};
+
+  if (level < LogLevel::None && Traced(level)) {
+    std::stringstream stream(message);
+    std::string traced;
+    for (std::string line; std::getline(stream, line, '\n');)
+      traced += s_prefixes.at(static_cast<uint32_t>(level)) + line + '\n';
+    trace::WriteLine(traced);
+  }
+
+  if (level >= m_minLevel) {
+    std::lock_guard<mullion::mutex> lock(m_mutex);
 
     const char *prefix = s_prefixes.at(static_cast<uint32_t>(level));
 
+    std::string unwritten;
     if (!std::exchange(m_initialized, true)) {
 #ifdef _WIN32
       HMODULE ntdll = GetModuleHandleA("ntdll.dll");
@@ -66,11 +89,12 @@ void Logger::emitMsg(LogLevel level, const std::string &message) {
 #endif
       auto path = getFileName(m_fileName);
 
-      if (!path.empty())
-        m_fileStream = std::ofstream(str::topath(path.c_str()).c_str());
+      // a log asked for and not written says so, where the lines go instead
+      if (!path.empty() && !(m_fileStream = std::ofstream(str::topath(path.c_str()).c_str())))
+        unwritten = "cannot write the log file " + path + "\n";
     }
 
-    std::stringstream stream(message);
+    std::stringstream stream(unwritten + message);
     std::string line;
 
     while (std::getline(stream, line, '\n')) {
@@ -80,20 +104,24 @@ void Logger::emitMsg(LogLevel level, const std::string &message) {
       std::string adjusted = outstream.str();
 
       if (!adjusted.empty()) {
+        // Wine holds a line of debug output in 1020 bytes (dlls/ntdll/unix/debug.c, struct debug_info) and ends the
+        // process over a longer one: a long line goes out as several
         if (m_wineLogOutput)
-          m_wineLogOutput(adjusted.c_str());
+          for (size_t at = 0; at < adjusted.size(); at += kWineLine)
+            m_wineLogOutput((adjusted.substr(at, kWineLine) + (at + kWineLine < adjusted.size() ? "\n" : "")).c_str());
         else
           std::cerr << adjusted;
       }
 
+      // a process that hangs or is ended has its last lines in the file
       if (m_fileStream)
-        m_fileStream << adjusted;
+        m_fileStream << adjusted << std::flush;
     }
   }
 }
 
 std::string Logger::getFileName(const std::string &base) {
-  std::string path = env::getEnvVar("DXMT_LOG_PATH");
+  std::string path = env::getEnvVar("MULLION_LOG_PATH");
 
   if (path == "none")
     return std::string();
@@ -120,7 +148,7 @@ LogLevel Logger::getMinLogLevel() {
       {"none", LogLevel::None},
   }};
 
-  const std::string logLevelStr = env::getEnvVar("DXMT_LOG_LEVEL");
+  const std::string logLevelStr = env::getEnvVar("MULLION_LOG_LEVEL");
 
   for (const auto &pair : logLevels) {
     if (logLevelStr == pair.first)
@@ -130,4 +158,4 @@ LogLevel Logger::getMinLogLevel() {
   return LogLevel::Info;
 }
 
-} // namespace dxmt
+} // namespace mullion

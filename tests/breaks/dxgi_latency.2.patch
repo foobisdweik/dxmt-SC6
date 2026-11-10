@@ -1,0 +1,12 @@
+# a completed frame releases two readiness credits
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -462,7 +462,7 @@
+       if (inflight.completed)
+         inflight.completed();
+       if (inflight.semaphore)
+-        ReleaseSemaphore(inflight.semaphore, 1, nullptr);
++        ReleaseSemaphore(inflight.semaphore, 2, nullptr);
+ 
+       inflight = {};
+       retired_.Reach(internal_seq);

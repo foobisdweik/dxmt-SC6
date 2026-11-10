@@ -1,0 +1,12 @@
+# read the first shader output for the SRC1_COLOR RGB blend factor.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -130,7 +130,7 @@
+     WMTBlendFactorZero,       // invalid,13
+     WMTBlendFactorBlendColor, // BLEND_FACTOR
+     WMTBlendFactorOneMinusBlendColor,
+-    WMTBlendFactorSource1Color,
++    WMTBlendFactorSourceColor,
+     WMTBlendFactorOneMinusSource1Color,
+     WMTBlendFactorSource1Alpha,
+     WMTBlendFactorOneMinusSource1Alpha,

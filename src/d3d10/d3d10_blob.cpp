@@ -2,7 +2,7 @@
 #include "com/com_object.hpp"
 #include "com/com_pointer.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 class MallocBlob : public ComObject<ID3D10Blob> {
 public:
@@ -54,4 +54,4 @@ CreateBlobFromMalloc(SIZE_T Size, ID3D10Blob **ppBlob) {
   return blob->QueryInterface(IID_PPV_ARGS(ppBlob));
 }
 
-} // namespace dxmt
+} // namespace mullion

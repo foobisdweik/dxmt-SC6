@@ -7,7 +7,7 @@
 #include "log/log.hpp"
 #include <atomic>
 
-namespace dxmt {
+namespace mullion {
 
 class MTLCompiledGraphicsPipelineImpl
     : public MTLCompiledGraphicsPipeline {
@@ -28,20 +28,16 @@ public:
       unorm_output_reg_mask |= (uint32_t(IsUnorm8RenderTargetFormat(pDesc->ColorAttachmentFormats[i])) << i);
     }
 
-    if (pDesc->SOLayout) {
-      VertexShader =
-          pDesc->VertexShader->get_shader(ShaderVariantVertexStreamOutput{
-              pDesc->InputLayout, (uint64_t)pDesc->SOLayout});
-    } else {
-      VertexShader = pDesc->VertexShader->get_shader(ShaderVariantVertex{
-          pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled});
-    }
+    VertexShader = pDesc->VertexShader->get_shader(ShaderVariantVertex{
+        pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled, pDesc->ClipDistances != 0});
 
     if (pDesc->PixelShader) {
-      PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
+      PixelShader = pDesc->PixelShader->get_pixel_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
           depth_stencil_format == WMTPixelFormatInvalid,
-          unorm_output_reg_mask});
+          unorm_output_reg_mask, pDesc->PipelineStatistics, pDesc->BlendState->IsAlphaToCoverage(),
+          pDesc->CenteredSamples, pDesc->SingleRasterSample, pDesc->PairedSamples, pDesc->ClipDistances},
+          {rtv_formats, num_rtvs}, pDesc->BlendState);
       ps_valid_render_targets = pDesc->PixelShader->reflection().PSValidRenderTargets;
     } else {
       PixelShader = nullptr;
@@ -49,7 +45,14 @@ public:
     }
   }
 
-  void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline) final {
+  void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline, bool statistics) final {
+    if (statistics && description->PixelShader && !description->PipelineStatistics) {
+      auto desc = *description;
+      desc.PipelineStatistics = true;
+      MTLCompiledGraphicsPipeline *pipeline;
+      device_->CreateGraphicsPipeline(&desc, &pipeline);
+      return pipeline->GetPipeline(pPipeline);
+    }
     ready_.wait(false, std::memory_order_acquire);
     *pPipeline = {state_};
   }
@@ -93,6 +96,9 @@ public:
     if (pBlendState) {
       pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
     }
+    // explicit shader coverage disables A2C (D3D11.3 17.18)
+    if (description->PixelShader && description->PixelShader->reflection().PixelShader.HasCoverageOutput)
+      info.alpha_to_coverage_enabled = false;
 
     info.input_primitive_topology = topology_class;
     info.raster_sample_count = SampleCount;
@@ -107,7 +113,7 @@ public:
 
     if (state_ == nullptr) {
       if (warm_up_) {
-        /* a stale warm-up record; the game may never use this pipeline */
+        // a stale warm-up record; the game may never use this pipeline
         WARN("Failed to create warm-up PSO: ", err.description().getUTF8String());
         archive_->OnWarmUpFinished(false);
       } else {
@@ -117,8 +123,8 @@ public:
     }
 
     if (add_to_archive) {
-      /* The pipeline is usable now. Publish it before the archive copy, so
-         an encoder waiting in GetPipeline() does not wait for that copy. */
+      // the pipeline is usable now: publish it before the archive copy, so an encoder waiting in GetPipeline() does
+      // not wait for that copy
       SetIsDone(true);
       archive_->AddRenderPipeline(info);
     }
@@ -249,4 +255,4 @@ CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader,
   return std::make_unique<MTLCompiledComputePipelineImpl>(pDevice, ComputeShader, pArchive, WarmUp);
 }
 
-} // namespace dxmt
+} // namespace mullion

@@ -1,0 +1,14 @@
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -464,9 +464,8 @@
+         return FAIL(E_INVALIDARG);
+       auto *out = reinterpret_cast<D3D12_FEATURE_DATA_ROOT_SIGNATURE *>(pFeatureData);
+       /* the highest version both know: newer ones (1.2) come down to 1.1, as the runtime answers */
+-      if (out->HighestVersion < D3D_ROOT_SIGNATURE_VERSION_1 ||
+-          out->HighestVersion > sdk::D3D_ROOT_SIGNATURE_VERSION_1_2)
+-        return FAIL(E_INVALIDARG);
++      if (out->HighestVersion < D3D_ROOT_SIGNATURE_VERSION_1)
++        return E_INVALIDARG;
+       out->HighestVersion = std::min(out->HighestVersion, D3D_ROOT_SIGNATURE_VERSION_1_1);
+       return S_OK;
+     }

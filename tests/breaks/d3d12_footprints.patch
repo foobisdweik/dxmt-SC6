@@ -1,0 +1,12 @@
+# drops the caller base offset from copyable footprints
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1233,7 +1233,7 @@
+         auto RowSize = (Width / BlockWidth) * PlaneBytesPerTexel[Plane];
+         auto RowPitch = align(RowSize, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT * PlaneCount);
+         if (pLayouts) {
+-          pLayouts[i].Offset = BaseOffset + Offset;
++          pLayouts[i].Offset = Offset;
+           pLayouts[i].Footprint.Format = PlaneFormats[Plane];
+           pLayouts[i].Footprint.Width = Width;
+           pLayouts[i].Footprint.Height = Height;

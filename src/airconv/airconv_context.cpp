@@ -1,3 +1,6 @@
+#include <mutex>
+#include <cstdlib>
+#include <cstring>
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
@@ -27,15 +30,25 @@
 #include "airconv_context.hpp"
 
 #include "air_msad.h"
+#include "air_denorm.h"
 #include "air_samplepos.h"
 #include "air_tessellation.h"
 
+#include "transforms/guard_out_of_bounds.hpp"
 #include "transforms/lower_16bit_texread.hpp"
+#include "transforms/merge_sample_branches.hpp"
+#include "transforms/merge_minmax_branches.hpp"
 #include "transforms/simdgroup_implicit_membarrier.hpp"
+#include "transforms/hoist_loads.hpp"
+
+// dxbc_converter.hpp
+namespace mullion::dxbc {
+void FinishFeedbackLanes(llvm::Module &module);
+}
 
 using namespace llvm;
 
-namespace dxmt {
+namespace mullion {
 
 void initializeModule(llvm::Module &M) {
   M.setSourceFileName("airconv_generated.metal");
@@ -62,18 +75,24 @@ void initializeModule(llvm::Module &M) {
 
 };
 
-static std::atomic_flag llvm_overwrite = false;
+static std::once_flag llvm_overwrite;
 
-void
-runOptimizationPasses(llvm::Module &M) {
+bool
+runOptimizationPasses(llvm::Module &M, llvm::raw_ostream &Error) {
+  // a pixel shader that was not shaded coarsely keeps every lane's writes
+  mullion::dxbc::FinishFeedbackLanes(M);
+  // Metal says of ill-formed IR only "Failed to materializeAll"
+  if (verifyModule(M, &Error))
+    return false;
 
-  if (!llvm_overwrite.test_and_set()) {
+  // once, before any compilation on any thread runs InstCombine, which reads it
+  std::call_once(llvm_overwrite, [] {
     auto Map = cl::getRegisteredOptions();
     auto InfiniteLoopThreshold = Map["instcombine-infinite-loop-threshold"];
     if (InfiniteLoopThreshold) {
       reinterpret_cast<cl::opt<unsigned> *>(InfiniteLoopThreshold)->setValue(1000);
     }
-  }
+  });
 
   // Following optimization passes are picked from default LLVM pipelines
   // An unoptimized shader can make PSO compilation take a very long time
@@ -139,20 +158,46 @@ runOptimizationPasses(llvm::Module &M) {
     // Create a small function pass pipeline to cleanup after all the global
     // optimizations.
     FunctionPassManager GlobalCleanupPM;
+    // MULLION_AIRCONV_SKIP=sample-branch-merge leaves a branch per sample (SampleImplicit)
+    if (auto skip = (getenv("MULLION_AIRCONV_SKIP") ?: getenv("DXMT_AIRCONV_SKIP")); !skip || !strstr(skip, "sample-branch-merge"))
+      GlobalCleanupPM.addPass(air::MergeSampleBranchesPass());
+    else
+      GlobalCleanupPM.addPass(air::MergeSampleBranchesPass(false));
+    // MULLION_AIRCONV_SKIP=minmax-branch-merge leaves a minimum and maximum filter branch per sample (MinMaxFilter)
+    {
+      auto skip = getenv("MULLION_AIRCONV_SKIP") ?: getenv("DXMT_AIRCONV_SKIP");
+      GlobalCleanupPM.addPass(air::MergeMinMaxBranchesPass(!skip || !strstr(skip, "minmax-branch-merge")));
+    }
     GlobalCleanupPM.addPass(InstCombinePass());
 
     GlobalCleanupPM.addPass(SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
 
     GlobalCleanupPM.addPass(air::Lower16BitTexReadPass());
-    GlobalCleanupPM.addPass(air::SimdgroupImplicitMemBarrierPass());
+    // MULLION_AIRCONV_SKIP names what the converter leaves out, to find the one a shader goes wrong with
+    auto skip = getenv("MULLION_AIRCONV_SKIP") ?: getenv("DXMT_AIRCONV_SKIP");
+    if (!skip || !strstr(skip, "simdgroup-barrier"))
+      GlobalCleanupPM.addPass(air::SimdgroupImplicitMemBarrierPass());
+    GlobalCleanupPM.addPass(air::GuardOutOfBoundsPass());
+    // loads move ahead of what uses them, at most 32 registers of values ahead (MULLION_AIRCONV_HOIST_LOADS, which
+    // the shader cache's key has, for another window): more, and Metal's compiler spills them
+    if (!skip || !strstr(skip, "hoist-loads")) {
+      auto window = getenv("MULLION_AIRCONV_HOIST_LOADS");
+      GlobalCleanupPM.addPass(air::HoistLoadsPass(window ? atoi(window) : 32));
+    }
 
     MPM.addPass(createModuleToFunctionPassAdaptor(std::move(GlobalCleanupPM), true /* ? */));
   }
+
+  if (auto temp = getenv("DXMT_TEMP_O2"))
+    MPM.addPass(createModuleToFunctionPassAdaptor(PB.buildFunctionSimplificationPipeline(
+        temp[0] == '3' ? OptimizationLevel::O3 : OptimizationLevel::O2, ThinOrFullLTOPhase::None
+    )));
 
   // MPM.addPass(VerifierPass());
 
   // Optimize the IR!
   MPM.run(M, MAM);
+  return true;
 }
 
 void
@@ -191,6 +236,11 @@ linkMSAD(llvm::Module &M) {
 }
 
 void
+linkDenorm(llvm::Module &M) {
+  linkShader(M, air_denorm);
+}
+
+void
 linkSamplePos(llvm::Module &M) {
   linkShader(M, air_samplepos);
 }
@@ -200,4 +250,4 @@ linkTessellation(llvm::Module &M) {
   linkShader(M, air_tessellation);
 }
 
-} // namespace dxmt
+} // namespace mullion

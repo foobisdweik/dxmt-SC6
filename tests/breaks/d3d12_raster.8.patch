@@ -1,0 +1,12 @@
+# a conservative triangle's 1/w is not divided by its weights' sum
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -304,7 +304,7 @@
+       out.linear[u][j] = builder.CreateSelect(degenerate, first, linear[j]);
+     }
+     out.sum[u] = builder.CreateSelect(degenerate, f(1), sum);
+-    out.rcp_w[u] = builder.CreateSelect(degenerate, f(1), div(rcp_w, sum));
++    out.rcp_w[u] = builder.CreateSelect(degenerate, f(1), rcp_w);
+     pvalue position = llvm::UndefValue::get(types._float4);
+     position = builder.CreateInsertElement(position, x, uint64_t(0));
+     position = builder.CreateInsertElement(position, y, uint64_t(1));

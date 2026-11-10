@@ -1,0 +1,12 @@
+# D3D11 front end never asks for quadrilateral lines.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5579,7 +5579,7 @@
+     Desc.PassThrough =
+         !so_raster_pass_ && (PassesPrimitivesThrough() || (IndexedDraw && !state_.InputAssembler.IndexBuffer));
+     Desc.InputPrimitive = !GS && (Desc.SOLayout || Desc.PassThrough) ? to_input_primitive(state_.InputAssembler.Topology) : 0;
+-    Desc.QuadLines = !GS && Desc.PassThrough && QuadLines();
++    Desc.QuadLines = false;
+     if (std::exchange(quad_lines_, Desc.QuadLines) != Desc.QuadLines)
+       dirty_state.set(DirtyState::RasterizerState);
+     if (unlikely(Desc.GSPassthrough == ~0u && (Desc.GeometryShader != nullptr || Desc.SOLayout || Desc.PassThrough))) {

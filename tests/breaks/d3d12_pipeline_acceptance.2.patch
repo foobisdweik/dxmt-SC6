@@ -1,0 +1,11 @@
+# leaves an unsupported sample count to Metal, after its shaders are compiled
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -820,7 +820,4 @@
+     // a description left at zero has one sample (Unreal Engine 5's pipelines; vkd3d-proton draws them so)
+     info.raster_sample_count = std::max(pDesc->SampleDesc.Count, 1u);
+-    // refused before its shaders are compiled for a pipeline Metal would refuse
+-    if (!device_->GetMTLDevice().supportsTextureSampleCount(info.raster_sample_count))
+-      return FAIL(E_INVALIDARG);
+     // Metal refuses a mesh pipeline that asks for indirect command buffers on GPUs before Apple9, where mesh draws
+     // never go in them (d3d12_command_allocator.cpp)

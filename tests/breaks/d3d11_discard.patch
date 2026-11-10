@@ -1,0 +1,11 @@
+# clears bindings when discarding a resource.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1312,6 +1312,7 @@
+   void
+   STDMETHODCALLTYPE
+   DiscardResource(ID3D11Resource *pResource) override {
++    ClearState();
+     /*
+     All the Discard* API is not implemented and that's probably fine (as it's
+     more like a hint of optimization, and Metal manages resources on its own)

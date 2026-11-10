@@ -26,9 +26,14 @@
 #include <variant>
 #include "packed_variant_list.hpp"
 
-#define DXASSERT_DXBC(x) assert(x);
+// what a shader's tokens must be: one that is not refuses the shader (Refuse)
+#define DXASSERT_DXBC(x)                                                                                               \
+  do {                                                                                                                 \
+    if (!(x))                                                                                                          \
+      Refuse("malformed tokens: " #x);                                                                                 \
+  } while (0)
 
-namespace dxmt::dxbc {
+namespace mullion::dxbc {
 
 struct Swizzle {
   union {
@@ -80,15 +85,16 @@ struct IndexByTempComponent {
   uint32_t offset;
 };
 
-struct IndexByControlPointId {
-  uint32_t offset;
-};
-
 struct IndexByIndexableTempComponent {
   uint32_t regfile;
   uint32_t regid;
   uint32_t phase;
   uint8_t component;
+  uint32_t offset;
+};
+
+// a hull shader indexes its input patch by the control point it runs for (upstream DXMT ce001df)
+struct IndexByControlPointId {
   uint32_t offset;
 };
 
@@ -142,6 +148,8 @@ struct SrcOperandInput {
   uint32_t regid;
 };
 
+// a vertex's or control point's register: either index may be computed, the register's within a declared range
+// (dcl_indexrange) for an array the shader indexes
 struct SrcOperandInputOCP {
   static constexpr std::string_view debug_name = "input_vocp";
   SrcOperandCommon _;
@@ -449,6 +457,7 @@ struct InstLoad {
   SrcOperandResource src_resource;
   std::optional<SrcOperand> src_sample_index;
   int32_t offsets[3];
+  std::optional<DstOperand> feedback;
 };
 
 struct InstLoadRaw {
@@ -457,6 +466,7 @@ struct InstLoadRaw {
   std::variant<SrcOperandResource, SrcOperandUAV, SrcOperandTGSM> src;
   // then we can load 4 components at once
   bool opt_flag_offset_is_vec4_aligned = false;
+  std::optional<DstOperand> feedback;
 };
 
 struct InstLoadStructured {
@@ -466,12 +476,14 @@ struct InstLoadStructured {
   std::variant<SrcOperandResource, SrcOperandUAV, SrcOperandTGSM> src;
   // 2nd condition: stride is also vec4 aligned
   bool opt_flag_offset_is_vec4_aligned = false;
+  std::optional<DstOperand> feedback;
 };
 
 struct InstLoadUAVTyped {
   DstOperand dst;
   SrcOperand src_address;
   SrcOperandUAV src_uav;
+  std::optional<DstOperand> feedback;
 };
 
 struct InstStoreUAVTyped {
@@ -760,9 +772,14 @@ struct InstInterpolateOffset {
   Swizzle read_swizzle;
 };
 
-struct InstEmit {};
+// a geometry shader's emit and cut, on a stream
+struct InstEmit {
+  uint32_t stream = 0;
+};
 
-struct InstCut {};
+struct InstCut {
+  uint32_t stream = 0;
+};
 
 using InstructionList = PackedVariantList<
   /* Generic */
@@ -792,6 +809,14 @@ using InstructionList = PackedVariantList<
 
 using Instruction = InstructionList::variant;
 
+// a shader whose tokens the converter cannot take (a garbled container let past its hash, or what it does not handle
+// yet), by the first reason on the thread reading it. reading goes on with stand-ins and SM50Initialize refuses the
+// shader after it: an assertion would end the process, and a release build would go on with undefined values
+void Refuse(const char *reason);
+// the first reason since ResetRefused, or null
+const char *Refused();
+void ResetRefused();
+
 #pragma region basicblock
 
 class BasicBlock;
@@ -809,6 +834,11 @@ struct BasicBlockConditionalBranch {
 
 struct BasicBlockUnconditionalBranch {
   BasicBlock *target;
+};
+
+struct BasicBlockHullShaderWriteOutput {
+  uint32_t instance_count;
+  BasicBlock *epilogue;
 };
 
 struct BasicBlockSwitch {
@@ -832,10 +862,20 @@ struct BasicBlockCall {
   BasicBlock *return_point;
 };
 
+class SM50ShaderInternal;
+
+/* runs a function of the shader's DXIL module (a stage's entry, or a hull shader's patch-constant function), then
+   continues at next */
+struct BasicBlockDXIL {
+  SM50ShaderInternal *shader;
+  std::string function;
+  BasicBlock *next;
+};
+
 using BasicBlockTarget = std::variant<
   BasicBlockConditionalBranch, BasicBlockUnconditionalBranch, BasicBlockSwitch,
-  BasicBlockReturn, BasicBlockInstanceBarrier,
-  BasicBlockCall, BasicBlockUndefined>;
+  BasicBlockReturn, BasicBlockInstanceBarrier, BasicBlockHullShaderWriteOutput,
+  BasicBlockCall, BasicBlockDXIL, BasicBlockUndefined>;
 
 class BasicBlock {
 public:
@@ -856,4 +896,4 @@ BasicBlockCondition readCondition(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx,
   uint32_t phase
 );
-} // namespace dxmt::dxbc
+} // namespace mullion::dxbc

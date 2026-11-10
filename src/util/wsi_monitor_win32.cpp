@@ -19,7 +19,7 @@
 #include <ntddvdeo.h>
 #include <cfgmgr32.h>
 
-namespace dxmt::wsi {
+namespace mullion::wsi {
 
 HMONITOR getDefaultMonitor() {
   return ::MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
@@ -123,4 +123,4 @@ bool getDesktopDisplayMode(HMONITOR hMonitor, WsiMode *pMode) {
   return retrieveDisplayMode(hMonitor, ENUM_REGISTRY_SETTINGS, pMode);
 }
 
-} // namespace dxmt::wsi
+} // namespace mullion::wsi

@@ -1,14 +1,9 @@
 name: CI Build
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-    - main
-    tags:
-    - 'v*'
-  pull_request:
-    branches:
-    - main
+    tags: ['v*']
 
 permissions:
   contents: write
@@ -28,7 +23,7 @@ env:
 
 jobs:
   setup-wine:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Cache Wine
         id: cache-wine
@@ -57,7 +52,7 @@ jobs:
           path: ./toolchains/wine
 
   setup-wine-arm64ec:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Cache Wine (ARM64EC)
         id: cache-wine-arm64ec
@@ -86,7 +81,7 @@ jobs:
           path: ./toolchains/wine
 
   setup-llvm-mingw:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Cache LLVM-MinGW
         id: cache-llvm-mingw
@@ -114,7 +109,7 @@ jobs:
           path: ./toolchains/${{ env.LLVM_MINGW_DIR }}
 
   setup-llvm-project:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Cache LLVM Project
         id: cache-llvm-project
@@ -139,7 +134,7 @@ jobs:
           path: ./toolchains/llvm-project
 
   setup-llvm-darwin:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: setup-llvm-project
     steps:
       - name: Cache LLVM Darwin Build
@@ -170,12 +165,10 @@ jobs:
             -DLLVM_ENABLE_ASSERTIONS=On \
             -DLLVM_ENABLE_ZSTD=Off \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_FLAGS="-D_LIBCPP_KEEP_TRANSITIVE_INCLUDES_LLVM23" \
             -DLLVM_TARGETS_TO_BUILD="" \
             -DLLVM_BUILD_TOOLS=Off \
-            -DLLVM_INCLUDE_BENCHMARKS=Off \
-            -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
-            -DPACKAGE_VENDOR="DXMT" \
+            -DBUG_REPORT_URL="https://github.com/dttdrv/mullion" \
+            -DPACKAGE_VENDOR="Mullion" \
             -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
             -G Ninja
           cmake --build ./toolchains/llvm-darwin-build
@@ -189,7 +182,7 @@ jobs:
           path: ./toolchains/llvm-darwin
 
   setup-llvm-win:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [setup-llvm-project, setup-llvm-mingw]
     steps:
       - name: Cache LLVM Windows Build
@@ -226,14 +219,12 @@ jobs:
             -DLLVM_ENABLE_ASSERTIONS=On \
             -DLLVM_ENABLE_ZSTD=Off \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_FLAGS="-D_LIBCPP_KEEP_TRANSITIVE_INCLUDES_LLVM23" \
             -DLLVM_TARGETS_TO_BUILD="" \
             -DLLVM_BUILD_TOOLS=Off \
-            -DLLVM_INCLUDE_BENCHMARKS=Off \
             -DCMAKE_SYSROOT="$(pwd)/toolchains/${{ env.LLVM_MINGW_DIR }}" \
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-            -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
-            -DPACKAGE_VENDOR="DXMT" \
+            -DBUG_REPORT_URL="https://github.com/dttdrv/mullion" \
+            -DPACKAGE_VENDOR="Mullion" \
             -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
             -G Ninja
           cmake --build ./toolchains/llvm-build
@@ -247,7 +238,7 @@ jobs:
           path: ./toolchains/llvm
 
   setup-llvm-darwin-arm64:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: setup-llvm-project
     steps:
       - name: Cache LLVM Darwin Build (ARM64)
@@ -278,12 +269,10 @@ jobs:
             -DLLVM_ENABLE_ASSERTIONS=On \
             -DLLVM_ENABLE_ZSTD=Off \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_FLAGS="-D_LIBCPP_KEEP_TRANSITIVE_INCLUDES_LLVM23" \
             -DLLVM_TARGETS_TO_BUILD="" \
             -DLLVM_BUILD_TOOLS=Off \
-            -DLLVM_INCLUDE_BENCHMARKS=Off \
-            -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
-            -DPACKAGE_VENDOR="DXMT" \
+            -DBUG_REPORT_URL="https://github.com/dttdrv/mullion" \
+            -DPACKAGE_VENDOR="Mullion" \
             -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
             -G Ninja
           cmake --build ./toolchains/llvm-darwin-arm64-build
@@ -297,7 +286,7 @@ jobs:
           path: ./toolchains/llvm-darwin-arm64
 
   build-gcc-release-x86_64-windows-cross:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [setup-wine, setup-llvm-darwin]
     steps:
       - name: Checkout
@@ -323,7 +312,7 @@ jobs:
           path: ./toolchains/llvm-darwin
 
       - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+        run: .github/select-xcode.sh
 
       - name: Install Meson
         run: pip3 install meson==1.10.0 --break-system-packages
@@ -341,7 +330,7 @@ jobs:
           path: install
 
   build-gcc-release-x86-windows-cross:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [setup-wine]
     steps:
       - name: Checkout
@@ -361,7 +350,7 @@ jobs:
           tools: mingw-w64
 
       - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+        run: .github/select-xcode.sh
 
       - name: Install Meson
         run: pip3 install meson==1.10.0 --break-system-packages
@@ -379,7 +368,7 @@ jobs:
           path: install
 
   build-clang-debugoptimized-x86_64-windows-cross:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [setup-wine, setup-llvm-mingw, setup-llvm-darwin, setup-llvm-win]
     steps:
       - name: Checkout
@@ -412,7 +401,7 @@ jobs:
           path: ./toolchains/llvm
 
       - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+        run: .github/select-xcode.sh
 
       - name: Install Meson
         run: pip3 install meson==1.10.0 --break-system-packages
@@ -431,7 +420,7 @@ jobs:
           path: install
 
   build-clang-release-x86_64-windows-cross:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [setup-wine, setup-llvm-mingw, setup-llvm-darwin]
     steps:
       - name: Checkout
@@ -458,7 +447,7 @@ jobs:
           path: ./toolchains/llvm-darwin
 
       - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+        run: .github/select-xcode.sh
 
       - name: Install Meson
         run: pip3 install meson==1.10.0 --break-system-packages
@@ -476,8 +465,87 @@ jobs:
           name: clang-release-x86_64-windows-cross
           path: install
 
+  # Mullion's tests. the host's run here. the ones that draw need an Apple GPU, which these runners do not have: they
+  # run on a self-hosted Mac, once the repository's variables name its Wine (MULLION_WINE, an installation with
+  # bin/wine), its LLVM 15 (MULLION_LLVM) and a prefix with the shader compilers (MULLION_PREFIX)
+  test-host:
+    runs-on: macos-26
+    needs: [setup-wine, setup-llvm-mingw, setup-llvm-darwin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Restore Wine Cache
+        uses: actions/cache/restore@v5
+        with:
+          key: wine-x86_64-${{ env.WINE_VERSION }}-macos
+          path: ./toolchains/wine
+
+      - name: Restore LLVM-MinGW Cache
+        uses: actions/cache/restore@v5
+        with:
+          key: llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-macos
+          path: ./toolchains/${{ env.LLVM_MINGW_DIR }}
+
+      - name: Restore LLVM Darwin Cache
+        uses: actions/cache/restore@v5
+        with:
+          key: llvm-darwin-${{ env.LLVM_VERSION }}-x86_64-macos
+          path: ./toolchains/llvm-darwin
+
+      - name: Select Xcode Version
+        run: .github/select-xcode.sh
+
+      - name: Install Meson
+        run: pip3 install meson==1.10.0 --break-system-packages
+
+      - name: Build with tests
+        run: |
+          export PATH="$PATH:$GITHUB_WORKSPACE/toolchains/${{ env.LLVM_MINGW_DIR }}/bin"
+          meson setup --cross-file build-win64.txt -Denable_tests=true -Db_ndebug=false -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build --buildtype release
+          meson compile -C build
+
+      - name: Host tests
+        run: meson test -C build host_tessellator host_mutate --print-errorlogs
+
+  test-gpu:
+    if: vars.MULLION_WINE != ''
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Build with tests
+        run: |
+          meson setup --cross-file build-win64.txt -Denable_tests=true -Db_ndebug=false -Dnative_llvm_path="${{ vars.MULLION_LLVM }}" -Dwine_install_path="${{ vars.MULLION_WINE }}" build --buildtype release
+          meson compile -C build
+
+      # as the GPU itself and as an M3's, the families the preview supports, under Metal's validation
+      - name: Tests
+        env:
+          MULLION_TEST_LOCK: ${{ runner.temp }}/mullion-gpu.lock
+        run: python3 tests/run.py --build build --wine "${{ vars.MULLION_WINE }}" --prefix "${{ vars.MULLION_PREFIX }}" --family native,9 --validate
+
+      - name: Benchmarks
+        env:
+          MULLION_TEST_LOCK: ${{ runner.temp }}/mullion-gpu.lock
+        run: python3 tests/run.py --build build --wine "${{ vars.MULLION_WINE }}" --prefix "${{ vars.MULLION_PREFIX }}" --family native --benchmark
+
+      - name: Test evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gpu-tests
+          path: |
+            build/meson-logs/tests
+            build/meson-logs/benchmarks
+
   build-clang-release-x86-windows-cross:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [setup-wine, setup-llvm-mingw]
     steps:
       - name: Checkout
@@ -498,7 +566,7 @@ jobs:
           path: ./toolchains/${{ env.LLVM_MINGW_DIR }}
 
       - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+        run: .github/select-xcode.sh
 
       - name: Install Meson
         run: pip3 install meson==1.10.0 --break-system-packages
@@ -517,7 +585,7 @@ jobs:
           path: install
 
   build-clang-debugoptimized-arm64ec-windows-cross:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [setup-wine-arm64ec, setup-llvm-mingw, setup-llvm-darwin-arm64]
     steps:
       - name: Checkout
@@ -544,7 +612,7 @@ jobs:
           path: ./toolchains/llvm-darwin-arm64
 
       - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+        run: .github/select-xcode.sh
 
       - name: Install Meson
         run: pip3 install meson==1.10.0 --break-system-packages
@@ -552,7 +620,7 @@ jobs:
       - name: Build
         run: |
           export PATH="$PATH:$GITHUB_WORKSPACE/toolchains/${{ env.LLVM_MINGW_DIR }}/bin"
-          meson setup --cross-file build-arm64ec.txt -Dnative_llvm_path=toolchains/llvm-darwin-arm64 -Dwine_install_path=toolchains/wine build --buildtype debugoptimized --prefix $(pwd)/install
+          meson setup --cross-file build-arm64ec.txt -Denable_tests=true -Dnative_llvm_path=toolchains/llvm-darwin-arm64 -Dwine_install_path=toolchains/wine build --buildtype debugoptimized --prefix $(pwd)/install
           meson compile -C build
           meson install -C build
 
@@ -563,7 +631,7 @@ jobs:
           path: install
 
   build-clang-release-arm64ec-windows-cross:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: [setup-wine-arm64ec, setup-llvm-mingw, setup-llvm-darwin-arm64]
     steps:
       - name: Checkout
@@ -590,7 +658,7 @@ jobs:
           path: ./toolchains/llvm-darwin-arm64
 
       - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+        run: .github/select-xcode.sh
 
       - name: Install Meson
         run: pip3 install meson==1.10.0 --break-system-packages
@@ -609,7 +677,7 @@ jobs:
           path: install
 
   build-clang-release-arm64-macos:
-    runs-on: macos-15
+    runs-on: macos-26
     needs: setup-llvm-darwin-arm64
     steps:
       - name: Checkout
@@ -624,7 +692,7 @@ jobs:
           path: ./toolchains/llvm-darwin-arm64
 
       - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+        run: .github/select-xcode.sh
 
       - name: Install Meson
         run: pip3 install meson==1.10.0 --break-system-packages
@@ -641,41 +709,86 @@ jobs:
           name: clang-release-arm64-macos
           path: install
 
+  # the release archive: x86_64 for Wine and CrossOver on Rosetta, and ARM64X for arm64 Wine, whose x86_64 programs load
+  # it as ARM64EC. a v tag makes a draft release with it, for its notes to be written
   package:
-    runs-on: macos-15
-    needs: [build-gcc-release-x86_64-windows-cross, build-gcc-release-x86-windows-cross, build-clang-release-arm64ec-windows-cross]
+    runs-on: macos-26
+    needs: [build-gcc-release-x86_64-windows-cross, build-clang-release-arm64ec-windows-cross]
     env:
       PACKAGE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Download Win64 Artifact
         uses: actions/download-artifact@v8
         with:
           name: gcc-release-x86_64-windows-cross
           path: ./combined/${{ env.PACKAGE_TAG }}
 
-      - name: Download Win32 Artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: gcc-release-x86-windows-cross
-          path: ./combined/${{ env.PACKAGE_TAG }}
-
-      - name: Download ARM64EC Artifact
+      - name: Download ARM64X Artifact
         uses: actions/download-artifact@v8
         with:
           name: clang-release-arm64ec-windows-cross
           path: ./combined/${{ env.PACKAGE_TAG }}
 
+      - name: Check ARM64X
+        run: python3 .github/check-arm64x.py ./combined/${{ env.PACKAGE_TAG }}/aarch64-windows/*.dll
+
+      # NGX loads only a core whose signature chains to a trusted root: nvngx.dll is signed with Mullion's NGX key
+      # (src/nvngx/signing), whose certificate DXGI trusts in the prefix with MULLION_ENABLE_NVEXT=1. Without the
+      # MULLION_NGX_SIGNING_KEY secret (a fork's run) the archive has it unsigned, which NGX refuses
+      - name: Sign NGX
+        env:
+          MULLION_NGX_SIGNING_KEY: ${{ secrets.MULLION_NGX_SIGNING_KEY }}
+        run: |
+          if [ -z "$MULLION_NGX_SIGNING_KEY" ]; then
+            echo "::warning::MULLION_NGX_SIGNING_KEY is not set: nvngx.dll stays unsigned, and NGX will not load it"
+            exit 0
+          fi
+          brew install osslsigncode
+          key=$(mktemp)
+          printf '%s\n' "$MULLION_NGX_SIGNING_KEY" > "$key"
+          for dll in ./combined/${{ env.PACKAGE_TAG }}/*-windows/nvngx.dll; do
+            osslsigncode sign -certs src/nvngx/signing/mullion-ngx.pem -key "$key" -n "Mullion NGX" -h sha256 \
+              -in "$dll" -out "$dll.signed"
+            mv "$dll.signed" "$dll"
+            osslsigncode verify -CAfile src/nvngx/signing/mullion-ngx.pem -in "$dll"
+          done
+          rm -f "$key"
+
+      - name: Add Installer and Licences
+        run: |
+          dir=./combined/${{ env.PACKAGE_TAG }}
+          cp install.sh README.md LICENSE "$dir/"
+          cp -R docs/licenses "$dir/licenses"
+          # airconv links LLVM in
+          curl -fsSL "https://raw.githubusercontent.com/llvm/llvm-project/${{ env.LLVM_VERSION }}/llvm/LICENSE.TXT" \
+            > "$dir/LICENSE-LLVM.txt"
+
       - name: Create Tarball
-        run: tar -czf dxmt-${{ env.PACKAGE_TAG }}.tar.gz -C ./combined --exclude='*.a' ${{ env.PACKAGE_TAG }}
+        run: tar -czf mullion-${{ env.PACKAGE_TAG }}.tar.gz -C ./combined --exclude='*.a' ${{ env.PACKAGE_TAG }}
 
       - name: Generate Artifact Attestation
         uses: actions/attest-build-provenance@v1
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          subject-path: dxmt-${{ env.PACKAGE_TAG }}.tar.gz
+          subject-path: mullion-${{ env.PACKAGE_TAG }}.tar.gz
 
       - name: Upload Combined Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: dxmt-${{ env.PACKAGE_TAG }}
-          path: dxmt-${{ env.PACKAGE_TAG }}.tar.gz
+          name: mullion-${{ env.PACKAGE_TAG }}
+          path: mullion-${{ env.PACKAGE_TAG }}.tar.gz
+
+      - name: Draft Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$PACKAGE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$PACKAGE_TAG" "mullion-$PACKAGE_TAG.tar.gz" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$PACKAGE_TAG" "mullion-$PACKAGE_TAG.tar.gz" --repo "$GITHUB_REPOSITORY" --draft \
+              --prerelease --title "Mullion $PACKAGE_TAG" --notes ""
+          fi

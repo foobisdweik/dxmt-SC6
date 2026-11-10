@@ -1,0 +1,10 @@
+# the maximum legal flip-buffer count is rejected
+--- a/src/d3d12/d3d12_swapchain.cpp
++++ b/src/d3d12/d3d12_swapchain.cpp
+@@ -507,5 +507,5 @@
+       desc.BufferCount = BufferCount;
+     if (!IsFlipSwapChainFormat(desc.Format))
+       return DXGI_ERROR_INVALID_CALL;
+-    if (desc.BufferCount > DXGI_MAX_SWAP_CHAIN_BUFFERS)
++    if (desc.BufferCount >= DXGI_MAX_SWAP_CHAIN_BUFFERS)
+       return E_INVALIDARG;

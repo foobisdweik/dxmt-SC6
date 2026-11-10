@@ -1,0 +1,12 @@
+# a new waitable swap chain has no initial frame credit
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -139,7 +139,7 @@
+                                  scale_factor, desc_.SampleDesc.Count, hWnd));
+ 
+     frame_latency = kSwapchainLatency;
+-    present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
++    present_semaphore_ = CreateSemaphore(nullptr, 0,
+                                          DXGI_MAX_SWAP_CHAIN_BUFFERS, nullptr);
+ 
+     // without this flag, there is still a DXGIDevice level of frame latency control

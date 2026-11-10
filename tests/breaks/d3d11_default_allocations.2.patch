@@ -1,0 +1,12 @@
+# resource buffer creations are absent from the profile
+--- a/src/mullion/mullion_buffer.cpp
++++ b/src/mullion/mullion_buffer.cpp
+@@ -48,7 +48,7 @@
+     info_.memory.set(placed_buffer);
+   }
+   obj_ = device.newBuffer(info_);
+-  if (diag::profile && obj_)
++  if (false && diag::profile && obj_)
+     diag::Write(diag::Line("buffer", diag::Now(), obj_.handle, info_.length));
+   gpuAddress_ = info_.gpu_address;
+   mappedMemory_ = info_.memory.get_accessible_or_null();

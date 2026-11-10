@@ -11,7 +11,7 @@
 #include "sha1.h"
 #include "sha1_util.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 std::string
 Sha1Digest::string() const {
@@ -45,4 +45,4 @@ Sha1HashState::final() {
   return digest;
 }
 
-} // namespace dxmt
+} // namespace mullion

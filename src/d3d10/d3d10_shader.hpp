@@ -2,7 +2,7 @@
 
 #include "d3d10_util.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D10VertexShader final : public ID3D10VertexShader {
 
@@ -139,4 +139,4 @@ public:
   }
 };
 
-} // namespace dxmt
+} // namespace mullion

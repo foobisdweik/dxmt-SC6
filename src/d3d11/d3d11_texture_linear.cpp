@@ -1,13 +1,13 @@
 #include "d3d11_private.h"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
-#include "dxmt_dynamic.hpp"
-#include "dxmt_format.hpp"
-#include "dxmt_staging.hpp"
-#include "dxmt_texture.hpp"
+#include "mullion_dynamic.hpp"
+#include "mullion_format.hpp"
+#include "mullion_staging.hpp"
+#include "mullion_texture.hpp"
 #include "d3d11_resource.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 #pragma region DynamicLinearTexture
 
@@ -60,15 +60,11 @@ TDynamicLinearTexture(
     D3D11_ASSERT(_.ptr() == nullptr);
 
     if (pInitialData) {
-      if (pInitialData->SysMemPitch != bytes_per_row_) {
-        for (unsigned row = 0; row < this->texture_->height(); row++) {
-          memcpy(
-              ptr_add(allocation->mappedMemory, row * bytes_per_row_),
-              ptr_add(pInitialData->pSysMem, row * pInitialData->SysMemPitch),
-              pInitialData->SysMemPitch);
-        }
-      } else {
-        memcpy(allocation->mappedMemory, pInitialData->pSysMem, bytes_per_image);
+      const UINT row_bytes = this->texture_->width() * MTLGetTexelSize(descriptor.pixel_format);
+      for (unsigned row = 0; row < this->texture_->height(); row++) {
+        memcpy(
+            ptr_add(allocation->mappedMemory, row * bytes_per_row_),
+            ptr_add(pInitialData->pSysMem, row * pInitialData->SysMemPitch), row_bytes);
       }
     }
     dynamic_ = new DynamicLinearTexture(this->texture_.ptr(), flags);
@@ -85,49 +81,23 @@ TDynamicLinearTexture(
   HRESULT
   STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView) override;
-
-  HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) override {
-    if (Index)
-      return E_INVALIDARG;
-    auto surface = Com(new D3D11DXGISurface(this, Index));
-    *ppSurface = surface.ref();
-    return S_OK;
-  }
 };
 
 template<>
 HRESULT STDMETHODCALLTYPE TDynamicLinearTexture<tag_texture_2d>::CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView){
   D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
-  if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc, &finalDesc))) {
+  if (FAILED(ExtractEntireResourceViewDescription(this->m_parent, &this->desc, pDesc, &finalDesc, this->dxgi_usage_))) {
     return E_INVALIDARG;
   }
-  if (finalDesc.ViewDimension != D3D10_SRV_DIMENSION_TEXTURE2D) {
-    ERR("Only 2d texture SRV can be created on dynamic texture");
-    return E_FAIL;
-  }
-  if (~finalDesc.Texture2D.MipLevels == 0)
-    finalDesc.Texture2D.MipLevels = this->desc.MipLevels - finalDesc.Texture2D.MostDetailedMip;
-  if (finalDesc.Texture2D.MostDetailedMip != 0 || finalDesc.Texture2D.MipLevels != 1) {
-    ERR("2d texture SRV must be non-mipmapped on dynamic texture");
-    return E_FAIL;
-  }
+  TextureViewDescriptor descriptor;
+  auto hr = InitializeAndNormalizeViewDescriptor(this->m_parent, this->desc.MipLevels, this->desc.ArraySize,
+                                                this->texture_.ptr(), finalDesc, descriptor);
+  if (FAILED(hr))
+    return hr;
   if (!ppView) {
     return S_FALSE;
   }
-  MTL_DXGI_FORMAT_DESC format;
-  if (FAILED(MTLQueryDXGIFormat(this->m_parent->GetMTLDevice(), finalDesc.Format, format))) {
-    return E_FAIL;
-  }
-
-  auto srv = ref(new SRV(
-      &finalDesc, this, this->m_parent,
-      {.format = format.PixelFormat,
-       .type = WMTTextureType2D,
-       .firstMiplevel = 0,
-       .miplevelCount = 1,
-       .firstArraySlice = 0,
-       .arraySize = 1}
-  ));
+  auto srv = ref(new SRV(&finalDesc, this, this->m_parent, descriptor));
 
   *ppView = srv;
   return S_OK;
@@ -136,36 +106,18 @@ HRESULT STDMETHODCALLTYPE TDynamicLinearTexture<tag_texture_2d>::CreateShaderRes
 template<>
 HRESULT STDMETHODCALLTYPE TDynamicLinearTexture<tag_texture_1d>::CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView){
   D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
-  if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc, &finalDesc))) {
+  if (FAILED(ExtractEntireResourceViewDescription(this->m_parent, &this->desc, pDesc, &finalDesc, this->dxgi_usage_))) {
     return E_INVALIDARG;
   }
-  if (finalDesc.ViewDimension != D3D10_SRV_DIMENSION_TEXTURE1D) {
-    ERR("Only 1d texture SRV can be created on dynamic texture");
-    return E_FAIL;
-  }
-  if (~finalDesc.Texture1D.MipLevels == 0)
-    finalDesc.Texture1D.MipLevels = this->desc.MipLevels - finalDesc.Texture1D.MostDetailedMip;
-  if (finalDesc.Texture1D.MostDetailedMip != 0 || finalDesc.Texture1D.MipLevels != 1) {
-    ERR("1d texture SRV must be non-mipmapped on dynamic texture");
-    return E_FAIL;
-  }
+  TextureViewDescriptor descriptor;
+  auto hr = InitializeAndNormalizeViewDescriptor(this->m_parent, this->desc.MipLevels, this->desc.ArraySize,
+                                                this->texture_.ptr(), finalDesc, descriptor);
+  if (FAILED(hr))
+    return hr;
   if (!ppView) {
     return S_FALSE;
   }
-  MTL_DXGI_FORMAT_DESC format;
-  if (FAILED(MTLQueryDXGIFormat(this->m_parent->GetMTLDevice(), finalDesc.Format, format))) {
-    return E_FAIL;
-  }
-
-  auto srv = ref(new SRV(
-      &finalDesc, this, this->m_parent,
-      {.format = format.PixelFormat,
-       .type = WMTTextureType2D, // since all 1d texture is implemented as 1-row 2d texture
-       .firstMiplevel = 0,
-       .miplevelCount = 1,
-       .firstArraySlice = 0,
-       .arraySize = 1}
-  ));
+  auto srv = ref(new SRV(&finalDesc, this, this->m_parent, descriptor));
 
   *ppView = srv;
   return S_OK;
@@ -186,7 +138,7 @@ CreateDynamicLinearTexture2D(
     return E_FAIL;
   MTL_DXGI_FORMAT_DESC format;
   MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
-  if (format.Flag & MTL_DXGI_FORMAT_BC) {
+  if (format.Flag & (MTL_DXGI_FORMAT_BC | MTL_DXGI_FORMAT_VIDEO_PLANAR | MTL_DXGI_FORMAT_EMULATED_RGB32)) {
     return E_FAIL;
   }
   if (format.Flag & MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL) {
@@ -196,7 +148,7 @@ CreateDynamicLinearTexture2D(
   if (format.PixelFormat == WMTPixelFormatInvalid) {
     return E_FAIL;
   }
-  WMTTextureInfo info;
+  WMTTextureInfo info{};
   D3D11_TEXTURE2D_DESC1 finalDesc;
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
@@ -223,7 +175,7 @@ CreateDynamicLinearTexture1D(
     return E_FAIL;
   MTL_DXGI_FORMAT_DESC format;
   MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
-  if (format.Flag & MTL_DXGI_FORMAT_BC) {
+  if (format.Flag & (MTL_DXGI_FORMAT_BC | MTL_DXGI_FORMAT_EMULATED_RGB32)) {
     return E_FAIL;
   }
   if (format.Flag & MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL) {
@@ -233,7 +185,7 @@ CreateDynamicLinearTexture1D(
   if (format.PixelFormat == WMTPixelFormatInvalid) {
     return E_FAIL;
   }
-  WMTTextureInfo info;
+  WMTTextureInfo info{};
   D3D11_TEXTURE1D_DESC finalDesc;
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
@@ -251,4 +203,4 @@ CreateDynamicLinearTexture1D(
   return S_OK;
 }
 
-} // namespace dxmt
+} // namespace mullion

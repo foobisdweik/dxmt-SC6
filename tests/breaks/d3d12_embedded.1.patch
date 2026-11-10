@@ -1,0 +1,14 @@
+# conflicting embedded signatures are accepted
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -1414,8 +1414,8 @@
+       if (FAILED(microsoft::DXBCGetRootSignature(code.pShaderBytecode, &part, &size)))
+         continue;
+       if (signature) {
+-        if (size != signature_size || memcmp(part, signature, size))
+-          return FAIL(E_INVALIDARG);
++        if (false)
++          return E_INVALIDARG;
+       } else {
+         HRESULT hr = CreateRootSignature(
+             pDevice, 0, code.pShaderBytecode, code.BytecodeLength, __uuidof(ID3D12RootSignature),

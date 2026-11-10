@@ -1,0 +1,13 @@
+# a queue's normal priority is reported unsupported
+# family native
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1067,7 +1067,7 @@
+       out->PriorityForTypeIsSupported =
+           (type == D3D12_COMMAND_LIST_TYPE_DIRECT || type == D3D12_COMMAND_LIST_TYPE_COMPUTE ||
+            type == D3D12_COMMAND_LIST_TYPE_COPY) &&
+-          (out->Priority == D3D12_COMMAND_QUEUE_PRIORITY_NORMAL || out->Priority == D3D12_COMMAND_QUEUE_PRIORITY_HIGH);
++          (out->Priority == D3D12_COMMAND_QUEUE_PRIORITY_HIGH);
+       return S_OK;
+     }
+     case D3D12_FEATURE_EXISTING_HEAPS:

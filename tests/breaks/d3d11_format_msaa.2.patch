@@ -1,0 +1,16 @@
+# Texture creation ignores qualities outside the advertised range.
+--- a/src/d3d11/d3d11_resource_helper.cpp
++++ b/src/d3d11/d3d11_resource_helper.cpp
+@@ -540,11 +540,7 @@
+     return E_INVALIDARG;
+   UINT quality_levels = 0;
+   if (FAILED(pDevice->CheckMultisampleQualityLevels(pDesc->Format, pDesc->SampleDesc.Count, &quality_levels)) ||
+-      !quality_levels ||
+-      (pDesc->SampleDesc.Quality >= quality_levels &&
+-       (pDevice->GetFeatureLevel() < D3D_FEATURE_LEVEL_10_1 ||
+-        (pDesc->SampleDesc.Quality != D3D11_STANDARD_MULTISAMPLE_PATTERN &&
+-         pDesc->SampleDesc.Quality != D3D11_CENTER_MULTISAMPLE_PATTERN))))
++      !quality_levels)
+     return E_INVALIDARG;
+   auto hr = CreateMTLTextureDescriptorInternal(
+       pDevice, D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width, pDesc->Height,

@@ -1,0 +1,13 @@
+# a direct draw over the budget is omitted instead of split
+# family 7
+--- a/src/mullion/mullion_geometry.hpp
++++ b/src/mullion/mullion_geometry.hpp
+@@ -75,7 +75,7 @@
+     WARN("Omitted mesh draw (GS): not one object threadgroup fits the mesh memory of a draw (", warps, "x", instances, ")");
+     return std::nullopt;
+   }
+-  return uint64_t(warps) * instances <= max ? 0 : uint32_t(std::min<uint64_t>(max, UINT32_MAX));
++  return uint64_t(warps) * instances <= max ? std::optional<uint32_t>(0) : std::nullopt;
+ }
+
+ // rectangular parts can leave nearly half their capacity unused at instance boundaries

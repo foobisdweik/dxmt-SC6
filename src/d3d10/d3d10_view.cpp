@@ -1,6 +1,6 @@
 #include "d3d10_view.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 void STDMETHODCALLTYPE
 MTLD3D10ShaderResourceView::GetDesc(D3D10_SHADER_RESOURCE_VIEW_DESC *pDesc) {
@@ -197,4 +197,4 @@ MTLD3D10DepthStencilView::GetDesc(D3D10_DEPTH_STENCIL_VIEW_DESC *pDesc) {
   }
 }
 
-} // namespace dxmt
+} // namespace mullion

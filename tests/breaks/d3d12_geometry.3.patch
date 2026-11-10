@@ -1,0 +1,13 @@
+# a collapsed line uses its strip-local index after RestartStrip
+# family 8
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -439,7 +439,7 @@
+       // vertex's own line, which is written again below
+       if (auto culled = cull_primitive(current_write_vertex, current_primitive_count, 2)) {
+         auto complete = builder.CreateICmpUGE(current_write_vertex, one_const);
+-        auto line = builder.CreateSelect(complete, builder.CreateSub(current_primitive_idx, one_const), current_primitive_idx);
++        auto line = builder.CreateSelect(complete, builder.CreateSub(current_write_vertex, one_const), current_write_vertex);
+         air.CreateSetMeshIndex(
+             builder.CreateAdd(builder.CreateMul(line, builder.getInt32(2)), one_const),
+             builder.CreateSelect(

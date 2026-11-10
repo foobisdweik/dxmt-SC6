@@ -1,0 +1,12 @@
+# drops RayQuery abort.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3599,7 +3599,7 @@
+       ret = ray_query_call("next", ir.getInt1Ty(), {ray_query(a(1), &RayQuery::query)});
+       break;
+     case RayQuery_Abort:
+-      ray_query_call("abort", ir.getVoidTy(), {ray_query(a(1), &RayQuery::query)});
++      (void)a(1);
+       break;
+     case RayQuery_CommitNonOpaqueTriangleHit:
+       ray_query_call("commit_triangle_intersection", ir.getVoidTy(), {ray_query(a(1), &RayQuery::query)});

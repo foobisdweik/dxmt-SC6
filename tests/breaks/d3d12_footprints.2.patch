@@ -1,0 +1,12 @@
+# omits row pitch alignment from copyable footprints
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1231,7 +1231,7 @@
+         auto RowCount = Height / BlockWidth;
+         auto Depth = Extent.back;
+         auto RowSize = (Width / BlockWidth) * PlaneBytesPerTexel[Plane];
+-        auto RowPitch = align(RowSize, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT * PlaneCount);
++        auto RowPitch = RowSize;
+         if (pLayouts) {
+           pLayouts[i].Offset = BaseOffset + Offset;
+           pLayouts[i].Footprint.Format = PlaneFormats[Plane];

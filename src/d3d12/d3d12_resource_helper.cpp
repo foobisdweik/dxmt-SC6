@@ -19,7 +19,7 @@
 #include "d3d12_device.hpp"
 #include "util_bit.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 template <>
 HRESULT
@@ -72,7 +72,7 @@ ExtractEntireResourceViewDescription<D3D12_DEPTH_STENCIL_VIEW_DESC>(
     return E_FAIL;
   }
   default:
-    return E_INVALIDARG;
+    return FAIL(E_INVALIDARG);
   }
 
   return S_OK;
@@ -133,7 +133,7 @@ ExtractEntireResourceViewDescription<D3D12_RENDER_TARGET_VIEW_DESC>(
     break;
   }
   default:
-    return E_INVALIDARG;
+    return FAIL(E_INVALIDARG);
   }
 
   return S_OK;
@@ -209,7 +209,7 @@ ExtractEntireResourceViewDescription<D3D12_SHADER_RESOURCE_VIEW_DESC>(
     break;
   }
   default:
-    return E_INVALIDARG;
+    return FAIL(E_INVALIDARG);
   }
 
   return S_OK;
@@ -240,7 +240,7 @@ ExtractEntireResourceViewDescription<D3D12_UNORDERED_ACCESS_VIEW_DESC>(
   }
   case D3D12_RESOURCE_DIMENSION_TEXTURE2D: {
     if (ResourceDesc.SampleDesc.Count > 1)
-      return E_FAIL;
+      return FAIL(E_FAIL);
     if (ResourceDesc.DepthOrArraySize > 1) {
       pViewDescOut->ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
       pViewDescOut->Texture2DArray.MipSlice = 0;
@@ -262,7 +262,7 @@ ExtractEntireResourceViewDescription<D3D12_UNORDERED_ACCESS_VIEW_DESC>(
     break;
   }
   default:
-    return E_INVALIDARG;
+    return FAIL(E_INVALIDARG);
   }
 
   return S_OK;
@@ -278,15 +278,15 @@ HRESULT
 ValidateResourceStates(D3D12_RESOURCE_STATES State, const D3D12_HEAP_PROPERTIES *pHeapProps) {
   if (State & kExclusiveWrite) {
     if (State & ~kExclusiveWrite)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     if (bit::popcnt(State) != 1)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
   }
 
   switch (pHeapProps->Type) {
   case D3D12_HEAP_TYPE_READBACK: {
     if (State != D3D12_RESOURCE_STATE_COPY_DEST && State != D3D12_RESOURCE_STATE_COMMON)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     break;
   }
   default:
@@ -301,6 +301,7 @@ IsCpuVisibleHeap(const D3D12_HEAP_PROPERTIES *pHeapProps) {
   switch (pHeapProps->Type) {
   case D3D12_HEAP_TYPE_UPLOAD:
   case D3D12_HEAP_TYPE_READBACK:
+  case sdk::D3D12_HEAP_TYPE_GPU_UPLOAD:
     return true;
   case D3D12_HEAP_TYPE_CUSTOM:
     return pHeapProps->CPUPageProperty != D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE;
@@ -315,33 +316,40 @@ ValidateResourceDescs(const D3D12_RESOURCE_DESC *pDesc, const D3D12_HEAP_PROPERT
   switch (HeapType) {
   case D3D12_HEAP_TYPE_UPLOAD: {
     if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     if (pDesc->Dimension != D3D12_RESOURCE_DIMENSION_BUFFER)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     break;
   }
   case D3D12_HEAP_TYPE_READBACK: {
     if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     if (pDesc->Dimension != D3D12_RESOURCE_DIMENSION_BUFFER)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     break;
   }
   case D3D12_HEAP_TYPE_DEFAULT:
   case D3D12_HEAP_TYPE_CUSTOM:
+  case sdk::D3D12_HEAP_TYPE_GPU_UPLOAD:
     break;
   default:
-    return E_INVALIDARG;
+    return FAIL(E_INVALIDARG);
   }
 
   switch (pDesc->Dimension) {
   case D3D12_RESOURCE_DIMENSION_BUFFER: {
-    if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS)
-      return E_INVALIDARG;
+    if (pDesc->Flags & (D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS))
+      return FAIL(E_INVALIDARG);
+    if (pDesc->Layout != D3D12_TEXTURE_LAYOUT_ROW_MAJOR)
+      return FAIL(E_INVALIDARG);
+    // Microsoft Learn, D3D12_RESOURCE_DESC, Buffers.
+    if (!pDesc->Width || pDesc->Height != 1 || pDesc->DepthOrArraySize != 1 || pDesc->MipLevels != 1 ||
+        pDesc->Format != DXGI_FORMAT_UNKNOWN || pDesc->SampleDesc.Count != 1 || pDesc->SampleDesc.Quality)
+      return FAIL(E_INVALIDARG);
     break;
   }
   case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
@@ -351,13 +359,13 @@ ValidateResourceDescs(const D3D12_RESOURCE_DESC *pDesc, const D3D12_HEAP_PROPERT
       break;
     if (pDesc->Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D) {
       if (!(pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_CROSS_ADAPTER))
-        return E_INVALIDARG;
+        return FAIL(E_INVALIDARG);
       if (pDesc->MipLevels != 1 || pDesc->DepthOrArraySize != 1)
-        return E_INVALIDARG;
+        return FAIL(E_INVALIDARG);
       if (IsCpuVisibleHeap(pHeapProps))
-        return E_INVALIDARG;
+        return FAIL(E_INVALIDARG);
     } else {
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     }
     break;
   }
@@ -374,40 +382,45 @@ ValidateHeapProperties(const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS
   case D3D12_HEAP_TYPE_DEFAULT:
   case D3D12_HEAP_TYPE_READBACK: {
     if (Flags & D3D12_HEAP_FLAG_ALLOW_WRITE_WATCH)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     [[fallthrough]];
   }
-  case D3D12_HEAP_TYPE_UPLOAD: {
+  case D3D12_HEAP_TYPE_UPLOAD:
+  case sdk::D3D12_HEAP_TYPE_GPU_UPLOAD: {
     if (pHeapProps->CPUPageProperty != D3D12_CPU_PAGE_PROPERTY_UNKNOWN)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     if (pHeapProps->MemoryPoolPreference != D3D12_MEMORY_POOL_UNKNOWN)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     break;
   }
   case D3D12_HEAP_TYPE_CUSTOM: {
     if (pHeapProps->CPUPageProperty == D3D12_CPU_PAGE_PROPERTY_UNKNOWN)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     if (pHeapProps->MemoryPoolPreference == D3D12_MEMORY_POOL_UNKNOWN)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     if (pHeapProps->MemoryPoolPreference == D3D12_MEMORY_POOL_L1 && AdapterIsNUMA) {
       if (pHeapProps->CPUPageProperty != D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE)
-        return E_INVALIDARG;
+        return FAIL(E_INVALIDARG);
     }
     break;
   }
   default:
-    return E_INVALIDARG;
+    return FAIL(E_INVALIDARG);
   }
 
   if (pHeapProps->MemoryPoolPreference == D3D12_MEMORY_POOL_L1) {
     if (!AdapterIsNUMA)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
     if (pHeapProps->CPUPageProperty != D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE)
-      return E_INVALIDARG;
+      return FAIL(E_INVALIDARG);
   }
 
   if ((Flags & D3D12_HEAP_FLAG_SHARED_CROSS_ADAPTER) && IsCpuVisibleHeap(pHeapProps))
-    return E_INVALIDARG;
+    return FAIL(E_INVALIDARG);
+  // D3D12 GPU Upload Heaps, Restrictions
+  if (pHeapProps->Type == sdk::D3D12_HEAP_TYPE_GPU_UPLOAD &&
+      (Flags & (D3D12_HEAP_FLAG_SHARED | D3D12_HEAP_FLAG_ALLOW_DISPLAY)))
+    return FAIL(E_INVALIDARG);
 
   // TODO(d3d12): check NodeMask
   return S_OK;
@@ -483,4 +496,4 @@ IsD3D12BoxInBounds(D3D12_BOX &box, D3D12_BOX &bounds) {
   return true;
 }
 
-} // namespace dxmt
+} // namespace mullion

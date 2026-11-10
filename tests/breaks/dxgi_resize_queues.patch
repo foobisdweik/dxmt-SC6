@@ -1,0 +1,10 @@
+# presentation remains on buffer zero instead of rotating to the next buffer and queue
+--- a/src/d3d12/d3d12_swapchain.cpp
++++ b/src/d3d12/d3d12_swapchain.cpp
+@@ -742,5 +742,5 @@
+     presentation_count_ += 1;
+-    current_buffer_ = (current_buffer_ + 1) % backbuffers_.size();
++    current_buffer_ = 0;
+ 
+     return hr;
+   };

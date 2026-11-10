@@ -1,0 +1,12 @@
+# written depth not clamped to the viewport
+--- a/src/airconv/dxbc_signature.cpp
++++ b/src/airconv/dxbc_signature.cpp
+@@ -543,7 +543,7 @@
+             depth = ctx.air.CreateFPBinOp(
+               AIRBuilder::fmin, range(1), ctx.air.CreateFPBinOp(AIRBuilder::fmax, range(0), depth, false), false
+             );
+-            return ir.CreateInsertValue(v, depth, {assigned_index});
++            return ir.CreateInsertValue(v, ir.CreateLoad(ctx.types._float, ir.CreateConstInBoundsGEP1_32(ctx.types._float, ctx.resource.depth_output_reg, 0)), {assigned_index});
+           });
+         };
+       });

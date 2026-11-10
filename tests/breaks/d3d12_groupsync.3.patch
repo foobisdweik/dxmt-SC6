@@ -1,0 +1,12 @@
+# memory barriers without group sync also take the correction
+--- a/src/airconv/nt/dxbc_converter_base.hpp
++++ b/src/airconv/nt/dxbc_converter_base.hpp
+@@ -258,7 +258,7 @@
+     // HLSL's globallycoherent: "memory barriers and syncs flush data across the entire GPU", which a threadgroup
+     // barrier does not do on Apple7
+     auto uav_boundary =
+-        sync.tgsm_execution_barrier && CoherentGroupSync() ? InstSync::UAVBoundary::global : sync.uav_boundary;
++        CoherentGroupSync() ? InstSync::UAVBoundary::global : sync.uav_boundary;
+     if (uav_boundary != InstSync::UAVBoundary::none) {
+       mem_flag |= MemFlags::Device | MemFlags::Texture;
+       if (SupportsNonExecutionBarrier())

@@ -1,0 +1,16 @@
+# GetDesc1 discards the saved feedback description
+--- a/src/d3d12/d3d12_device.hpp
++++ b/src/d3d12/d3d12_device.hpp
+@@ -126,10 +126,10 @@
+   GetDesc1(D3D12_RESOURCE_DESC1 *__ret) override {
+     D3D12_RESOURCE_DESC desc;
+     GetDesc(&desc);
+-    *__ret = feedback.value_or(D3D12_RESOURCE_DESC1{
++    *__ret = D3D12_RESOURCE_DESC1{
+         desc.Dimension, desc.Alignment, desc.Width, desc.Height, desc.DepthOrArraySize, desc.MipLevels,
+         desc.Format, desc.SampleDesc, desc.Layout, desc.Flags, {}
+-    });
++    };
+     return __ret;
+   }
+ 

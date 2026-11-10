@@ -1,0 +1,13 @@
+# a draw omitted for too few parts does not report the scratch it also lacked
+# family 7
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -606,7 +606,7 @@
+       task.origins_out[part] = origin;
+     }
+     // the whole draw's grid, which stream output's scratch and targets describe
+-    uint2 output = uint2(x, y);
++    uint2 output = runs ? uint2(x, y) : uint2(0);
+
+     // stream output's scratch area (SM50_STREAM_OUTPUT_TARGETS, SM50StreamOutputScratch): the filled sizes, then per
+     // stream a total per object threadgroup and per block of 1 << 10 of them, and a count per invocation. the counts

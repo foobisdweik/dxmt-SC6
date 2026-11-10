@@ -1,0 +1,18 @@
+# R8_UNORM hides its texture3D capability while resource creation still accepts it.
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -733,10 +733,13 @@
+         return S_OK;
+       }
+       // D3D12_FORMAT_SUPPORT1 and 2 share D3D11's bit values
+-      return MTLQueryDXGIFormatSupport(
++      auto hr = MTLQueryDXGIFormatSupport(
+           GetMTLDevice(), out->Format, [this](WMTPixelFormat f) { return GetMTLPixelFormatCapability(f); },
+           *reinterpret_cast<uint32_t *>(&out->Support1), *reinterpret_cast<uint32_t *>(&out->Support2)
+       );
++      if (out->Format == DXGI_FORMAT_R8_UNORM)
++        out->Support1 = D3D12_FORMAT_SUPPORT1(UINT(out->Support1) & ~D3D12_FORMAT_SUPPORT1_TEXTURE3D);
++      return hr;
+     }
+     // 64-bit atomics on typed resources, groupshared memory and descriptor heap resources, which the shader compiler
+     // builds from locks as it does on root buffers

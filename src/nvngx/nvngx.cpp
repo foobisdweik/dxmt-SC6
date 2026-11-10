@@ -8,7 +8,7 @@
 #include "../dxgi/dxgi_interfaces.h"
 #include <cmath>
 
-namespace dxmt {
+namespace mullion {
 Logger Logger::s_instance("nvngx.log");
 
 NVNGX_API NVNGX_RESULT
@@ -138,8 +138,9 @@ NVSDK_NGX_D3D11_EvaluateFeature(
       desc.MotionVectorScaleX = 1.0;
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_MV_Scale_Y, &desc.MotionVectorScaleY)))
       desc.MotionVectorScaleY = 1.0;
-    if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_DLSS_Pre_Exposure, &desc.PreExposure)))
-      desc.PreExposure = 1.0;
+    // DLSS takes 0 (or none) for no pre-exposure, which MetalFX, dividing by it, takes as 1
+    if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_DLSS_Pre_Exposure, &desc.PreExposure)) || desc.PreExposure <= 0)
+      desc.PreExposure = 1;
 
     pCtxExt->TemporalUpscale(&desc);
 
@@ -333,11 +334,11 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason,
 
   DisableThreadLibraryCalls(instance);
 
-  if (FAILED(DXGIGetDebugInterface1(0, DXMT_NVEXT_GUID, nullptr))) {
+  if (FAILED(DXGIGetDebugInterface1(0, MULLION_NVEXT_GUID, nullptr))) {
     return FALSE;
   }
 
   return TRUE;
 }
 
-}; // namespace dxmt
+}; // namespace mullion

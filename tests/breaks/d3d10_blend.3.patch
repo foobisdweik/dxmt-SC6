@@ -1,0 +1,12 @@
+# ignore per-target color write masks.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -321,7 +321,7 @@
+       auto i = desc_.IndependentBlendEnable ? rt : 0;
+       auto &renderTarget = desc_.RenderTarget[i];
+       auto &attachment_desc = info->colors[rt];
+-      attachment_desc.write_mask = kColorWriteMaskMap[renderTarget.RenderTargetWriteMask];
++      attachment_desc.write_mask = kColorWriteMaskMap[D3D11_COLOR_WRITE_ENABLE_ALL];
+       if (renderTarget.BlendEnable && attachment_desc.pixel_format != WMTPixelFormatInvalid) {
+         if (!any_bit_set(m_parent->GetMTLPixelFormatCapability(attachment_desc.pixel_format) & FormatCapability::Blend)) {
+           WARN("Blending is enabled on RTV of non-blendable format ", attachment_desc.pixel_format);

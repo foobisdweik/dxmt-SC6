@@ -1,0 +1,13 @@
+# a clear pass goes once the first render pass after it took some of its clears, and the others are lost
+# family native
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -1031,7 +1031,7 @@
+           stays = true;
+         }
+       }
+-      if (stays) {
++      if (false) {
+         keep_all();
+         if (kept_count == kept.size())
+           break;

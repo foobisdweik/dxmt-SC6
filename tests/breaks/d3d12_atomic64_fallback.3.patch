@@ -1,0 +1,12 @@
+# overlapping views take locks keyed by their Metal view handles
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3034,7 +3034,7 @@
+           auto i64 = ir.getInt64Ty();
+           auto &t = *h.texture;
+           auto [address, array] = dxbc.TexelAddress(t, texel_coord(call, first, ir.getInt32(0)), no_offset, nullptr);
+-          Value *key = ir.CreateLoad(i64, t.Range);
++          Value *key = ir.CreatePtrToInt(t.Handle, i64);
+           auto n = isa<FixedVectorType>(address->getType()) ? cast<FixedVectorType>(address->getType())->getNumElements() : 1;
+           if (t.Logical == Texture::texture_buffer) {
+             key = ir.CreateAdd(key, ir.CreateMul(ir.CreateZExt(address, i64), ir.getInt64(sizeof(uint64_t))));

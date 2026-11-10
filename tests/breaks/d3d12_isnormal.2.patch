@@ -1,0 +1,12 @@
+# subnormals counted normal
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3358,7 +3358,7 @@
+       auto magnitude = fp_unary(llvm::air::AIRBuilder::fabs, a(1));
+       auto &semantics = a(1)->getType()->getFltSemantics();
+       ret = ir.CreateAnd(
+-          ir.CreateFCmpOGE(magnitude, ConstantFP::get(a(1)->getType(), APFloat::getSmallestNormalized(semantics))),
++          ir.CreateFCmpOGT(magnitude, ConstantFP::get(a(1)->getType(), 0.0)),
+           ir.CreateFCmpOLT(magnitude, ConstantFP::getInfinity(a(1)->getType()))
+       );
+       break;

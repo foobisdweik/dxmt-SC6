@@ -1,0 +1,12 @@
+# R8 multisample values use signed normalization instead of unsigned normalization.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -897,7 +897,7 @@
+     break;
+   }
+   case DXGI_FORMAT_R8_UNORM: {
+-    description.PixelFormat = WMTPixelFormatR8Unorm;
++    description.PixelFormat = WMTPixelFormatR8Snorm;
+     description.AttributeFormat = WMTAttributeFormatUCharNormalized;
+     description.BytesPerTexel = 1;
+     break;

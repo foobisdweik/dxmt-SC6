@@ -1,0 +1,11 @@
+# GetDesc2 reports a different cull mode.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -431,6 +431,7 @@
+ 
+   void STDMETHODCALLTYPE GetDesc2(D3D11_RASTERIZER_DESC2 *pDesc) final {
+     *pDesc = desc_;
++    pDesc->CullMode = D3D11_CULL_BACK;
+   }
+ 
+   void SetupRasterizerState(wmtcmd_render_setrasterizerstate& cmd) {

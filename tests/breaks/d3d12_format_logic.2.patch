@@ -1,0 +1,9 @@
+# ignore the channel write mask in the D3D12 output merger.
+diff --git a/src/d3d12/d3d12_pipeline_graphics.cpp b/src/d3d12/d3d12_pipeline_graphics.cpp
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -746,3 +746,3 @@ public:
+       rt.write_mask = (ref_ps.PixelShader.ValidRenderTargets & (1u << i))
+-                          ? kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]
++                          ? kColorWriteMaskMap[D3D12_COLOR_WRITE_ENABLE_ALL]
+                           : WMTColorWriteMaskNone;

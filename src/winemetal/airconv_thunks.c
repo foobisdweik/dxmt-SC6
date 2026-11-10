@@ -62,6 +62,15 @@ SM50DestroyBitcode(sm50_bitcode_t pBitcode) {
 
 AIRCONV_API size_t
 SM50GetErrorMessage(sm50_error_t pError, char *pBuffer, size_t BufferSize) {
+  // a call that failed without an error is one that faulted: Wine ends such a unix call with a status
+  // (the handle is a pointer in a 64-bit build and a 64-bit value in a 32-bit one)
+  static const sm50_error_t none;
+  if (!memcmp(&pError, &none, sizeof(none))) {
+    static const char faulted[] = "the shader compiler faulted";
+    size_t size = BufferSize < sizeof(faulted) ? BufferSize : sizeof(faulted);
+    memcpy(pBuffer, faulted, size);
+    return size ? size - 1 : 0;
+  }
   struct sm50_get_error_message_params params;
   params.error = pError;
   params.buffer = pBuffer;
@@ -167,4 +176,19 @@ AIRCONV_API void SM50GetArgumentsInfo(
   params.constant_buffers = pConstantBuffers;
   params.arguments = pArguments;
   UNIX_CALL(sm50_get_arguments_info, &params);
-};
+}
+
+AIRCONV_API int
+SM50GetRayShader(
+    sm50_shader_t pShader, uint32_t Index, char *pName, size_t NameSize, struct SM50_RAY_SHADER_INFO *pInfo
+) {
+  struct sm50_get_ray_shader_params params;
+  params.shader = pShader;
+  params.name = pName;
+  params.name_size = NameSize;
+  params.info = pInfo;
+  params.index = Index;
+  params.ret = 0;
+  UNIX_CALL(sm50_get_ray_shader, &params);
+  return params.ret;
+}

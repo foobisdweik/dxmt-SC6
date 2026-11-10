@@ -1,0 +1,12 @@
+# a precise min call must fail the stored-library call check
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3279,7 +3279,7 @@
+       ret = air.CreateFPBinOp(llvm::air::AIRBuilder::fmax, a(1), a(2));
+       break;
+     case FMin:
+-      ret = air.CreateFPBinOp(llvm::air::AIRBuilder::fmin, a(1), a(2));
++      ret = air.CreateFPBinOp(llvm::air::AIRBuilder::fmin, a(1), a(2), false);
+       break;
+     case IMax:
+       ret = air.CreateIntBinOp(llvm::air::AIRBuilder::max, a(1), a(2), true);

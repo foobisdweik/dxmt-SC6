@@ -1,11 +1,13 @@
 #pragma once
-#include "d3d11_1.h"
+#include "d3d11_2.h"
+#include "mullion_diag.hpp"
 
-namespace dxmt {
+namespace mullion {
 
+// a context's annotations: its events, as BeginEventInt and EndEvent take them
 class D3D11UserDefinedAnnotation : public ID3DUserDefinedAnnotation {
 public:
-  D3D11UserDefinedAnnotation(IUnknown *container) : container_(container) {}
+  D3D11UserDefinedAnnotation(ID3D11DeviceContext2 *container) : container_(container) {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) override {
@@ -16,16 +18,29 @@ public:
 
   ULONG STDMETHODCALLTYPE Release() override { return container_->Release(); }
 
-  INT STDMETHODCALLTYPE BeginEvent(LPCWSTR Name) override { return -1; }
+  // the events begun before and not ended, or -1 with no tool to read them
+  INT STDMETHODCALLTYPE BeginEvent(LPCWSTR Name) override {
+    if (!diag::events)
+      return -1;
+    container_->BeginEventInt(Name, 0);
+    return open_++;
+  }
 
-  INT STDMETHODCALLTYPE EndEvent() override { return -1; }
+  INT STDMETHODCALLTYPE EndEvent() override {
+    if (!diag::events)
+      return -1;
+    container_->EndEvent();
+    return open_ ? --open_ : 0;
+  }
 
+  // a marker is an instant, which no pass is named by
   void STDMETHODCALLTYPE SetMarker(LPCWSTR Name) override {}
 
-  WINBOOL STDMETHODCALLTYPE GetStatus() override { return FALSE; }
+  WINBOOL STDMETHODCALLTYPE GetStatus() override { return diag::events; }
 
 private:
-  IUnknown *container_;
+  ID3D11DeviceContext2 *container_;
+  INT open_ = 0;
 };
 
-} // namespace dxmt
+} // namespace mullion

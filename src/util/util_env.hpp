@@ -12,7 +12,7 @@
 
 #include <string>
 
-namespace dxmt::env {
+namespace mullion::env {
 
 #ifdef _WIN32
 constexpr char PlatformDirSlash = '\\';
@@ -86,4 +86,4 @@ bool createDirectory(const std::string &path);
 
 std::string getUnixPath(const std::string &path);
 
-} // namespace dxmt::env
+} // namespace mullion::env

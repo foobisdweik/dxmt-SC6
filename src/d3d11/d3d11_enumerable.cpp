@@ -1,6 +1,6 @@
 #include "d3d11_enumerable.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 generator<SUBRESOURCE_ENTRY>
 EnumerateSubresources(const D3D11_TEXTURE1D_DESC &Desc) {
@@ -44,4 +44,4 @@ EnumerateSubresources(const D3D11_TEXTURE3D_DESC1 &Desc) {
   }
 }
 
-}; // namespace dxmt
+}; // namespace mullion

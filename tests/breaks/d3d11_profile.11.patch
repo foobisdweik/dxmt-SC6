@@ -1,0 +1,12 @@
+# stop sampling at the first counter buffer boundary
+--- a/src/mullion/mullion_command_queue.cpp
++++ b/src/mullion/mullion_command_queue.cpp
+@@ -107,7 +107,7 @@
+     target("exposure", 0, data->exposure, 0, 0);
+   }
+   const uint32_t count = pass->type == EncoderType::Render ? WMTRenderTimestampSamples : WMTTimestampSamplesPerStage;
+-  if (buffer.samples.empty() || count > timestamp_samples.limit - buffer.samples.back().used)
++  if (buffer.samples.empty())
+     buffer.samples.push_back({timestamp_samples.Take(device, false)});
+   auto &samples = buffer.samples.back();
+   uint32_t first = ~0u;

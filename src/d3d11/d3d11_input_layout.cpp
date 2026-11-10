@@ -3,12 +3,13 @@
 #include "DXBCParser/DXBCUtils.h"
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
-#include "dxmt_format.hpp"
+#include "../d3d10/d3d10_shader.hpp"
+#include "mullion_format.hpp"
 #include "sha1/sha1_util.hpp"
 #include "util_math.hpp"
 #include "log/log.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 HRESULT ExtractMTLInputLayoutElements(
     MTLD3D11Device *device, const void *pShaderBytecodeWithInputSignature,
@@ -47,6 +48,12 @@ HRESULT ExtractMTLInputLayoutElements(
       ERR("CreateInputLayout: not an ordinary or packed format: ", desc.Format);
       return E_INVALIDARG;
     }
+    // a slot's elements step alike, in class and in rate (D3D11.3 8.1.3, D3D11_INPUT_ELEMENT_DESC), the shader's or not
+    if (std::any_of(pInputElementDescs, &desc, [&](auto &other) {
+          return other.InputSlot == desc.InputSlot && (other.InputSlotClass != desc.InputSlotClass ||
+                                                       other.InstanceDataStepRate != desc.InstanceDataStepRate);
+        }))
+      return E_INVALIDARG;
     auto aligned_byte_offset = desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT
                                    ? align(append_offset[desc.InputSlot], std::min(4u, metal_format.BytesPerTexel))
                                    : desc.AlignedByteOffset;
@@ -78,8 +85,10 @@ HRESULT ExtractMTLInputLayoutElements(
   }
   for (UINT i = 0; i < num_parameters; i++) {
     auto &inputSig = pParameters[i];
-    if (inputSig.SystemValue != D3D10_SB_NAME_UNDEFINED) 
-      continue; // ignore SIV & SGV
+    // the input assembler makes these two itself. every other input needs an element, whatever stage the signature
+    // is of (Wine's test_create_input_layout has it from Windows)
+    if (!strcasecmp(inputSig.SemanticName, "SV_VertexID") || !strcasecmp(inputSig.SemanticName, "SV_InstanceID"))
+      continue;
     if (!(register_mask & (1 << inputSig.Register))) {
       WARN("CreateInputLayout: Vertex shader expects ", inputSig.SemanticName,
            "_", inputSig.SemanticIndex, " but it's not in input layout element descriptors");
@@ -97,7 +106,7 @@ public:
   MTLD3D11StreamOutputLayout(MTLD3D11Device *device,
                              const MTL_STREAM_OUTPUT_DESC &desc)
       : ManagedDeviceChild<IMTLD3D11StreamOutputLayout>(device), desc_(desc),
-        null_gs(this) {
+        null_gs(this), d3d10(this) {
     Sha1HashState h;
     h.update(desc.Strides);
     h.update(desc.RasterizedStream);
@@ -106,6 +115,7 @@ public:
         h.update(el);
     }
     sha1_ = h.final();
+    null_gs.shader = desc.GeometryShader;
   }
 
   ~MTLD3D11StreamOutputLayout() {}
@@ -129,6 +139,12 @@ public:
       return S_OK;
     }
 
+    // what ID3D10Device::CreateGeometryShaderWithStreamOutput returns
+    if (riid == __uuidof(ID3D10DeviceChild) || riid == __uuidof(ID3D10GeometryShader)) {
+      *ppvObject = ref(&d3d10);
+      return S_OK;
+    }
+
     if (logQueryInterfaceError(__uuidof(IMTLD3D11StreamOutputLayout), riid)) {
       WARN("IMTLD3D11StreamOutputLayout: Unknown interface query ",
            str::format(riid));
@@ -138,7 +154,7 @@ public:
   };
 
   uint32_t STDMETHODCALLTYPE
-  GetStreamOutputElements(MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC **ppElements,
+  GetStreamOutputElements(const SM50_STREAM_OUTPUT_ELEMENT2 **ppElements,
                           uint32_t Strides[4]) override {
     *ppElements = desc_.Elements.data();
     memcpy(Strides, desc_.Strides, sizeof(desc_.Strides));
@@ -158,105 +174,33 @@ private:
   Sha1Digest sha1_;
 
   class NullGeometryShader : public IMTLD3D11Shader {
-    IUnknown *container;
+    MTLD3D11StreamOutputLayout *container;
 
   public:
-    NullGeometryShader(IUnknown *container) : container(container) {};
+    NullGeometryShader(MTLD3D11StreamOutputLayout *container) : container(container) {};
 
     ULONG STDMETHODCALLTYPE AddRef() override { return container->AddRef(); }
     ULONG STDMETHODCALLTYPE Release() override { return container->Release(); }
+    void AddRefPrivate() override { container->AddRefPrivate(); }
+    void ReleasePrivate() override { container->ReleasePrivate(); }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) override {
       return container->QueryInterface(riid, ppvObject);
     }
 
-    virtual ManagedShader GetManagedShader() override { return nullptr; };
+    virtual ManagedShader GetManagedShader() override { return shader; };
+    ManagedShader shader = nullptr;
   };
 
+  // the layout is the context's geometry shader: the real one it was created with, or none
   NullGeometryShader null_gs;
+  MTLD3D10GeometryShader d3d10;
 };
-
-HRESULT ExtractMTLStreamOutputElements(
-    MTLD3D11Device *pDevice, const void *pShaderBytecode, UINT NumEntries,
-    const D3D11_SO_DECLARATION_ENTRY *pEntries,
-    MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC *pStreamOut,
-    uint32_t *pNumElementsOut) {
-  using namespace microsoft;
-  std::array<uint32_t, 4> offsets = {{}};
-  uint32_t element_count = 0;
-  CSignatureParser parser;
-  HRESULT hr = DXBCGetOutputSignature(pShaderBytecode, &parser);
-  if (FAILED(hr)) {
-    return hr;
-  }
-  const D3D11_SIGNATURE_PARAMETER *pParameters;
-  auto numParameters = parser.GetParameters(&pParameters);
-  for (unsigned i = 0; i < NumEntries; i++) {
-    auto entry = pEntries[i];
-    if (entry.Stream != 0) {
-      ERR("CreateEmulatedVertexStreamOutputShader: stream must be 0");
-      return E_INVALIDARG;
-    }
-    if (entry.OutputSlot > 3) {
-      ERR("CreateEmulatedVertexStreamOutputShader: invalid output slot ",
-          entry.OutputSlot);
-      return E_INVALIDARG;
-    }
-    // FIXME: support more than 1 output slot
-    if (entry.OutputSlot != 0) {
-      ERR("CreateEmulatedVertexStreamOutputShader: only slot 0 supported");
-      return E_INVALIDARG;
-    }
-    if ((entry.ComponentCount - entry.StartComponent) < 0 ||
-        (entry.ComponentCount + entry.StartComponent) > 4) {
-      ERR("CreateEmulatedVertexStreamOutputShader: invalid components");
-      return E_INVALIDARG;
-    }
-    if ((entry.ComponentCount - entry.StartComponent) == 0) {
-      continue;
-    }
-    if (entry.SemanticName == nullptr) {
-      // skip hole
-      for (unsigned i = 0; i < entry.ComponentCount; i++) {
-        auto offset = offsets[entry.OutputSlot];
-        offsets[entry.OutputSlot] += sizeof(float);
-        auto component = entry.StartComponent + i;
-        pStreamOut[element_count++] = {.Register = 0xffffffff,
-                                       .Component = component,
-                                       .OutputSlot = entry.OutputSlot,
-                                       .Offset = offset};
-      }
-      continue;
-    }
-    auto pDesc = std::find_if(
-        pParameters, pParameters + numParameters,
-        [&](const D3D11_SIGNATURE_PARAMETER &Ele) {
-          return Ele.SemanticIndex == entry.SemanticIndex &&
-                 strcasecmp(Ele.SemanticName, entry.SemanticName) == 0;
-        });
-    if (pDesc == pParameters + numParameters) {
-      ERR("CreateEmulatedVertexStreamOutputShader: output parameter not found");
-      return E_INVALIDARG;
-    }
-    auto reg_id = pDesc->Register;
-    for (unsigned i = 0; i < entry.ComponentCount; i++) {
-      auto offset = offsets[entry.OutputSlot];
-      offsets[entry.OutputSlot] += sizeof(float);
-      auto component = entry.StartComponent + i;
-      pStreamOut[element_count++] = {.Register = reg_id,
-                                     .Component = component,
-                                     .OutputSlot = entry.OutputSlot,
-                                     .Offset = offset};
-    }
-  }
-  *pNumElementsOut = element_count;
-  return S_OK;
-}
 
 template <>
 HRESULT StateObjectCache<MTL_STREAM_OUTPUT_DESC, IMTLD3D11StreamOutputLayout>::
     CreateStateObject(const MTL_STREAM_OUTPUT_DESC *pSOLayoutDesc,
                       IMTLD3D11StreamOutputLayout **ppSOLayout) {
-  std::lock_guard<dxmt::mutex> lock(mutex_cache);
+  std::lock_guard<mullion::mutex> lock(mutex_cache);
   InitReturnPtr(ppSOLayout);
 
   if (!pSOLayoutDesc)
@@ -277,4 +221,4 @@ HRESULT StateObjectCache<MTL_STREAM_OUTPUT_DESC, IMTLD3D11StreamOutputLayout>::
   return S_OK;
 }
 
-} // namespace dxmt
+} // namespace mullion

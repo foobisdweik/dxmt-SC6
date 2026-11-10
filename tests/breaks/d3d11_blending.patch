@@ -1,0 +1,12 @@
+# uses destination alpha for the source-alpha color factor.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -119,7 +119,7 @@
+     WMTBlendFactorOne,
+     WMTBlendFactorSourceColor,
+     WMTBlendFactorOneMinusSourceColor,
+-    WMTBlendFactorSourceAlpha,
++    WMTBlendFactorDestinationAlpha,
+     WMTBlendFactorOneMinusSourceAlpha,
+     WMTBlendFactorDestinationAlpha,
+     WMTBlendFactorOneMinusDestinationAlpha,

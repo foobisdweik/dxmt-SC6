@@ -1,0 +1,112 @@
+name: Performance problem
+description: A low frame rate, uneven frame times, stutter or a performance regression.
+labels: [performance]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One issue covers one problem, after checking that it is not already
+        [reported](https://github.com/dttdrv/mullion/issues). Anything that could not be found out is written as
+        "unknown", and a suspected cause is kept apart from what was seen. [Reporting a
+        problem](https://github.com/dttdrv/mullion/blob/main/CONTRIBUTING.md#1-reporting-a-problem) describes what a
+        report needs.
+  - type: input
+    id: application
+    attributes:
+      label: Game or application
+      description: Its name, version or build, and where it came from, such as Steam, another store or a demo.
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happens
+      description: >-
+        What was expected, what happened instead, and whether it happens every time. Error messages are given as text.
+        For Direct3D, the version the game was set to use and, if known, the one it used.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        The steps from launch to the problem, with the level, scene, save or action, written for someone who does not
+        know the game.
+    validations:
+      required: true
+  - type: input
+    id: mullion
+    attributes:
+      label: Mullion version
+      description: >-
+        The [release](https://github.com/dttdrv/mullion/releases) or full commit, and any patches added to it.
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS
+      description: The Mac's model, chip and memory, and the full macOS version.
+    validations:
+      required: true
+  - type: textarea
+    id: wine
+    attributes:
+      label: Wine and installation
+      description: >-
+        The Wine or CrossOver version, the launcher, and how Mullion was
+        [installed](https://github.com/dttdrv/mullion/wiki/Install), with any DLL overrides or replaced
+        libraries.
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings
+      description: >-
+        Game settings and resolution, launch options, [Mullion's
+        options](https://github.com/dttdrv/mullion/wiki/Settings), environment variables, mods and
+        overlays.
+    validations:
+      required: true
+  - type: textarea
+    id: measurement
+    attributes:
+      label: How it was measured
+      description: >-
+        The place or route measured, the tool and its version, how long and how many times, whether shaders were still
+        compiling and whether the place had been visited before, and the frame limit, VSync, upscaling, frame
+        generation, power mode, logging and other work running on the Mac at the time.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results and comparison
+      description: >-
+        The result of each run, and the build or configuration it is compared with, measured the same way on the same
+        Mac with the same settings. Without a measured comparison, "not measured" and a description of the slowdown.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs and files
+      description: >-
+        The logs of the run, written with
+        [MULLION_LOG_PATH](https://github.com/dttdrv/mullion/wiki/Settings) and attached as files, a
+        screenshot for a rendering problem, and the crash report for a crash. A file that could not be obtained is
+        named, with the reason. Attachments are public, so they are checked for personal information first.
+    validations:
+      required: true
+  - type: input
+    id: regression
+    attributes:
+      label: Last version that worked
+      description: The last Mullion release or commit that worked, if one did, and what else changed since.
+  - type: textarea
+    id: investigation
+    attributes:
+      label: Related reports and investigation
+      description: Related issues, what was already tried and its result, and any suspected cause, marked as a guess.

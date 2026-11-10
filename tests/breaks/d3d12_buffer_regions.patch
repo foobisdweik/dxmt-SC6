@@ -1,0 +1,12 @@
+# rounds byte copy lengths down to DWORDs
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -1499,7 +1499,7 @@
+     cmd_cp.dst = static_cast<MTLD3D12Resource *>(pDstBuffer)->buffer->current()->buffer();
+     cmd_cp.src_offset = SrcOffset;
+     cmd_cp.dst_offset = DstOffset;
+-    cmd_cp.copy_length = ByteCount;
++    cmd_cp.copy_length = ByteCount & ~UINT64(3);
+   };
+ 
+   // a copy between textures. Metal copies within one format: formats of one type group copy from a view of the source

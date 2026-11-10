@@ -1,0 +1,12 @@
+# only the first resolver thread emits its command
+--- a/src/d3d12/d3d12_command_signature.cpp
++++ b/src/d3d12/d3d12_command_signature.cpp
+@@ -291,7 +291,7 @@
+       if (indexed)
+         source << "if (command_data.zeros) rest.reset();\n";
+     }
+-    source << "if (i >= count) return;\n";
++    source << "if (i >= count || i != 0) return;\n";
+     source << "device ulong * rootsig_qwords = command_data.rootsig_qwords + "
+               "(i * command_data.rootsig_qwords_stride);\n";
+     if (!is_compute)

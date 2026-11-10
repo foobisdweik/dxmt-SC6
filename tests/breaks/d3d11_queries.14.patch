@@ -1,0 +1,24 @@
+# store a recording baseline in the shared query instead of taking it on execution
+--- a/src/d3d11/d3d11_context_def.cpp
++++ b/src/d3d11/d3d11_context_def.cpp
+@@ -297,6 +297,7 @@
+         auto &regions = ctx_state.current_cmdlist->regions;
+         regions.back().pipeline_query = static_cast<MTLD3D11OcclusionQuery *>(pAsync);
+         regions.back().begins_pipeline_query = true;
++        static_cast<MTLD3D11OcclusionQuery *>(pAsync)->begun = regions.back().pipeline_counts;
+         regions.emplace_back();
+       }
+       break;
+--- a/src/d3d11/d3d11_context_imm.cpp
++++ b/src/d3d11/d3d11_context_imm.cpp
+@@ -621,9 +621,7 @@
+         pipeline_counts_.CPrimitives += part.pipeline_counts.CPrimitives;
+       }
+       if (auto &query = part.pipeline_query) {
+-        if (part.begins_pipeline_query)
+-          query->begun = pipeline_counts_;
+-        else
++        if (!part.begins_pipeline_query)
+           query->counts = PipelineCountsSince(query->begun);
+       }
+       // as End does for a query the immediate context ends: an event tells when the copies are done, here those of

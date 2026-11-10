@@ -1,11 +1,18 @@
 #include "d3d11_device.hpp"
 #include "d3d11_private.h"
-#include "dxmt_format.hpp"
+#include "mullion_format.hpp"
 #include "d3d11_resource.hpp"
 #include "d3d11_1.h"
 #include "util_math.hpp"
+#include <bit>
 
-namespace dxmt {
+namespace mullion {
+
+template <>
+HRESULT
+ExtractEntireResourceViewDescription(const D3D11_BUFFER_DESC *, D3D11_RENDER_TARGET_VIEW_DESC1 *) {
+  return E_INVALIDARG;
+}
 
 template <>
 HRESULT ExtractEntireResourceViewDescription<D3D11_BUFFER_DESC,
@@ -306,16 +313,65 @@ CreateMTLTextureDescriptorInternal(
   if (Width == 0 || Height == 0 || Depth == 0 || ArraySize == 0 || SampleCount == 0)
     return E_INVALIDARG;
 
+  const bool d3d11 = pDevice->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0;
+  const UINT dimension_limit =
+      Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D
+          ? (d3d11 ? D3D11_REQ_TEXTURE1D_U_DIMENSION : D3D10_REQ_TEXTURE1D_U_DIMENSION)
+      : Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D
+          ? (d3d11 ? D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION : D3D10_REQ_TEXTURE2D_U_OR_V_DIMENSION)
+          : (d3d11 ? D3D11_REQ_TEXTURE3D_U_V_OR_W_DIMENSION : D3D10_REQ_TEXTURE3D_U_V_OR_W_DIMENSION);
+  if (Width > dimension_limit || Height > dimension_limit || Depth > dimension_limit)
+    return E_INVALIDARG;
+
+  UINT array_limit = pDevice->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0 ?
+                       (Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D ? D3D11_REQ_TEXTURE1D_ARRAY_AXIS_DIMENSION :
+                                                                         D3D11_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION) :
+                       (Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D ? D3D10_REQ_TEXTURE1D_ARRAY_AXIS_DIMENSION :
+                                                                         D3D10_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION);
+  UINT mip_limit = std::bit_width(Width | Height | Depth);
+  if (ArraySize > array_limit || MipLevels > mip_limit ||
+      (SampleCount > 1 && (MipLevels != 1 || Usage != D3D11_USAGE_DEFAULT)) ||
+      (Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D && (BindFlags & D3D11_BIND_DEPTH_STENCIL)))
+    return E_INVALIDARG;
+  // D3D11.3 5.3.8: a cube view spans six square faces; Windows also accepts trailing slices at 10.1 and above
+  constexpr UINT cube_faces = 6;
+  if ((MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) &&
+      (Dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D || Width != Height || ArraySize < cube_faces ||
+       SampleCount != 1 || (pDevice->GetFeatureLevel() < D3D_FEATURE_LEVEL_10_1 && ArraySize != cube_faces)))
+    return E_INVALIDARG;
+
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Format, metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Format, metal_format)) ||
+      metal_format.PixelFormat == WMTPixelFormatInvalid) {
     ERR("CreateMTLTextureDescriptorInternal: creating a texture of invalid "
         "format: ",
         Format);
     return E_FAIL;
   }
 
+  // a format makes the textures its row names (Microsoft Learn, "Format support for Direct3D Feature Level 11.0
+  // hardware": Texture1D, Texture2D, Texture3D, TextureCube)
+  UINT support = 0;
+  pDevice->CheckFormatSupport(Format, &support);
+  if (!(support & ((MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE)    ? D3D11_FORMAT_SUPPORT_TEXTURECUBE
+                   : Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D ? D3D11_FORMAT_SUPPORT_TEXTURE1D
+                   : Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D ? D3D11_FORMAT_SUPPORT_TEXTURE2D
+                                                                     : D3D11_FORMAT_SUPPORT_TEXTURE3D)))
+    return E_INVALIDARG;
+
+  if (metal_format.Flag & MTL_DXGI_FORMAT_VIDEO_PLANAR) {
+    if (((Width | Height) & 1) || MipLevels != 1 ||
+        SampleCount != 1 || (MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) ||
+        (BindFlags & D3D11_BIND_DEPTH_STENCIL) || (Usage == D3D11_USAGE_STAGING && ArraySize > 1))
+      return E_INVALIDARG;
+  }
+
   auto shared_flag = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-  if ((MiscFlags & shared_flag) == shared_flag) // check mutually exclusive flags
+  // 10Level9 ID3D11Device::CreateTexture2D excludes shared RGBA8 textures below feature level 10_0.
+  if ((MiscFlags & shared_flag) == shared_flag ||
+      ((MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE) && !(MiscFlags & shared_flag)) ||
+      ((MiscFlags & shared_flag) && pDevice->GetFeatureLevel() < D3D_FEATURE_LEVEL_10_0 &&
+       (Format == DXGI_FORMAT_R8G8B8A8_UNORM || Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)))
     return E_INVALIDARG;
 
   if (BindFlags & D3D11_BIND_DEPTH_STENCIL) {
@@ -330,31 +386,46 @@ CreateMTLTextureDescriptorInternal(
       break;
     case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
     case DXGI_FORMAT_D24_UNORM_S8_UINT:
-    case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS:
-    case DXGI_FORMAT_R24_UNORM_X8_TYPELESS:
-    case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT:
-    case DXGI_FORMAT_X24_TYPELESS_G8_UINT:
     case DXGI_FORMAT_R32G8X24_TYPELESS:
     case DXGI_FORMAT_R24G8_TYPELESS:
       break;
     default:
-      ERR("Unhandled depth stencil format ", Format);
-      break;
+      return E_INVALIDARG;
     }
   }
   pDescOut->pixel_format = ORIGINAL_FORMAT(metal_format.PixelFormat);
+  // a stencil view's format is not one Metal makes textures in: the texture is the depth stencil one it is a view of
+  if (pDescOut->pixel_format == WMTPixelFormatX32_Stencil8)
+    pDescOut->pixel_format = WMTPixelFormatDepth32Float_Stencil8;
+
+  auto capability =
+      MTLGetDXGIFormatCapability(metal_format, pDevice->GetMTLPixelFormatCapability(pDescOut->pixel_format));
+  if ((BindFlags & D3D11_BIND_RENDER_TARGET) && !any_bit_set(capability & FormatCapability::Color))
+    return E_INVALIDARG;
+  if ((BindFlags & D3D11_BIND_UNORDERED_ACCESS) &&
+      ((BindFlags & D3D11_BIND_DEPTH_STENCIL) ||
+       !TypedUnorderedAccess(capability, pDevice->GetMTLPixelFormatCapability(metal_format.BufferPixelFormat))))
+    return E_INVALIDARG;
+  // a plane's format is the one a shader reads the depth stencil texture in
+  if ((BindFlags & D3D11_BIND_SHADER_RESOURCE) && any_bit_set(capability & FormatCapability::DepthStencil) &&
+      !(metal_format.Flag & MTL_DXGI_FORMAT_TYPELESS) && metal_format.PixelFormat == pDescOut->pixel_format)
+    return E_INVALIDARG;
+  // D3D11.3 19.1.4 only permits shader reads of the shared-exponent format, even when Metal can render it
+  if (Format == DXGI_FORMAT_R9G9B9E5_SHAREDEXP && (BindFlags & ~D3D11_BIND_SHADER_RESOURCE))
+    return E_INVALIDARG;
 
   WMTTextureUsage metal_usage = WMTTextureUsageShaderRead;
 
-  if (BindFlags & (D3D11_BIND_CONSTANT_BUFFER | D3D11_BIND_VERTEX_BUFFER |
-                   D3D11_BIND_INDEX_BUFFER | D3D11_BIND_STREAM_OUTPUT)) {
+  if (BindFlags & ~(D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET | D3D11_BIND_DEPTH_STENCIL |
+                    D3D11_BIND_UNORDERED_ACCESS)) {
     ERR("CreateMTLTextureDescriptorInternal: invalid bind flags");
-    return E_FAIL;
+    return E_INVALIDARG;
   } else {
     if (BindFlags & (D3D11_BIND_RENDER_TARGET | D3D11_BIND_DEPTH_STENCIL))
       metal_usage |= WMTTextureUsageRenderTarget;
     if (BindFlags & D3D11_BIND_UNORDERED_ACCESS) {
-      metal_usage |= WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
+      // a uint clear writes through a uint view; a written texture is not compressed anyway
+      metal_usage |= WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite | WMTTextureUsagePixelFormatView;
       // NOTE: R32/RG32_TYPELESS format should be mapped to uint pixel format
       if (metal_format.PixelFormat == WMTPixelFormatR32Uint ||
           metal_format.PixelFormat == WMTPixelFormatR32Sint ||
@@ -366,10 +437,20 @@ CreateMTLTextureDescriptorInternal(
     // decoder not supported: D3D11_BIND_DECODER, D3D11_BIND_VIDEO_ENCODER
   }
 
-  if (metal_format.Flag & MTL_DXGI_FORMAT_TYPELESS) {
+  // a copy into a staging depth stencil reads the stencil through an X32_Stencil8 view, as D3D12 does
+  if ((metal_format.Flag & (MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_VIDEO_PLANAR)) ||
+      pDescOut->pixel_format == WMTPixelFormatDepth32Float_Stencil8) {
     // well this is necessary for passing validation layer
     metal_usage |= WMTTextureUsagePixelFormatView;
   }
+
+  // a resolve Metal cannot do renders its destination, any single-sampled default texture (ResolveSubresource)
+  if (Usage == D3D11_USAGE_DEFAULT && Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D && SampleCount == 1 &&
+      any_bit_set(capability & FormatCapability::Color))
+    metal_usage |= WMTTextureUsageRenderTarget;
+
+  if ((MiscFlags & D3D11_RESOURCE_MISC_GENERATE_MIPS) && MipmapFormat(pDescOut->pixel_format) != pDescOut->pixel_format)
+    metal_usage |= WMTTextureUsagePixelFormatView;
 
   if (metal_format.Flag & (MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER)) {
     metal_usage |= WMTTextureUsageRenderTarget;
@@ -399,7 +480,7 @@ CreateMTLTextureDescriptorInternal(
   pDescOut->options = options;
 
   if (MipLevels == 0) {
-    pDescOut->mipmap_level_count = 32 - __builtin_clz(Width | Height);
+    pDescOut->mipmap_level_count = mip_limit;
   } else {
     pDescOut->mipmap_level_count = MipLevels;
   }
@@ -421,36 +502,25 @@ CreateMTLTextureDescriptorInternal(
     }
     break;
   case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
-    if (MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) {
-      D3D11_ASSERT(ArraySize / 6);
-      D3D11_ASSERT((ArraySize % 6) == 0);
-      if ((ArraySize / 6) > 1) {
-        pDescOut->type = WMTTextureTypeCubeArray;
-        pDescOut->array_length = ArraySize / 6;
+    if (SampleCount > 1) {
+      pDescOut->sample_count = RasterSampleCount(pDevice->GetMTLDevice(), SampleCount);
+      if (!pDescOut->sample_count) {
+        ERR("CreateMTLTextureDescriptorInternal: sample count ", SampleCount,
+            " is not supported.");
+        return E_INVALIDARG;
+      }
+      if (ArraySize > 1) {
+        pDescOut->type = WMTTextureType2DMultisampleArray;
+        pDescOut->array_length = ArraySize;
       } else {
-        pDescOut->type = WMTTextureTypeCube;
+        pDescOut->type = WMTTextureType2DMultisample;
       }
     } else {
-      if (SampleCount > 1) {
-        if (!pDevice->GetMTLDevice().supportsTextureSampleCount(SampleCount)) {
-          ERR("CreateMTLTextureDescriptorInternal: sample count ", SampleCount,
-              " is not supported.");
-          return E_INVALIDARG;
-        }
-        if (ArraySize > 1) {
-          pDescOut->type = WMTTextureType2DMultisampleArray;
-          pDescOut->array_length = ArraySize;
-        } else {
-          pDescOut->type = WMTTextureType2DMultisample;
-        }
-        pDescOut->sample_count = SampleCount;
+      if (ArraySize > 1) {
+        pDescOut->type = WMTTextureType2DArray;
+        pDescOut->array_length = ArraySize;
       } else {
-        if (ArraySize > 1) {
-          pDescOut->type = WMTTextureType2DArray;
-          pDescOut->array_length = ArraySize;
-        } else {
-          pDescOut->type = WMTTextureType2D;
-        }
+        pDescOut->type = WMTTextureType2D;
       }
     }
     break;
@@ -487,6 +557,16 @@ HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE2D_DESC1 *pDesc,
                                    D3D11_TEXTURE2D_DESC1 *pOutDesc,
                                    WMTTextureInfo *pMtlDescOut) {
+  if (pDesc->Format == DXGI_FORMAT_NV12 && pDesc->SampleDesc.Quality)
+    return E_INVALIDARG;
+  UINT quality_levels = 0;
+  if (FAILED(pDevice->CheckMultisampleQualityLevels(pDesc->Format, pDesc->SampleDesc.Count, &quality_levels)) ||
+      !quality_levels ||
+      (pDesc->SampleDesc.Quality >= quality_levels &&
+       (pDevice->GetFeatureLevel() < D3D_FEATURE_LEVEL_10_1 ||
+        (pDesc->SampleDesc.Quality != D3D11_STANDARD_MULTISAMPLE_PATTERN &&
+         pDesc->SampleDesc.Quality != D3D11_CENTER_MULTISAMPLE_PATTERN))))
+    return E_INVALIDARG;
   auto hr = CreateMTLTextureDescriptorInternal(
       pDevice, D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width, pDesc->Height,
       1, pDesc->ArraySize, pDesc->SampleDesc.Count, pDesc->BindFlags,
@@ -625,9 +705,15 @@ GetLinearTextureLayout(
     return S_OK;
   }
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
-  auto alignment = std::max(1u, metal_format.BytesPerTexel);
+  uint64_t alignment = std::max(1u, metal_format.BytesPerTexel);
   if (Aligned && !(metal_format.Flag & (MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER))) {
     alignment = metal.minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat);
+  }
+  if (metal_format.Flag & MTL_DXGI_FORMAT_VIDEO_PLANAR) {
+    MTLQueryDXGIFormat(metal, Desc.Format, metal_format, 1);
+    if (Aligned)
+      alignment = std::max(alignment, metal.minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat));
+    h += h / metal_format.SubsampleHeight;
   }
   auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
   BytesPerRow = aligned_bytes_per_row;
@@ -741,4 +827,4 @@ void UpgradeResourceDescription<D3D11_TEXTURE3D_DESC, D3D11_TEXTURE3D_DESC1>(
   dst.TextureLayout = D3D11_TEXTURE_LAYOUT_UNDEFINED;
 }
 
-}; // namespace dxmt
+}; // namespace mullion

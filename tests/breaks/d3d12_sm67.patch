@@ -1,0 +1,12 @@
+# QuadAny and QuadAll are swapped
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3437,7 +3437,7 @@
+       break;
+     case QuadVote:
+       // DXIL's QuadVoteOpKind: any 0, all 1. a quad's helpers take part
+-      ret = simd(constant(a(2)) ? "quad_all" : "quad_any", ir.getInt1Ty(), {a(1)});
++      ret = simd(constant(a(2)) ? "quad_any" : "quad_all", ir.getInt1Ty(), {a(1)});
+       break;
+     case CheckAccessFullyMapped:
+       ret = ir.CreateICmpNE(a(1), ir.getInt32(0));

@@ -1,0 +1,12 @@
+# presentation applies an extra sRGB encoding to already encoded RGBA8 values
+--- a/src/mullion/mullion_presenter.cpp
++++ b/src/mullion/mullion_presenter.cpp
+@@ -280,7 +280,7 @@
+       {{&true_data}, WMTDataTypeBool, kPresentFCIndex_BackbufferSizeMatched},
+       {{is_pq ? &true_data : &false_data}, WMTDataTypeBool, kPresentFCIndex_HDRPQ},
+       {{with_hdr_metadata ? &true_data : &false_data}, WMTDataTypeBool, kPresentFCIndex_WithHDRMetadata},
+-      {{Is_sRGBVariant(ConvertSwapChainFormat(source_format_)) ? &true_data : &false_data}, WMTDataTypeBool,
++      {{(Is_sRGBVariant(ConvertSwapChainFormat(source_format_)) || source_format_ == DXGI_FORMAT_R8G8B8A8_UNORM) ? &true_data : &false_data}, WMTDataTypeBool,
+        kPresentFCIndex_BackbufferIsSRGB},
+       {{is_ms ? &true_data : &false_data}, WMTDataTypeBool, kPresentFCIndex_BackbufferIsMS},
+       {{gamma_enable ? &true_data : &false_data}, WMTDataTypeBool, kPresentFCIndex_GammaEnabled},

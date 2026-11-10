@@ -1,0 +1,60 @@
+title: "<game>"
+body:
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      description: Name, store and version
+    validations:
+      required: true
+  - type: input
+    id: mullion
+    attributes:
+      label: Mullion
+      description: Release, or commit of a build
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac
+      description: Model and macOS version
+    validations:
+      required: true
+  - type: input
+    id: wine
+    attributes:
+      label: Wine
+      description: Wine or CrossOver, and version
+    validations:
+      required: true
+  - type: dropdown
+    id: api
+    attributes:
+      label: API
+      options:
+        - Direct3D 12
+        - Direct3D 11
+        - Direct3D 10
+    validations:
+      required: true
+  - type: input
+    id: settings
+    attributes:
+      label: Settings
+      description: Preset and resolution
+    validations:
+      required: true
+  - type: input
+    id: fps
+    attributes:
+      label: FPS
+      description: Average, and where it was measured
+    validations:
+      required: true
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+    validations:
+      required: false

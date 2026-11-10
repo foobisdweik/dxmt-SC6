@@ -1,0 +1,12 @@
+# pixel shaders never learn that the pipeline's targets use the center pattern
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -1200,7 +1200,7 @@
+       data_ps.single_raster_sample = attached && pDesc->RasterizerState.ForcedSampleCount == 1;
+       data_ps.clip_distances = clips;
+       data_ps.centered_samples =
+-          data_ps.single_raster_sample || pDesc->SampleDesc.Quality == DXGI_CENTER_MULTISAMPLE_QUALITY_PATTERN;
++          data_ps.single_raster_sample;
+ 
+       std::array<WMTPixelFormat, std::size(data_ps.pixel_formats)> formats{};
+       for (unsigned i = 0; i < pDesc->NumRenderTargets; i++)

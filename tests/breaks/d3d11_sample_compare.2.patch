@@ -1,0 +1,12 @@
+# LESS_EQUAL is mapped to LESS, so equality fails for comparison samples and gathers
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -31,7 +31,7 @@
+   WMTCompareFunctionNever, // 1 - 1
+   WMTCompareFunctionLess,
+   WMTCompareFunctionEqual,
+-  WMTCompareFunctionLessEqual,
++  WMTCompareFunctionLess,
+   WMTCompareFunctionGreater,
+   WMTCompareFunctionNotEqual,
+   WMTCompareFunctionGreaterEqual,

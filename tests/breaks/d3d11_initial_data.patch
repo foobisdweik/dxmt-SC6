@@ -1,0 +1,12 @@
+# null initial memory is reported as success
+--- a/src/d3d11/d3d11_device.cpp
++++ b/src/d3d11/d3d11_device.cpp
+@@ -416,7 +416,7 @@
+
+     if (!pDesc || (pDesc->ByteWidth == 0 && !(pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILE_POOL)) ||
+         (pInitialData && !pInitialData->pSysMem))
+-      return E_INVALIDARG;
++      return S_OK;
+
+     if ((pDesc->BindFlags & D3D11_BIND_CONSTANT_BUFFER) &&
+         (pDesc->BindFlags != D3D11_BIND_CONSTANT_BUFFER ||

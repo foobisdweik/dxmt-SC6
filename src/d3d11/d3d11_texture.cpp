@@ -1,7 +1,7 @@
 #include "d3d11_texture.hpp"
 #include "d3d11_resource.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 template <>
 void InitializeTextureData(MTLD3D11Device *pDevice, WMT::Texture target,
@@ -70,4 +70,4 @@ void InitializeTextureData(MTLD3D11Device *pDevice, WMT::Texture target,
   }
 };
 
-} // namespace dxmt
+} // namespace mullion

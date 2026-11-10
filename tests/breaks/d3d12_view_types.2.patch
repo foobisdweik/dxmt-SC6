@@ -1,0 +1,12 @@
+# every array texture write goes to layer zero
+--- a/src/airconv/nt/air_builder.cpp
++++ b/src/airconv/nt/air_builder.cpp
+@@ -772,7 +772,7 @@
+ 
+   if (TexInfo.is_array) {
+     Tys.push_back(getIntTy());
+-    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
++    Ops.push_back(getInt(0));
+   }
+ 
+   Tys.push_back(getTexelType(Texture));

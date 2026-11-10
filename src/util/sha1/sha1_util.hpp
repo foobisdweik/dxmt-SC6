@@ -16,7 +16,7 @@
 #include <functional>
 #include "./sha1.h"
 
-namespace dxmt {
+namespace mullion {
 
 struct Sha1Digest {
   uint8_t data[20];
@@ -64,20 +64,20 @@ private:
   _SHA1_CTX ctx;
 };
 
-} // namespace dxmt
+} // namespace mullion
 
 namespace std {
-template <> struct hash<dxmt::Sha1Digest> {
+template <> struct hash<mullion::Sha1Digest> {
   size_t
-  operator()(const dxmt::Sha1Digest &v) const noexcept {
+  operator()(const mullion::Sha1Digest &v) const noexcept {
     std::hash<std::string_view> h;
     return h(std::string_view({reinterpret_cast<const char *>(v.data), sizeof(v)}));
   };
 };
 
-template <> struct equal_to<dxmt::Sha1Digest> {
+template <> struct equal_to<mullion::Sha1Digest> {
   bool
-  operator()(const dxmt::Sha1Digest &x, const dxmt::Sha1Digest &y) const {
+  operator()(const mullion::Sha1Digest &x, const mullion::Sha1Digest &y) const {
     constexpr size_t binsize = sizeof(x);
     return std::string_view({reinterpret_cast<const char *>(x.data), binsize}) ==
            std::string_view({reinterpret_cast<const char *>(y.data), binsize});

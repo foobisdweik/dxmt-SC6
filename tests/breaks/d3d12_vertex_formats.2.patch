@@ -1,0 +1,12 @@
+# append mixed-width vertex elements without their required alignment.
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -199,7 +199,7 @@
+       return E_INVALIDARG;
+     }
+     auto aligned_byte_offset = desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT
+-                                   ? align(append_offset[desc.InputSlot], std::min(4u, metal_format.BytesPerTexel))
++                                   ? align(append_offset[desc.InputSlot], 1u)
+                                    : desc.AlignedByteOffset;
+     append_offset[desc.InputSlot] = aligned_byte_offset + metal_format.BytesPerTexel;
+ 

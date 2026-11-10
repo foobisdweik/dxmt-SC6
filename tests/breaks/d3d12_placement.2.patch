@@ -1,0 +1,13 @@
+# 4KB alignment is decided by Metal's size of the texture, not D3D12's estimate
+# family native
+--- a/src/d3d12/d3d12_texture.cpp
++++ b/src/d3d12/d3d12_texture.cpp
+@@ -226,7 +226,7 @@
+       if (Plane != ~0u)
+         return S_OK;
+       if (!(Format.Flag & MTL_DXGI_FORMAT_VIDEO_PLANAR)) {
+-        if (SmallResourceEstimate(Desc, Format) > D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT)
++        if (Device->GetMTLDevice().heapTextureSizeAndAlign(InfoOut).size > D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT)
+           return FAIL(E_INVALIDARG);
+         return S_OK;
+       }

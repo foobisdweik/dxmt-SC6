@@ -1,0 +1,12 @@
+# the quadrilateral is 1.0 wide, not 1.4.
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -1314,7 +1314,7 @@
+     auto w = size(0), h = size(1);
+     auto sx = builder.CreateFMul(w, builder.CreateFSub(builder.CreateFMul(at(b, 0), at(a, 3)), builder.CreateFMul(at(a, 0), at(b, 3))));
+     auto sy = builder.CreateFMul(h, builder.CreateFSub(builder.CreateFMul(at(b, 1), at(a, 3)), builder.CreateFMul(at(a, 1), at(b, 3))));
+-    constexpr float line_width = 1.4f;
++    constexpr float line_width = 1.0f;
+     auto scale = builder.CreateFDiv(
+         llvm::ConstantFP::get(types._float, line_width),
+         air.CreateFPUnOp(llvm::air::AIRBuilder::sqrt, builder.CreateFAdd(builder.CreateFMul(sx, sx), builder.CreateFMul(sy, sy)), false)

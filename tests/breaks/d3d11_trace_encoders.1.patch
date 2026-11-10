@@ -1,0 +1,13 @@
+# omit standalone clear traces
+diff --git a/src/mullion/mullion_context.cpp b/src/mullion/mullion_context.cpp
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -1380,7 +1380,7 @@
+                                             : cmdbuf.renderCommandEncoder(info);
+         encoder.setLabel(WMT::String::string("ClearPass", WMTUTF8StringEncoding));
+         auto index = metal_encoder_count++;
+-        if (diag::errors || diag::trace_encoders) {
++        if (diag::errors) {
+           auto label = str::format(
+               "clear ", seqId, ".", index, ": ", data->attachment.texture().width(), "x",
+               data->attachment.texture().height(), ", 0 draws (0 geometry, 0 tessellation)"

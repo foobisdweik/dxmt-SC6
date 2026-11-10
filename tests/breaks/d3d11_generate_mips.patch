@@ -1,0 +1,12 @@
+# omits generation for a two-level shader resource view.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1010,7 +1010,7 @@
+           fixedViewId = tex->checkViewUseFormat(viewId, WMTPixelFormatR8Unorm);
+         }
+         WMT::Texture texture = enc.access(tex, fixedViewId, ResourceAccess::ReadWrite).texture;
+-        if (texture.mipmapLevelCount() > 1) {
++        if (texture.mipmapLevelCount() > 2) {
+           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_generate_mipmaps>();
+           cmd.type = WMTBlitCommandGenerateMipmaps;
+           cmd.texture = texture;

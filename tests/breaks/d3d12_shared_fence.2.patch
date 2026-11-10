@@ -1,0 +1,13 @@
+# a Direct3D 12 signal of a shared fence does not reach its event
+--- a/src/d3d12/d3d12_fence.cpp
++++ b/src/d3d12/d3d12_fence.cpp
+@@ -71,8 +71,7 @@
+   void
+   Signaled(uint64_t Value) override {
+     Reach(Value);
+-    if (event_)
+-      event_.signalValue(Value);
++    ;
+   }
+ 
+   D3DKMT_HANDLE

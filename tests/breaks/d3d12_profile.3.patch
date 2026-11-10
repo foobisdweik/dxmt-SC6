@@ -1,0 +1,12 @@
+# Metal 4: a pass that continues the compute encoder after a sampled pass writes its own start sample, which Metal drops
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -4268,8 +4268,6 @@
+         start = *sample;
+       if (sample && sample->sample_buffer && sample->sample_buffer == owner->stamp_heap &&
+           sample->start_of_encoder_sample_index != MTLCounterDontSample) {
+-        start.start_of_encoder_sample_index = MTLCounterDontSample;
+-        sample->start_of_encoder_sample_index = owner->stamp_index;
+       }
+       owner->stamp_heap = 0;
+       metal4_begin_samples(state, sample ? &start : NULL);

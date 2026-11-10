@@ -1,0 +1,19 @@
+# the conservative rasterizer's fragment function writes no depth
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -785,7 +785,6 @@
+     for (uint32_t i = 0; conservative && i < SM50_CONSERVATIVE_VARYINGS; i++)
+       source += "  float v" + std::to_string(i) + " [[user(mullion_conservative" + std::to_string(i) + "), flat]];\n";
+     source += "};\nstruct Out {\n";
+-    source += conservative ? "  float z [[depth(any)]];\n" : "";
+     source += bounds ? "  uint samples [[sample_mask]];\n" : "";
+     source += "};\nfragment Out test_fragment(In in [[stage_in]]";
+     if (bounds)
+@@ -813,7 +812,6 @@
+   }
+   if (outside)
+     discard_fragment();
+-  out.z = in.position.z;
+ )";
+     }
+     if (bounds)

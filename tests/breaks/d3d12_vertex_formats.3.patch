@@ -1,0 +1,11 @@
+# The shared-exponent format is offered for vertex input.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -942,6 +942,7 @@
+   }
+   case DXGI_FORMAT_R9G9B9E5_SHAREDEXP: {
+     description.PixelFormat = WMTPixelFormatRGB9E5Float;
++    description.AttributeFormat = WMTAttributeFormatFloatRGB9E5;
+     description.BytesPerTexel = 4;
+     break;
+   }

@@ -1,0 +1,12 @@
+# the last public release destroys the fence while pending signals still own it
+--- a/src/d3d12/d3d12_fence.cpp
++++ b/src/d3d12/d3d12_fence.cpp
+@@ -43,7 +43,7 @@
+     if (!refCount) {
+       // pending signals keep the object alive after the last public release has unblocked its waiters
+       completion->Reach(UINT64_MAX);
+-      ReleasePrivate();
++      delete this;
+     }
+     return refCount;
+   }

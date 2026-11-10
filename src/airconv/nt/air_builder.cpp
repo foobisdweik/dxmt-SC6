@@ -10,16 +10,6 @@
 
 namespace llvm::air {
 
-struct TextureOperationInfo {
-  const char *air_symbol_suffix;
-  bool is_array;
-  uint8_t coord_dimension;
-  bool is_cube;
-  bool is_depth;
-  bool is_ms;
-  bool is_mipmaped;
-};
-
 TextureOperationInfo TextureInfo[] = {
     // texture_buffer,
     {"texture_buffer_1d", false, 1, false, false, false, false},
@@ -100,6 +90,26 @@ AIRBuilder::getTypeOverloadSuffix(Type *Ty, Signedness Sign) {
   return Ret;
 }
 
+// an unbound slot reads 0 and its queries answer 0 (D3D11.3 22.4.22: "If there is no resource bound to the specified
+// slot, 0 is returned"). Metal leaves a null texture's functions undefined, so the runtime binds a texture of the
+// slot's type in its place and a select drops what it answers: a branch round each call costs a sampling shader more
+Value *
+AIRBuilder::CreateTextureCall(const Texture &Texture, FunctionCallee Fn, ArrayRef<Value *> Ops) {
+  Value *Call = builder.CreateCall(Fn, Ops);
+  if (!Texture.Unbound || Call->getType()->isVoidTy())
+    return Call;
+  auto Drop = [&](Value *Answer) {
+    return builder.CreateSelect(Texture.Unbound, Constant::getNullValue(Answer->getType()), Answer);
+  };
+  auto Struct = dyn_cast<StructType>(Call->getType());
+  if (!Struct)
+    return Drop(Call);
+  Value *Answer = PoisonValue::get(Struct);
+  for (unsigned i = 0; i < Struct->getNumElements(); i++)
+    Answer = builder.CreateInsertValue(Answer, Drop(builder.CreateExtractValue(Call, i)), i);
+  return Answer;
+}
+
 Value *
 AIRBuilder::CreateAtomicRMW(
     const Texture &Texture, Value *Handle, AtomicRMWInst::BinOp Op, Value *Pos, Value *ValVec4, Value *ArrayIndex
@@ -115,6 +125,11 @@ AIRBuilder::CreateAtomicRMW(
   if (TexInfo.is_depth) {
     debug << "invalid operation: atomic operation on depth texture.\n";
     return nullptr; // TODO:
+  }
+
+  if (DiscardWrites) {
+    Op = AtomicRMWInst::Or;
+    ValVec4 = Constant::getNullValue(ValVec4->getType());
   }
 
   auto &Context = getContext();
@@ -138,7 +153,7 @@ AIRBuilder::CreateAtomicRMW(
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
-    Ops.push_back(ArrayIndex);
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
   }
 
   Tys.push_back(getTexelType(Texture));
@@ -200,7 +215,7 @@ AIRBuilder::CreateAtomicRMW(
 
   auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getTexelType(Texture), Tys, false), Attrs);
 
-  return builder.CreateCall(Fn, Ops);
+  return CreateTextureCall(Texture, Fn, Ops);
 }
 
 std::pair<Value *, Value *>
@@ -219,6 +234,9 @@ AIRBuilder::CreateAtomicCmpXchg(
     debug << "invalid operation: atomic operation on depth texture.\n";
     return {nullptr, nullptr}; // TODO:
   }
+
+  if (DiscardWrites)
+    return {CreateAtomicRMW(Texture, Handle, AtomicRMWInst::Or, Pos, CmpVec4, ArrayIndex), ConstantInt::getFalse(getContext())};
 
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
@@ -243,7 +261,7 @@ AIRBuilder::CreateAtomicCmpXchg(
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
-    Ops.push_back(ArrayIndex);
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
   }
 
   AllocaInst *Alloca = builder.CreateAlloca(TyTexel, 0u);
@@ -270,9 +288,10 @@ AIRBuilder::CreateAtomicCmpXchg(
 
   auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getBoolTy(), Tys, false), Attrs);
 
-  auto Ret = builder.CreateCall(Fn, Ops);
+  auto Ret = CreateTextureCall(Texture, Fn, Ops);
 
-  return {builder.CreateLoad(TyTexel, Ptr), Ret};
+  auto Old = builder.CreateLoad(TyTexel, Ptr);
+  return {Texture.Unbound ? builder.CreateSelect(Texture.Unbound, Constant::getNullValue(TyTexel), Old) : Old, Ret};
 }
 
 Type *
@@ -294,10 +313,6 @@ AIRBuilder::getTexelType(const Texture &Texture) {
     return getIntTy(4);
   if (Texture.sample_type == Texture::sample_uint)
     return getIntTy(4);
-  if (Texture.sample_type == Texture::sample_short || Texture.sample_type == Texture::sample_ushort)
-    return FixedVectorType::get(Type::getInt16Ty(getContext()), 4);
-  if (Texture.sample_type == Texture::sample_half)
-    return getHalfTy(4);
   llvm_unreachable("unhandled sample type");
 }
 
@@ -315,6 +330,12 @@ AIRBuilder::getTextureSampleCoordType(const Texture &Texture) {
   assert(Texture.kind <= Texture::last_resource_kind);
   auto &info = TextureInfo[Texture.kind];
   return getFloatTy(info.coord_dimension);
+}
+
+const TextureOperationInfo &
+AIRBuilder::getTextureInfo(Texture::ResourceKind Kind) {
+  assert(Kind <= Texture::last_resource_kind);
+  return TextureInfo[Kind];
 }
 
 Type *
@@ -374,7 +395,7 @@ AIRBuilder::CreateSampleCommon(
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
-    Ops.push_back(ArrayIndex);
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
   }
 
   switch (Texture.kind) {
@@ -423,7 +444,7 @@ AIRBuilder::CreateSampleCommon(
       FnName, FunctionType::get(getTextureSampleResultType(Texture), Tys, false), Attrs
   );
 
-  auto Result = builder.CreateCall(Fn, Ops);
+  auto Result = CreateTextureCall(Texture, Fn, Ops);
 
   return {builder.CreateExtractValue(Result, {0u}), builder.CreateExtractValue(Result, {1u})};
 };
@@ -478,7 +499,7 @@ AIRBuilder::CreateSampleCmpCommon(
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
-    Ops.push_back(ArrayIndex);
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
   }
 
   Tys.push_back(getFloatTy());
@@ -515,7 +536,7 @@ AIRBuilder::CreateSampleCmpCommon(
       FnName, FunctionType::get(getTextureSampleResultType(Texture), Tys, false), Attrs
   );
 
-  auto Result = builder.CreateCall(Fn, Ops);
+  auto Result = CreateTextureCall(Texture, Fn, Ops);
 
   return {builder.CreateExtractValue(Result, {0u}), builder.CreateExtractValue(Result, {1u})};
 };
@@ -523,7 +544,7 @@ AIRBuilder::CreateSampleCmpCommon(
 std::pair<Value *, Value *>
 AIRBuilder::CreateSampleGrad(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *DerivX,
-    Value *DerivY, Value *MinLOD, const int32_t Offset[3]
+    Value *DerivY, Value *MinLOD, const int32_t Offset[3], Value *Reference
 ) {
   assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -566,7 +587,12 @@ AIRBuilder::CreateSampleGrad(
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
-    Ops.push_back(ArrayIndex);
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
+  }
+
+  if (Reference) {
+    Tys.push_back(getFloatTy());
+    Ops.push_back(Reference);
   }
 
   Tys.push_back(getTextureSampleCoordType(Texture));
@@ -613,7 +639,7 @@ AIRBuilder::CreateSampleGrad(
   Tys.push_back(getIntTy());
   Ops.push_back(getInt(0));
 
-  std::string FnName = "air.sample_";
+  std::string FnName = Reference ? "air.sample_compare_" : "air.sample_";
   FnName += TexInfo.air_symbol_suffix;
   FnName += "_grad";
   FnName += getTypeOverloadSuffix(getTexelType(Texture), getTexelSign(Texture));
@@ -622,7 +648,7 @@ AIRBuilder::CreateSampleGrad(
       FnName, FunctionType::get(getTextureSampleResultType(Texture), Tys, false), Attrs
   );
 
-  auto Result = builder.CreateCall(Fn, Ops);
+  auto Result = CreateTextureCall(Texture, Fn, Ops);
 
   return {builder.CreateExtractValue(Result, {0u}), builder.CreateExtractValue(Result, {1u})};
 }
@@ -634,6 +660,48 @@ AIRBuilder::CreateRead(
 ) {
   assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
+
+  // D3D's sample 2i and 2i + 1 are the texture's i
+  if (Texture.Paired) {
+    auto Own = Texture;
+    Own.Paired = nullptr;
+    auto Index = builder.CreateSelect(Texture.Paired, builder.CreateLShr(SampleIndexOrCubeFace, 1), SampleIndexOrCubeFace);
+    return CreateRead(Own, Handle, Pos, ArrayIndex, Index, Level, DeviceCoherent);
+  }
+
+  if (Texture.SingleSample) {
+    auto Head = builder.GetInsertBlock();
+    auto Fn = Head->getParent();
+    auto Tail = builder.GetInsertPoint() == Head->end() ? BasicBlock::Create(getContext(), "", Fn)
+                                                        : Head->splitBasicBlock(builder.GetInsertPoint());
+    if (Head->getTerminator())
+      Head->getTerminator()->eraseFromParent();
+    auto Single = BasicBlock::Create(getContext(), "", Fn, Tail);
+    auto Multiple = BasicBlock::Create(getContext(), "", Fn, Tail);
+    builder.SetInsertPoint(Head);
+    builder.CreateCondBr(Texture.SingleSample, Single, Multiple);
+    auto Native = Texture;
+    Native.SingleSample = nullptr;
+    builder.SetInsertPoint(Multiple);
+    auto Many = CreateRead(Native, Handle, Pos, ArrayIndex, SampleIndexOrCubeFace, Level, DeviceCoherent);
+    builder.CreateBr(Tail);
+    Native.kind = TexInfo.is_depth ? (TexInfo.is_array ? Texture::depth2d_array : Texture::depth2d)
+                                   : (TexInfo.is_array ? Texture::texture2d_array : Texture::texture2d);
+    builder.SetInsertPoint(Single);
+    auto One = CreateRead(
+        Native, builder.CreateBitCast(Handle, getTextureHandleType(Native)), Pos, ArrayIndex, nullptr, getInt(0),
+        DeviceCoherent
+    );
+    builder.CreateBr(Tail);
+    builder.SetInsertPoint(Tail, Tail->begin());
+    auto Value = builder.CreatePHI(One.first->getType(), 2);
+    Value->addIncoming(One.first, Single);
+    Value->addIncoming(Many.first, Multiple);
+    auto Residency = builder.CreatePHI(One.second->getType(), 2);
+    Residency->addIncoming(One.second, Single);
+    Residency->addIncoming(Many.second, Multiple);
+    return {Value, Residency};
+  }
 
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
@@ -669,7 +737,7 @@ AIRBuilder::CreateRead(
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
-    Ops.push_back(ArrayIndex);
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
   }
 
   if (TexInfo.is_ms) {
@@ -695,7 +763,7 @@ AIRBuilder::CreateRead(
       FnName, FunctionType::get(getTextureSampleResultType(Texture), Tys, false), Attrs
   );
 
-  auto Result = builder.CreateCall(Fn, Ops);
+  auto Result = CreateTextureCall(Texture, Fn, Ops);
 
   return {builder.CreateExtractValue(Result, {0u}), builder.CreateExtractValue(Result, {1u})};
 }
@@ -707,6 +775,9 @@ AIRBuilder::CreateWrite(
 ) {
   assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
+
+  if (DiscardWrites)
+    return nullptr;
 
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
@@ -735,7 +806,7 @@ AIRBuilder::CreateWrite(
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
-    Ops.push_back(ArrayIndex);
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
   }
 
   Tys.push_back(getTexelType(Texture));
@@ -757,7 +828,10 @@ AIRBuilder::CreateWrite(
 
   auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getVoidTy(), Tys, false), Attrs);
 
-  return builder.CreateCall(Fn, Ops);
+  auto Write = builder.CreateCall(Fn, Ops);
+  if (Texture.memory_access == Texture::acesss_readwrite) // a thread reads what it wrote only past a fence
+    CreateTextureFence(Texture, Handle);
+  return Write;
 }
 
 std::pair<Value *, Value *>
@@ -806,7 +880,7 @@ AIRBuilder::CreateGather(
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
-    Ops.push_back(ArrayIndex);
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
   }
 
   switch (Texture.kind) {
@@ -840,7 +914,7 @@ AIRBuilder::CreateGather(
       FnName, FunctionType::get(getTextureGatherResultType(Texture), Tys, false), Attrs
   );
 
-  auto Result = builder.CreateCall(Fn, Ops);
+  auto Result = CreateTextureCall(Texture, Fn, Ops);
 
   return {builder.CreateExtractValue(Result, {0u}), builder.CreateExtractValue(Result, {1u})};
 };
@@ -894,7 +968,7 @@ AIRBuilder::CreateGatherCompare(
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
-    Ops.push_back(ArrayIndex);
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
   }
 
   Tys.push_back(getFloatTy());
@@ -924,7 +998,7 @@ AIRBuilder::CreateGatherCompare(
       FnName, FunctionType::get(getTextureGatherResultType(Texture), Tys, false), Attrs
   );
 
-  auto Result = builder.CreateCall(Fn, Ops);
+  auto Result = CreateTextureCall(Texture, Fn, Ops);
 
   return {builder.CreateExtractValue(Result, {0u}), builder.CreateExtractValue(Result, {1u})};
 };
@@ -933,6 +1007,45 @@ Value *
 AIRBuilder::CreateTextureQuery(const Texture &Texture, Value *Handle, Texture::Query Query, Value *Level) {
   assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
+
+  if (Texture.Paired) {
+    auto Own = Texture;
+    Own.Paired = nullptr;
+    auto Value = CreateTextureQuery(Own, Handle, Query, Level);
+    return Query == Texture::num_samples ? builder.CreateShl(Value, builder.CreateZExt(Texture.Paired, getIntTy()))
+                                         : Value;
+  }
+
+  if (Texture.SingleSample) {
+    auto Head = builder.GetInsertBlock();
+    auto Fn = Head->getParent();
+    auto Tail = builder.GetInsertPoint() == Head->end() ? BasicBlock::Create(getContext(), "", Fn)
+                                                        : Head->splitBasicBlock(builder.GetInsertPoint());
+    if (Head->getTerminator())
+      Head->getTerminator()->eraseFromParent();
+    auto Single = BasicBlock::Create(getContext(), "", Fn, Tail);
+    auto Multiple = BasicBlock::Create(getContext(), "", Fn, Tail);
+    builder.SetInsertPoint(Head);
+    builder.CreateCondBr(Texture.SingleSample, Single, Multiple);
+    auto Native = Texture;
+    Native.SingleSample = nullptr;
+    builder.SetInsertPoint(Multiple);
+    auto Many = CreateTextureQuery(Native, Handle, Query, Level);
+    builder.CreateBr(Tail);
+    Native.kind = TexInfo.is_depth ? (TexInfo.is_array ? Texture::depth2d_array : Texture::depth2d)
+                                   : (TexInfo.is_array ? Texture::texture2d_array : Texture::texture2d);
+    builder.SetInsertPoint(Single);
+    auto One =
+        Query == Texture::num_samples
+            ? builder.CreateSelect(builder.CreateIsNull(Handle), getInt(0), getInt(1))
+            : CreateTextureQuery(Native, builder.CreateBitCast(Handle, getTextureHandleType(Native)), Query, getInt(0));
+    builder.CreateBr(Tail);
+    builder.SetInsertPoint(Tail, Tail->begin());
+    auto Value = builder.CreatePHI(getIntTy(), 2);
+    Value->addIncoming(One, Single);
+    Value->addIncoming(Many, Multiple);
+    return Value;
+  }
 
   static const char *QUERIES[] = {
       "get_width", "get_height", "get_depth", "get_array_size", "get_num_mip_levels", "get_num_samples",
@@ -977,55 +1090,7 @@ AIRBuilder::CreateTextureQuery(const Texture &Texture, Value *Handle, Texture::Q
 
   auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getIntTy(), Tys, false), Attrs);
 
-  return builder.CreateSelect(builder.CreateIsNull(Handle), builder.getInt32(0), builder.CreateCall(Fn, Ops));
-}
-
-Value *
-AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, bool Clamped) {
-  assert(Texture.kind <= Texture::last_resource_kind);
-  auto &TexInfo = TextureInfo[Texture.kind];
-
-  auto &Context = getContext();
-  auto Attrs = AttributeList::get(
-      Context, {
-                   {1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
-                   {1U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
-                   {2U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
-                   {2U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
-                   {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)},
-                   {~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
-                   {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
-                   {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
-                   {~0U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
-               }
-  );
-
-  SmallVector<Value *> Ops;
-  SmallVector<Type *> Tys;
-
-  Tys.push_back(getTextureHandleType(Texture));
-  Ops.push_back(Handle);
-
-  Tys.push_back(getSamplerHandleType());
-  Ops.push_back(Sampler);
-
-  Tys.push_back(getTextureSampleCoordType(Texture));
-  if (options.sampleNaNToZero) {
-    Ops.push_back(getNaNToZero(Coord));
-  } else {
-    Ops.push_back(Coord);
-  }
-
-  /* access: always 0 = sample */
-  Tys.push_back(getIntTy());
-  Ops.push_back(getInt(0));
-
-  std::string FnName = Clamped ? "air.calculate_clamped_lod_" : "air.calculate_unclamped_lod_";
-  FnName += TexInfo.air_symbol_suffix;
-
-  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getFloatTy(), Tys, false), Attrs);
-
-  return builder.CreateCall(Fn, Ops);
+  return CreateTextureCall(Texture, Fn, Ops);
 }
 
 std::pair<Value *, Value *>
@@ -1080,7 +1145,7 @@ AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sam
   auto FnUnclamped =
       getModule()->getOrInsertFunction(FnUnclampedName, FunctionType::get(getFloatTy(), Tys, false), Attrs);
 
-  return {builder.CreateCall(Fn, Ops), builder.CreateCall(FnUnclamped, Ops)};
+  return {CreateTextureCall(Texture, Fn, Ops), CreateTextureCall(Texture, FnUnclamped, Ops)};
 }
 
 CallInst *
@@ -1137,6 +1202,64 @@ AIRBuilder::CreateGetNumSamples() {
   return builder.CreateCall(Fn, Ops);
 }
 
+// the sample's offset from the pixel center (mullion.sample_pos, linked from air_samplepos.metal). Metal's own
+// get_sample_position fails to compile in pipelines that support indirect command buffers, as Mullion's all do
+Value *
+AIRBuilder::CreateSamplePos(Value *SampleCount, Value *Index) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)}}
+  );
+  auto Fn = getModule()->getOrInsertFunction(
+      "mullion.sample_pos.i32", FunctionType::get(getFloatTy(2), {getIntTy(), getIntTy()}, false), Attrs
+  );
+  return builder.CreateCall(Fn, {SampleCount, Index});
+}
+
+// a render target sample's offset: the pattern of no samples places every one at the center
+Value *
+AIRBuilder::CreateRasterizerSamplePos(Value *Index) {
+  return CreateSamplePos(CenteredSamples ? getInt(0) : CreateGetNumSamples(), Index);
+}
+
+// D3D's sample 2i and 2i + 1 are Metal's i
+Value *
+AIRBuilder::CreateD3DSampleCount() {
+  return PairedSamples ? builder.CreateShl(CreateGetNumSamples(), 1) : CreateGetNumSamples();
+}
+
+Value *
+AIRBuilder::D3DSampleIndex(Value *Index) {
+  return PairedSamples ? builder.CreateShl(Index, 1) : Index;
+}
+
+Value *
+AIRBuilder::MetalSampleIndex(Value *Index) {
+  return PairedSamples ? builder.CreateLShr(Index, 1) : Index;
+}
+
+// each of Metal's covered samples covers both of D3D's: bit i to bits 2i and 2i + 1, of at most 4 samples
+Value *
+AIRBuilder::D3DCoverage(Value *Mask) {
+  if (!PairedSamples)
+    return Mask;
+  auto Spread = builder.CreateAnd(builder.CreateOr(Mask, builder.CreateShl(Mask, 2)), 0x33);
+  Spread = builder.CreateAnd(builder.CreateOr(Spread, builder.CreateShl(Spread, 1)), 0x55);
+  return builder.CreateOr(Spread, builder.CreateShl(Spread, 1));
+}
+
+// a Metal sample is written where either of its D3D samples is
+Value *
+AIRBuilder::MetalCoverage(Value *Mask) {
+  if (!PairedSamples)
+    return Mask;
+  auto Folded = builder.CreateAnd(builder.CreateOr(Mask, builder.CreateLShr(Mask, 1)), 0x55);
+  Folded = builder.CreateAnd(builder.CreateOr(Folded, builder.CreateLShr(Folded, 1)), 0x33);
+  return builder.CreateAnd(builder.CreateOr(Folded, builder.CreateLShr(Folded, 2)), 0x0f);
+}
+
 Value *
 AIRBuilder::CreateDerivative(Value *Val, bool YAxis) {
   if (!Val->getType()->getScalarType()->isFloatingPointTy()) {
@@ -1166,6 +1289,8 @@ AIRBuilder::CreateDerivative(Value *Val, bool YAxis) {
 
 CallInst *
 AIRBuilder::CreateDiscard() {
+  if (Live)
+    builder.CreateStore(builder.getFalse(), Live);
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
       Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
@@ -1221,58 +1346,6 @@ AIRBuilder::CreateAtomicFence(MemFlags Flags, ThreadScope Scope, bool Relaxed) {
   Ops.push_back(getInt(uint32_t(Scope)));
 
   auto Fn = getModule()->getOrInsertFunction("air.atomic.fence", FunctionType::get(getVoidTy(), Tys, false), Attrs);
-
-  return builder.CreateCall(Fn, Ops);
-}
-
-CallInst *
-AIRBuilder::CreateShuffle(Value *ShuffleValue, Value *LaneId, bool Quad) {
-  auto &Context = getContext();
-  auto Attrs = AttributeList::get(
-      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
-                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
-  );
-  auto TyValue = ShuffleValue->getType();
-
-  SmallVector<Value *> Ops;
-  SmallVector<Type *> Tys;
-
-  Tys.push_back(TyValue);
-  Ops.push_back(ShuffleValue);
-  Tys.push_back(builder.getInt16Ty());
-  Ops.push_back(LaneId);
-
-  std::string FnName = Quad ? "air.quad_shuffle" : "air.simd_shuffle";
-  FnName += getTypeOverloadSuffix(ShuffleValue->getType(), Signedness::Unsigned);
-
-  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(TyValue, Tys, false), Attrs);
-
-  return builder.CreateCall(Fn, Ops);
-}
-
-CallInst *
-AIRBuilder::CreateQuadShuffleXor(Value *ShuffleValue, uint16_t Mask) {
-  auto &Context = getContext();
-  auto Attrs = AttributeList::get(
-      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
-                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
-  );
-  auto TyValue = ShuffleValue->getType();
-
-  SmallVector<Value *> Ops;
-  SmallVector<Type *> Tys;
-
-  Tys.push_back(TyValue);
-  Ops.push_back(ShuffleValue);
-  Tys.push_back(builder.getInt16Ty());
-  Ops.push_back(builder.getInt16(Mask));
-
-  std::string FnName = "air.quad_shuffle_xor";
-  FnName += getTypeOverloadSuffix(ShuffleValue->getType(), Signedness::Unsigned);
-
-  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(TyValue, Tys, false), Attrs);
 
   return builder.CreateCall(Fn, Ops);
 }
@@ -1353,60 +1426,6 @@ AIRBuilder::CreateDotProduct(Value *LHS, Value *RHS) {
       getModule()->getOrInsertFunction(FnName, FunctionType::get(LHS->getType()->getScalarType(), Tys, false), Attrs);
 
   return builder.CreateCall(Fn, Ops);
-}
-
-Value *
-AIRBuilder::CreateGetBuiltinID(llvm::StringRef Name, uint32_t Component) {
-  auto &Context = getContext();
-  auto Attrs = AttributeList::get(
-      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
-                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
-  );
-
-  std::string FnName = (Name + ".i32").str();
-  auto Fn = getModule()->getOrInsertFunction(
-      FnName, FunctionType::get(getIntTy(), {getIntTy()}, false), Attrs
-  );
-
-  return builder.CreateCall(Fn, {getInt(Component)});
-}
-
-Value *
-AIRBuilder::CreateGetGroupID(uint32_t Component) {
-  return CreateGetBuiltinID("air.get_group_id", Component);
-}
-
-Value *
-AIRBuilder::CreateGetGlobalID(uint32_t Component) {
-  return CreateGetBuiltinID("air.get_global_id", Component);
-}
-
-Value *
-AIRBuilder::CreateGetLocalID(uint32_t Component) {
-  return CreateGetBuiltinID("air.get_local_id", Component);
-}
-
-Value *
-AIRBuilder::CreateGetBuiltinID(llvm::StringRef Name) {
-  auto &Context = getContext();
-  auto Attrs = AttributeList::get(
-      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
-                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
-  );
-
-  std::string FnName = "air.";
-  FnName += Name;
-  FnName += ".i32";
-  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getIntTy(), {}, false), Attrs);
-
-  return builder.CreateCall(Fn, {});
-}
-
-Value *
-AIRBuilder::CreateGetLocalLinearID() {
-  return CreateGetBuiltinID("get_local_linear_id");
 }
 
 Value *
@@ -1522,6 +1541,18 @@ AIRBuilder::CreateConvertToUnsigned(Value *Val) {
 CallInst *
 AIRBuilder::CreateDeviceCoherentLoad(Type *Ty, Value *Ptr) {
   auto &Context = getContext();
+  // a coherent load may give a word as it was before another threadgroup's store for the rest of a dispatch, also
+  // after a fence of the device's scope (Apple GPUs, measured with Metal's own compiler's output); an atomic load
+  // does not. Unreal's Nanite polls its work queue so, and threadgroups that never saw the work spun for seconds.
+  // named and called as Metal's compiler does for atomic_load_explicit
+  if (Ty->isIntegerTy(32))
+    return builder.CreateCall(
+        getModule()->getOrInsertFunction(
+            "air.atomic.global.load.i32",
+            FunctionType::get(Ty, {Ptr->getType(), getIntTy(), getIntTy(), getBoolTy()}, false)
+        ),
+        {Ptr, getInt(0), getInt(uint32_t(ThreadScope::Device)), getBool(true)}
+    );
   auto Attrs = AttributeList::get(
       Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
                 {1U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
@@ -1546,7 +1577,20 @@ AIRBuilder::CreateDeviceCoherentLoad(Type *Ty, Value *Ptr) {
 
 CallInst *
 AIRBuilder::CreateDeviceCoherentStore(Value *Val, Value *Ptr) {
+  if (DiscardWrites)
+    return nullptr;
   auto &Context = getContext();
+  // and the store that such a load is to see (atomic_store_explicit)
+  if (Val->getType()->isIntegerTy(32))
+    return builder.CreateCall(
+        getModule()->getOrInsertFunction(
+            "air.atomic.global.store.i32",
+            FunctionType::get(
+                getVoidTy(), {Ptr->getType(), Val->getType(), getIntTy(), getIntTy(), getBoolTy()}, false
+            )
+        ),
+        {Ptr, Val, getInt(0), getInt(uint32_t(ThreadScope::Device)), getBool(true)}
+    );
   auto Attrs = AttributeList::get(
       Context, {{2U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
                 {2U, Attribute::get(Context, Attribute::AttrKind::WriteOnly)},
@@ -1582,8 +1626,8 @@ AIRBuilder::CreateInterpolateAtCenter(Value *Interpoant, bool Perspective) {
   );
 
   auto Fn = getModule()->getOrInsertFunction(
-      Perspective ? "air.interpolate_center_perspective.v4f32" : "air.interpolate_center_no_perspective.v4f32",
-      FunctionType::get(getFloatTy(4), {Interpoant->getType()}, false), Attrs
+      Perspective ? "air.interpolate_center_perspective.f32" : "air.interpolate_center_no_perspective.f32",
+      FunctionType::get(getFloatTy(), {Interpoant->getType()}, false), Attrs
   );
 
   return builder.CreateCall(Fn, {Interpoant});
@@ -1602,11 +1646,33 @@ AIRBuilder::CreateInterpolateAtCentroid(Value *Interpoant, bool Perspective) {
   );
 
   auto Fn = getModule()->getOrInsertFunction(
-      Perspective ? "air.interpolate_centroid_perspective.v4f32" : "air.interpolate_centroid_no_perspective.v4f32",
-      FunctionType::get(getFloatTy(4), {Interpoant->getType()}, false), Attrs
+      Perspective ? "air.interpolate_centroid_perspective.f32" : "air.interpolate_centroid_no_perspective.f32",
+      FunctionType::get(getFloatTy(), {Interpoant->getType()}, false), Attrs
   );
+  if (!CentroidCoverage)
+    return builder.CreateCall(Fn, {Interpoant});
+  auto [center, first] = CreateCentroidSample(CentroidCoverage, CentroidMask);
+  return builder.CreateSelect(
+      center, CreateInterpolateAtCenter(Interpoant, Perspective), CreateInterpolateAtSample(Interpoant, first, Perspective)
+  );
+}
 
-  return builder.CreateCall(Fn, {Interpoant});
+std::pair<Value *, Value *>
+AIRBuilder::CreateCentroidSample(Value *Coverage, Value *Mask) {
+  // the center when every sample is covered, else the first covered; a helper run covers none, and takes the
+  // mask's first sample, or the center with all of them
+  auto all = builder.CreateSub(builder.CreateShl(getInt(1), CreateGetNumSamples()), getInt(1));
+  auto mask = builder.CreateAnd(Mask, all), covered = builder.CreateAnd(Coverage, mask);
+  auto pick = builder.CreateSelect(builder.CreateICmpNE(covered, getInt(0)), covered, mask);
+  auto ctz = getModule()->getOrInsertFunction("air.ctz.i32", FunctionType::get(getIntTy(), {getIntTy(), builder.getInt1Ty()}, false));
+  return {builder.CreateICmpEQ(pick, all), builder.CreateCall(ctz, {pick, builder.getFalse()})};
+}
+
+Value *
+AIRBuilder::CreateCentroidOffset(Value *Coverage) {
+  auto [center, first] =
+      CreateCentroidSample(CentroidCoverage ? CentroidCoverage : Coverage, CentroidMask ? CentroidMask : getInt(~0u));
+  return builder.CreateSelect(center, ConstantAggregateZero::get(getFloatTy(2)), CreateRasterizerSamplePos(first));
 }
 
 Value *
@@ -1621,8 +1687,8 @@ AIRBuilder::CreateInterpolateAtSample(Value *Interpoant, Value *SampleIndex, boo
   );
 
   auto Fn = getModule()->getOrInsertFunction(
-      Perspective ? "air.interpolate_sample_perspective.v4f32" : "air.interpolate_sample_no_perspective.v4f32",
-      FunctionType::get(getFloatTy(4), {Interpoant->getType(), getIntTy()}, false), Attrs
+      Perspective ? "air.interpolate_sample_perspective.f32" : "air.interpolate_sample_no_perspective.f32",
+      FunctionType::get(getFloatTy(), {Interpoant->getType(), getIntTy()}, false), Attrs
   );
 
   return builder.CreateCall(Fn, {Interpoant, SampleIndex});
@@ -1641,11 +1707,30 @@ AIRBuilder::CreateInterpolateAtOffset(Value *Interpoant, Value *Offset, bool Per
   );
 
   auto Fn = getModule()->getOrInsertFunction(
-      Perspective ? "air.interpolate_offset_perspective.v4f32" : "air.interpolate_offset_no_perspective.v4f32",
-      FunctionType::get(getFloatTy(4), {Interpoant->getType(), getFloatTy(2)}, false), Attrs
+      Perspective ? "air.interpolate_offset_perspective.f32" : "air.interpolate_offset_no_perspective.f32",
+      FunctionType::get(getFloatTy(), {Interpoant->getType(), getFloatTy(2)}, false), Attrs
   );
 
   return builder.CreateCall(Fn, {Interpoant, Offset});
+}
+
+Value *
+AIRBuilder::CreateGetVertexValue(Value *VertexValue, Type *Ty, Value *Index) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {1U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)}}
+  );
+  auto Fn = getModule()->getOrInsertFunction(
+      "air.get_vertex_value" +
+          getTypeOverloadSuffix(Ty, Ty->isFloatingPointTy() ? Signedness::DontCare : Signedness::Unsigned),
+      FunctionType::get(Ty, {VertexValue->getType(), getIntTy()}, false), Attrs
+  );
+  return builder.CreateCall(Fn, {VertexValue, Index});
 }
 
 CallInst *
@@ -1704,7 +1789,7 @@ AIRBuilder::CreateSetMeshViewportArrayIndex(Value *Vertex, Value *ArrayIndex) {
 }
 
 CallInst *
-AIRBuilder::CreateSetMeshPrimitiveID(Value *Vertex, Value *ID) {
+AIRBuilder::CreateSetMeshPrimitiveID(Value *Primitive, Value *ID) {
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
       Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
@@ -1712,13 +1797,27 @@ AIRBuilder::CreateSetMeshPrimitiveID(Value *Vertex, Value *ID) {
                 {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
                 {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)}}
   );
-
   auto Fn = getModule()->getOrInsertFunction(
-      "air.set_primitive_id_mesh",
-      FunctionType::get(getVoidTy(), {getMeshHandleType(), getIntTy(), getIntTy()}, false), Attrs
+      "air.set_primitive_id_mesh", FunctionType::get(getVoidTy(), {getMeshHandleType(), getIntTy(), getIntTy()}, false),
+      Attrs
   );
+  return builder.CreateCall(Fn, {getMeshHandle(), Primitive, ID});
+}
 
-  return builder.CreateCall(Fn, {getMeshHandle(), Vertex, ID});
+CallInst *
+AIRBuilder::CreateSetMeshPrimitiveCulled(Value *Primitive, Value *Culled) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)}}
+  );
+  auto Fn = getModule()->getOrInsertFunction(
+      "air.set_primitive_culled_mesh",
+      FunctionType::get(getVoidTy(), {getMeshHandleType(), getIntTy(), Type::getInt1Ty(Context)}, false), Attrs
+  );
+  return builder.CreateCall(Fn, {getMeshHandle(), Primitive, Culled});
 }
 
 CallInst *
@@ -1854,9 +1953,10 @@ AIRBuilder::CreateSetMeshPointSize(Value *Vertex, Value *Size) {
 
 Value *
 AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand, bool FastVariant) {
-  static char const *FnNames[] = {"saturate", "log2", "exp2",  "sqrt", "rsqrt", "fract", "rint",
-                                  "floor",    "ceil", "trunc", "cos",  "sin",   "fabs",  "tan",
-                                  "acos",     "asin", "atan",  "cosh", "sinh",  "tanh"};
+  static char const *FnNames[] = {
+      "saturate", "log2", "exp2", "sqrt", "rsqrt", "fract", "rint", "floor", "ceil", "trunc", "cos", "sin", "fabs",
+      "tan", "acos", "asin", "atan", "cosh", "sinh", "tanh",
+  };
 
   if (uint32_t(Op) >= std::size(FnNames)) {
     debug << "invalid operation: unknown fp unary operation.\n";
@@ -1892,50 +1992,6 @@ AIRBuilder::CreateIsNaN(Value *Operand) {
     TyCast = getIntTy(TyVec->getNumElements());
   }
   return builder.CreateICmpUGT(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsL31), BitsInf);
-}
-
-Value *
-AIRBuilder::CreateIsFinite(Value *Operand) {
-  auto OperandType = Operand->getType();
-  llvm::Value *BitsInf = getInt(0x7f800000u);
-  llvm::Type *TyCast = getIntTy();
-  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
-    BitsInf = builder.CreateVectorSplat(TyVec->getNumElements(), BitsInf);
-    TyCast = getIntTy(TyVec->getNumElements());
-  }
-  return builder.CreateICmpNE(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsInf), BitsInf);
-}
-
-Value *
-AIRBuilder::CreateIsInfinite(Value *Operand) {
-  auto OperandType = Operand->getType();
-  llvm::Value *BitsL31 = getInt(0x7fffffffu);
-  llvm::Value *BitsInf = getInt(0x7f800000u);
-  llvm::Type *TyCast = getIntTy();
-  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
-    BitsL31 = builder.CreateVectorSplat(TyVec->getNumElements(), BitsL31);
-    BitsInf = builder.CreateVectorSplat(TyVec->getNumElements(), BitsInf);
-    TyCast = getIntTy(TyVec->getNumElements());
-  }
-  return builder.CreateICmpEQ(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsL31), BitsInf);
-}
-
-Value *
-AIRBuilder::CreateIsNormal(Value *Operand) {
-  auto OperandType = Operand->getType();
-  llvm::Value *BitsL31 = getInt(0x7fffffffu);
-  llvm::Value *C1 = getInt(0x7f000000u);
-  llvm::Value *C2 = getInt(0xff800000u);
-  llvm::Type *TyCast = getIntTy();
-  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
-    BitsL31 = builder.CreateVectorSplat(TyVec->getNumElements(), BitsL31);
-    C1 = builder.CreateVectorSplat(TyVec->getNumElements(), C1);
-    C2 = builder.CreateVectorSplat(TyVec->getNumElements(), C2);
-    TyCast = getIntTy(TyVec->getNumElements());
-  }
-  return builder.CreateICmpULT(
-      builder.CreateNSWAdd(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsL31), C2), C1
-  );
 }
 
 Value *
@@ -2038,15 +2094,20 @@ AIRBuilder::CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val) {
     debug << "invalid operation: atomicrmw: mismatched atomic operands.\n";
     return nullptr; // TODO
   }
-  Value *MemFlags = nullptr;
+  // the atomic's thread scope, as Metal's compiler writes it for memory of each address space
+  Value *Scope = nullptr;
   switch (TyPtr->getAddressSpace()) {
   case 1:
     FnName += "global.";
-    MemFlags = getInt(3);
+    Scope = getInt(uint32_t(ThreadScope::Device));
+    if (DiscardWrites) {
+      Op = AtomicRMWInst::Or;
+      Val = Constant::getNullValue(Val->getType());
+    }
     break;
   case 3:
     FnName += "local.";
-    MemFlags = getInt(1);
+    Scope = getInt(uint32_t(ThreadScope::Threadgroup));
     break;
   default:
     debug << "invalid operation: atomicrmw: not a valid address space.\n";
@@ -2104,7 +2165,45 @@ AIRBuilder::CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val) {
   auto Fn = getModule()->getOrInsertFunction(
       FnName, llvm::FunctionType::get(TyOp, {TyPtr, TyOp, getIntTy(), getIntTy(), getBoolTy()}, false), Attrs
   );
-  return builder.CreateCall(Fn, {Ptr, Val, getInt(0), MemFlags, getBool(true)});
+  return builder.CreateCall(Fn, {Ptr, Val, getInt(0), Scope, getBool(true)});
+}
+
+void
+AIRBuilder::CreateAtomicMinMax64(bool Max, Value *Ptr, Value *Val) {
+  if (DiscardWrites)
+    return;
+  auto Fn = getModule()->getOrInsertFunction(
+      Max ? "air.atomic.global.max.u.i64" : "air.atomic.global.min.u.i64",
+      llvm::FunctionType::get(
+          builder.getVoidTy(), {Ptr->getType(), Val->getType(), getIntTy(), getIntTy(), getBoolTy()}, false
+      )
+  );
+  builder.CreateCall(Fn, {Ptr, Val, getInt(0), getInt(2), getBool(true)});
+}
+
+void
+AIRBuilder::CreateAtomicMinMax64(
+    const Texture &Texture, Value *Handle, bool Max, Value *Pos, Value *ArrayIndex, Value *Val
+) {
+  if (DiscardWrites)
+    return;
+  auto &TexInfo = TextureInfo[Texture.kind];
+  SmallVector<Value *> Ops{Handle, Pos};
+  if (TexInfo.is_array)
+    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
+  Ops.push_back(builder.CreateInsertElement(
+      Constant::getNullValue(FixedVectorType::get(builder.getInt64Ty(), 4)), Val, (uint64_t)0
+  ));
+  Ops.push_back(getInt(0)); // memory order relaxed
+  Ops.push_back(getInt(Texture.memory_access));
+  SmallVector<Type *> Tys;
+  for (auto Op : Ops)
+    Tys.push_back(Op->getType());
+  auto Fn = getModule()->getOrInsertFunction(
+      std::string("air.atomic_") + (Max ? "max" : "min") + "_explicit_" + TexInfo.air_symbol_suffix + ".u.v4i64",
+      FunctionType::get(builder.getVoidTy(), Tys, false)
+  );
+  builder.CreateCall(Fn, Ops);
 }
 
 llvm::Value *
@@ -2119,7 +2218,13 @@ AIRBuilder::SanitizePosition(llvm::Value *Pos) {
       builder.CreateAnd(builder.CreateExtractElement(Mask, 2ull), builder.CreateExtractElement(Mask, 3ull))
   );
   auto PosClipped = llvm::ConstantVector::get({getFloat(0.0f), getFloat(0.0f), getFloat(1.0f), getFloat(0.0f)});
-  return builder.CreateSelect(ValidPos, Pos, PosClipped);
+  Pos = builder.CreateSelect(ValidPos, Pos, PosClipped);
+  if (!RasterScale)
+    return Pos;
+  auto Scale = builder.CreateLoad(getFloatTy(), RasterScale);
+  for (unsigned i = 0; i < 2; i++)
+    Pos = builder.CreateInsertElement(Pos, builder.CreateFMul(builder.CreateExtractElement(Pos, i), Scale), i);
+  return Pos;
 }
 
 } // namespace llvm::air

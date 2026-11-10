@@ -1,0 +1,16 @@
+# Metal 4: an aliasing barrier's next encoder begins with no barrier of resource-alias visibility
+# family native
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -902,10 +902,7 @@
+     void
+     OrderAliases() {
+       if constexpr (Metal4) {
+-        inflight->cmdbuf.orderAliases();
+-        // and again at each command buffer after it, until a pass has taken it: one that ends first, or that is only a
+-        // queue's wait, has no encoder to begin with the barrier
+-        queue->order_aliases_ = true;
++        (void)inflight;
+       } else {
+         auto value = ++queue->alias_value_;
+         inflight->cmdbuf.encodeSignalEvent(queue->alias_event_, value);

@@ -1,0 +1,31 @@
+# record every part and its barrier instead of keeping the grid
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2024,7 +2024,26 @@
+         return;
+       parts->at_once = pso_compute_->groups_at_once;
+       parts->size = {X, Y, Z};
+-      parts->type = EncoderType::ComputeParts;
++      auto record = [&](auto &record, std::array<uint64_t, 3> origin, std::array<uint64_t, 3> size) -> void {
++        if (allocator_->exhausted_)
++          return;
++        if (size[0] * size[1] * size[2] > parts->at_once) {
++          auto axis = std::max_element(size.begin(), size.end()) - size.begin();
++          auto half = size;
++          half[axis] /= 2;
++          record(record, origin, half);
++          origin[axis] += half[axis];
++          size[axis] -= half[axis];
++          return record(record, origin, size);
++        }
++        auto &part = allocator_->EncodeComputeCommand<wmtcmd_compute_dispatch_part>();
++        part.type = WMTComputeCommandDispatchPart;
++        part.origin = {origin[0], origin[1], origin[2]};
++        part.size = {size[0], size[1], size[2]};
++        part.threadgroup_size = pso_compute_->threadgroup_size;
++        allocator_->OrderDispatches();
++      };
++      record(record, {}, {X, Y, Z});
+       Isolate(X, Y, Z);
+       allocator_->InvalidateCurrentPass();
+       return;

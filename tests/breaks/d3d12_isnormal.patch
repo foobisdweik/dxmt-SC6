@@ -1,0 +1,19 @@
+# treats zero and subnormal values as normal by mapping IsNormal to IsFinite.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -56,6 +56,7 @@
+   IsNaN = 8,
+   IsInf = 9,
+   IsFinite = 10,
++  IsNormal = 11,
+   Cos = 12,
+   Sin = 13,
+   Tan = 14,
+@@ -3316,6 +3317,7 @@
+     case IsInf:
+       ret = ir.CreateFCmpOEQ(fp_unary(llvm::air::AIRBuilder::fabs, a(1)), ConstantFP::getInfinity(a(1)->getType()));
+       break;
++    case IsNormal:
+     case IsFinite:
+       ret = ir.CreateFCmpOLT(fp_unary(llvm::air::AIRBuilder::fabs, a(1)), ConstantFP::getInfinity(a(1)->getType()));
+       break;

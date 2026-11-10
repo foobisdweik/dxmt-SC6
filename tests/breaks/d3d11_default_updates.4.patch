@@ -1,0 +1,12 @@
+# typed fetch omits the current texel offset
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -398,7 +398,7 @@
+           auto [view, offset] = access<stage>(srv.buffer, srv.viewId, ResourceAccess::Read);
+           encoded_buffer[arg.StructurePtrOffset] = view.gpu_resource_id;
+           encoded_buffer[arg.StructurePtrOffset + 1] =
+-              ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)(srv.slice.firstElement + offset);
++              ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)srv.slice.firstElement;
+           makeResident<stage, kind>(srv.buffer.ptr(), srv.viewId);
+         } else if (srv.texture.ptr()) {
+           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);

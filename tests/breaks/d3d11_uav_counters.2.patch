@@ -1,0 +1,12 @@
+# resets a UAV counter to zero instead of the requested count.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -4094,7 +4094,7 @@
+     EmitST([counter = uav->counter(), value](ArgumentEncodingContext &enc) {
+       if (!counter.ptr())
+         return;
+-      enc.queue().counter_pool.updateCounter(counter, value);
++      enc.queue().counter_pool.updateCounter(counter, 0);
+     });
+   }
+ 

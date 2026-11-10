@@ -1,0 +1,12 @@
+# RGBA sRGB storage loses its transfer function.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -701,7 +701,7 @@
+     break;
+   }
+   case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: {
+-    description.PixelFormat = WMTPixelFormatRGBA8Unorm_sRGB;
++    description.PixelFormat = WMTPixelFormatRGBA8Unorm;
+     description.BytesPerTexel = 4;
+     description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1, swizzle from BGRA8Unorm
+     break;

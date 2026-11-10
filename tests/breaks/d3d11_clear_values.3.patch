@@ -1,0 +1,15 @@
+# omits a full-view UAV clear when no rectangles are supplied.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -968,11 +968,6 @@
+             enc.clear_uav_cmd.begin(color, buffer.ptr(), view);
+           });
+         }
+-      }
+-      if (!NumRects) {
+-        EmitOP([=](ArgumentEncodingContext &enc) {
+-          enc.clear_uav_cmd.clear(first_element, 0, width * element_stride, height);
+-        });
+       }
+       for (unsigned i = 0; i < NumRects; i++) {
+         auto rect = pRect[i];

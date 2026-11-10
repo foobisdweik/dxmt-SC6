@@ -1,0 +1,12 @@
+# uses zero for the multiprefix product identity
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2405,7 +2405,7 @@
+       };
+       Value *identity[] = {
+           Constant::getNullValue(vty), fp ? nullptr : Constant::getAllOnesValue(vty), Constant::getNullValue(vty),
+-          Constant::getNullValue(vty), fp ? ConstantFP::get(vty, 1.0) : ConstantInt::get(vty, 1)
++          Constant::getNullValue(vty), Constant::getNullValue(vty)
+       };
+       auto kind = constant(a(6));
+       ret = reduce("", a(1), Signedness::DontCare, true, combine[kind], identity[kind], lane_mask(call, 2));

@@ -1,0 +1,12 @@
+# drops a full-view clear when its rectangle list is empty.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -844,7 +844,7 @@
+   ClearView(ID3D11View *pView, const FLOAT Color[4], const D3D11_RECT *pRect, UINT NumRects) override {
+     std::lock_guard<mutex_t> lock(mutex);
+ 
+-    if (NumRects && !pRect)
++    if (!NumRects || !pRect)
+       return;
+     if (!pView)
+       return;

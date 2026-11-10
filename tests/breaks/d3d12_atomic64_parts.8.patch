@@ -1,0 +1,13 @@
+# a lane that leaves its lock word to the round's first lane never takes it, and its 64-bit atomic is lost
+# family native
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2278,7 +2278,7 @@ convert_dxil(
+     incoming(given_up, ir.getFalse(), PoisonValue::get(ir.getInt64Ty()), spins, last);
+     // still waiting: a lane that lost this round, one that left its word to the first, and one with nothing to do
+     incoming(waiting, ir.getTrue(), old, spun, seen);
+-    incoming(deferred, ir.getTrue(), old, spins, last);
++    incoming(deferred, ir.getFalse(), old, spins, last);
+     incoming(attempt, pending, old, spins, last);
+     // then, with every lock the group took in the round released, its first lane still waiting spins on its own, as one
+     // lane at a time did: with only a try a round, locks that many groups want (every pixel of a texel's primitives on

@@ -1,0 +1,12 @@
+# uses the front-face pass operation for the back face.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -614,7 +614,7 @@
+     }
+     {
+       info.back_stencil.depth_stencil_pass_op =
+-          (kStencilOperationMap[pDesc->BackFace.StencilPassOp]);
++          (kStencilOperationMap[pDesc->FrontFace.StencilPassOp]);
+       info.back_stencil.stencil_fail_op =
+           (kStencilOperationMap[pDesc->BackFace.StencilFailOp]);
+       info.back_stencil.depth_fail_op =

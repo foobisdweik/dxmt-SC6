@@ -1,0 +1,12 @@
+# draws with the application's blend factor where Zero weights became the blend color.
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -996,7 +996,7 @@ public:
+     if (dirty_state_.test(DirtyState::BlendFactor)) {
+       auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_setblendcolor>();
+       cmd.type = WMTRenderCommandSetBlendFactor;
+-      const float zero[4] = {}, *factor = pso_graphics_->zero_blend_color ? zero : blend_factor_;
++      const float zero[4] = {}, *factor = blend_factor_;
+       cmd.red = factor[0];
+       cmd.green = factor[1];
+       cmd.blue = factor[2];

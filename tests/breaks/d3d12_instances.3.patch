@@ -1,0 +1,12 @@
+# drop ExecuteIndirect recorded inside a bundle.
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2805,6 +2805,8 @@
+       ID3D12CommandSignature *pCommandSignature, UINT MaxCommandCount, ID3D12Resource *pArgBuffer,
+       UINT64 ArgBufferOffset, ID3D12Resource *pCountBuffer, UINT64 CountBufferOffset
+   ) {
++    if (type_ == D3D12_COMMAND_LIST_TYPE_BUNDLE)
++      return;
+     if (Record([=, sig = Com<ID3D12CommandSignature>(pCommandSignature), args = Com<ID3D12Resource>(pArgBuffer), count = Com<ID3D12Resource>(pCountBuffer)](auto *l) { l->ExecuteIndirect(sig.ptr(), MaxCommandCount, args.ptr(), ArgBufferOffset, count.ptr(), CountBufferOffset); }))
+       return;
+     auto sig = static_cast<MTLD3D12CommandSignature *>(pCommandSignature);

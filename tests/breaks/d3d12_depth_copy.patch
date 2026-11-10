@@ -1,0 +1,12 @@
+# swaps the depth and stencil planes when copying a buffer footprint into a texture.
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -1673,7 +1673,7 @@
+         cmd_cp.level = dst_level;
+         cmd_cp.slice = dst_slice;
+         cmd_cp.options = (dst_planar_count > 1)
+-                             ? (dst_planar ? WMTBlitOptionStencilFromDepthStencil : WMTBlitOptionDepthFromDepthStencil)
++                             ? (!dst_planar ? WMTBlitOptionStencilFromDepthStencil : WMTBlitOptionDepthFromDepthStencil)
+                              : WMTBlitOptionNone;
+         cmd_cp.origin = {DstX, DstY, DstZ};
+       } else {

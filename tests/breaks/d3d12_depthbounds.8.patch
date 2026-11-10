@@ -1,0 +1,13 @@
+# a conservative pipeline without a pixel shader leaves the depth bounds untested
+# family 9
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -1383,7 +1383,7 @@
+     }
+ 
+     // without a pixel shader, one that only does the tests a pixel shader would
+-    if ((conservative || depth_bounds_emulated) && !ps_func && !(ps_func = TestFragment(conservative, depth_bounds_emulated)))
++    if ((conservative || depth_bounds_emulated) && !ps_func && !(ps_func = TestFragment(conservative, depth_bounds_emulated && !conservative)))
+       return E_FAIL;
+ 
+     auto geometry_inputs = [&] {

@@ -1,0 +1,14 @@
+# below Apple9 the 32-bit floats keep the table's capabilities, whatever the GPU says
+# family 7
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -200,9 +200,6 @@
+     if (device.supportsPlacementSparse())
+       for (auto format : {WMTPixelFormatDepth16Unorm, WMTPixelFormatDepth32Float, WMTPixelFormatStencil8})
+         APPEND_CAP(format, FormatCapability::Sparse)
+-    if (device.supports32BitFloatFiltering())
+-      for (auto format : {WMTPixelFormatR32Float, WMTPixelFormatRG32Float, WMTPixelFormatRGBA32Float})
+-        APPEND_CAP(format, FormatCapability::Filter | FormatCapability::Resolve)
+ 
+     if (!device.supportsFamily(WMTGPUFamilyApple8)) {
+       return;
