@@ -589,6 +589,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             [&](BasicBlockConditionalBranch cond) -> llvm::Error {
               auto target_true_bb = visited[cond.true_branch];
               auto target_false_bb = visited[cond.false_branch];
+              if (ctx.forced_true_branches && ctx.forced_true_branches->contains(current)) {
+                builder.CreateBr(target_true_bb);
+                return llvm::Error::success();
+              }
               auto test = load_condition(cond.cond.operand, cond.cond.test_nonzero);
               builder.CreateCondBr(test, target_true_bb, target_false_bb);
               return llvm::Error::success();

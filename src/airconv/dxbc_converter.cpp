@@ -1832,6 +1832,9 @@ static int SM50InitializeUncached(
     D3D10ShaderBinary::CShaderCodeParser CodeParser((CShaderToken *)DXBCParser.GetBlob(codeBlobIdx));
     sm50_shader->shader_type = CodeParser.ShaderType();
     sm50_shader->bbs = read_control_flow(CodeParser, sm50_shader, inputParser, outputParser);
+    // SC6 fork: whether the shader can run inside the vertex function (dxbc_converter_gs_layered.cpp)
+    if (sm50_shader->shader_type == microsoft::D3D10_SB_GEOMETRY_SHADER && !Refused())
+      mullion::dxbc::analyze_dxbc_layered_geometry_shader(sm50_shader);
   }
   // tokens or a signature the converter could not take refuse the shader, now that reading is over (Refuse)
   if (auto reason = Refused()) {
@@ -2162,6 +2165,8 @@ static int SM50InitializeUncached(
           3 * triangles <= 256 && triangles <= 512 &&
           mullion::dxbc::mesh_size(3 * triangles, vertex_size, triangles * 4) <= mullion::dxbc::mesh_size_limit;
       pRefl->GeometryShader.FixedEmits = mullion::dxbc::fixed_stream_primitives(sm50_shader).has_value();
+      pRefl->GeometryShader.LayeredFaces =
+          pRefl->GeometryShader.GSPassThrough == ~0u ? sm50_shader->gs_layered_faces : 0;
     }
     if (sm50_shader->shader_type == microsoft::D3D10_SB_PIXEL_SHADER) {
       pRefl->PixelShader = {sm50_shader->pso_valid_output_reg_mask, sm50_shader->ps_has_coverage_output, 0, 0,
@@ -2540,17 +2545,26 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
   auto pModule = std::make_unique<Module>("shader.air", context);
   initializeModule(*pModule);
 
-  if (auto err = mullion::dxbc::convert_dxbc_vertex_for_geometry_shader(
-        (dxbc::SM50ShaderInternal *)pVertexShader, FunctionName,
-        (dxbc::SM50ShaderInternal *)pGeometryShader, context, *pModule,
-        pVertexShaderArgs
-      )) {
+  // SC6 fork: an ordinary vertex function that runs a layered geometry shader too (SM50_SHADER_GS_LAYERED)
+  SM50_SHADER_GS_LAYERED_DATA *layered = nullptr;
+  mullion::dxbc::args_get_data<SM50_SHADER_GS_LAYERED, SM50_SHADER_GS_LAYERED_DATA>(pVertexShaderArgs, &layered);
+  if (auto err = layered ? mullion::dxbc::convert_dxbc_vertex_for_layered_geometry_shader(
+                               (dxbc::SM50ShaderInternal *)pVertexShader, FunctionName,
+                               (dxbc::SM50ShaderInternal *)pGeometryShader, context, *pModule, pVertexShaderArgs
+                           )
+                         : mullion::dxbc::convert_dxbc_vertex_for_geometry_shader(
+                               (dxbc::SM50ShaderInternal *)pVertexShader, FunctionName,
+                               (dxbc::SM50ShaderInternal *)pGeometryShader, context, *pModule, pVertexShaderArgs
+                           )) {
     errorOut << llvm::toString(std::move(err));
     *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
-  if (shader_info.use_msad)
+  // the layered function has the geometry shader's operations as well
+  bool gs_msad =
+      layered && pGeometryShader && ((mullion::dxbc::SM50ShaderInternal *)pGeometryShader)->shader_info.use_msad;
+  if (shader_info.use_msad || gs_msad)
     linkMSAD(*pModule);
   if (shader_info.use_samplepos)
     linkSamplePos(*pModule);

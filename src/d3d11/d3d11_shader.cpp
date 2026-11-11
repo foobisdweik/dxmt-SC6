@@ -439,6 +439,48 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
 template <>
 std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
+                    ShaderVariantGeometryLayeredVertex variant) {
+  Sha1HashState h;
+  h.update(getGlobalShaderFlag(pDevice));
+  h.update(variant.geometry_shader_handle->sha1());
+  if (variant.input_layout_handle)
+    h.update(variant.input_layout_handle->sha1());
+  auto variant_digest = h.final();
+  std::string func_name = "vsgl_" + shader->sha1().string().substr(0, 8) + "_" + variant_digest.string();
+  auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
+    SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout{};
+    SM50_SHADER_GS_LAYERED_DATA layered{};
+    layered.type = SM50_SHADER_GS_LAYERED;
+    layered.next = common;
+    if (variant.input_layout_handle) {
+      ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+      ia_layout.next = common;
+      ia_layout.index_buffer_format = SM50_INDEX_BUFFER_FORMAT_NONE;
+      ia_layout.slot_mask = variant.input_layout_handle->input_slot_mask();
+      ia_layout.num_elements = variant.input_layout_handle->input_layout_element(
+          (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&ia_layout.elements);
+      layered.next = &ia_layout;
+    }
+
+    sm50_bitcode_t compile_result = nullptr;
+    sm50_error_t sm50_err = nullptr;
+    if (SM50CompileGeometryPipelineVertex(
+            shader->handle(), variant.geometry_shader_handle->handle(),
+            (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&layered, func_name,
+            &compile_result, &sm50_err)) {
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
+      return nullptr;
+    }
+    return compile_result;
+  };
+  return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
+      pDevice, shader, std::move(proc), func_name, variant_digest);
+}
+
+template <>
+std::unique_ptr<CompiledShader>
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantGeometry variant) {
   Sha1HashState h;
   h.update(getGlobalShaderFlag(pDevice));

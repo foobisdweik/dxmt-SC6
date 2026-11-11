@@ -253,6 +253,11 @@ template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Geom
     const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
     uint64_t argument_buffer_offset
 );
+// SC6 fork: a layered geometry shader, run in the vertex function
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Geometry, PipelineKind::Ordinary>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
 template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Geometry>(
     const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
     uint64_t argument_buffer_offset
@@ -318,6 +323,11 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
       // after a tessellator the mesh stage is the domain shader's as well, on the first bindings
       if constexpr (kind == PipelineKind::Tessellation)
         cmd.index = SM50_BINDING_INDEX_CONSTANT_BUFFER2;
+      // SC6 fork: a layered geometry shader runs in the vertex function, on its second bindings
+      if constexpr (kind == PipelineKind::Ordinary) {
+        cmd.type = WMTRenderCommandSetVertexBufferOffset;
+        cmd.index = SM50_BINDING_INDEX_CONSTANT_BUFFER2;
+      }
     } else {
       assert(0 && "Not implemented or unreachable");
     }
@@ -352,6 +362,10 @@ template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vert
     const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
 );
 template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Geometry, PipelineKind::Geometry>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+// SC6 fork: a layered geometry shader, run in the vertex function
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Geometry, PipelineKind::Ordinary>(
     const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
 );
 template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Geometry>(
@@ -543,6 +557,11 @@ ArgumentEncodingContext::encodeShaderResources(
       cmd.type = WMTRenderCommandSetMeshBufferOffset;
       if constexpr (kind == PipelineKind::Tessellation)
         cmd.index = SM50_BINDING_INDEX_ARGUMENT_TABLE2;
+      // SC6 fork: a layered geometry shader runs in the vertex function, on its second bindings
+      if constexpr (kind == PipelineKind::Ordinary) {
+        cmd.type = WMTRenderCommandSetVertexBufferOffset;
+        cmd.index = SM50_BINDING_INDEX_ARGUMENT_TABLE2;
+      }
     } else {
       assert(0 && "Not implemented or unreachable");
     }

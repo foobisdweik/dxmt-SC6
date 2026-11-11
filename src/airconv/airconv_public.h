@@ -143,6 +143,10 @@ struct MTL_GEOMETRY_SHADER_REFLECTION {
      its maxvertexcount: stream output then knows each invocation's primitives before it runs
      (SM50_SHADER_STREAM_OUTPUT_DATA's single_pass) */
   uint32_t FixedEmits;
+  /* SC6 fork: the number of render target array slices (faces) that a layered geometry shader sends each triangle
+     to, or 0 when the shader is not one. A layered shader can run inside the vertex function, with each D3D instance
+     drawn as this many Metal instances (SM50_SHADER_GS_LAYERED, dxbc_converter_gs_layered.cpp) */
+  uint32_t LayeredFaces;
 };
 
 struct MTL_POST_TESSELLATOR_REFLECTION {
@@ -307,6 +311,9 @@ enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE {
   SM50_SHADER_MESH_SHADER = 11,
   SM50_SHADER_RAY_SHADER = 12,
   SM50_SHADER_LIBRARIES = 13,
+  /* SC6 fork: SM50CompileGeometryPipelineVertex builds an ordinary vertex function that also runs the layered
+     geometry shader (MTL_GEOMETRY_SHADER_REFLECTION's LayeredFaces) */
+  SM50_SHADER_GS_LAYERED = 14,
   SM50_SHADER_ARGUMENT_TYPE_MAX = 0xffffffff,
 };
 
@@ -681,6 +688,12 @@ struct SM50_SHADER_IA_INPUT_LAYOUT_DATA {
   uint32_t slot_mask;
   uint32_t num_elements;
   struct SM50_IA_INPUT_ELEMENT *elements;
+};
+
+/* SC6 fork: SM50_SHADER_GS_LAYERED, which has no data of its own */
+struct SM50_SHADER_GS_LAYERED_DATA {
+  void *next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
 };
 
 struct SM50_SHADER_GS_PASS_THROUGH_DATA {

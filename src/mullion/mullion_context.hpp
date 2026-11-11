@@ -371,6 +371,10 @@ GetResidencyMask(PipelineStage type, bool read, bool write) {
     return (read ? MULLION_RESOURCE_RESIDENCY_OBJECT_READ : MULLION_RESOURCE_RESIDENCY_NULL) |
            (write ? MULLION_RESOURCE_RESIDENCY_OBJECT_WRITE : MULLION_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Geometry:
+    // SC6 fork: a layered geometry shader runs in the vertex function
+    if constexpr (kind == PipelineKind::Ordinary)
+      return (read ? MULLION_RESOURCE_RESIDENCY_VERTEX_READ : MULLION_RESOURCE_RESIDENCY_NULL) |
+             (write ? MULLION_RESOURCE_RESIDENCY_VERTEX_WRITE : MULLION_RESOURCE_RESIDENCY_NULL);
     return (read ? MULLION_RESOURCE_RESIDENCY_MESH_GS_READ : MULLION_RESOURCE_RESIDENCY_NULL) |
            (write ? MULLION_RESOURCE_RESIDENCY_MESH_GS_WRITE : MULLION_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Domain:

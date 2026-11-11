@@ -7,6 +7,7 @@ airconv_src = files([
  'dxbc_binding_rootsig.cpp',
  'dxbc_converter.cpp',
  'dxbc_converter_gs.cpp',
+ 'dxbc_converter_gs_layered.cpp',
  'dxbc_converter_ts.cpp',
  'dxbc_converter_vrs.cpp',
  'dxbc_converter_basicblock.cpp',

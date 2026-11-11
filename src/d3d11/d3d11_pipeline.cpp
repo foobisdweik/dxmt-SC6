@@ -28,8 +28,12 @@ public:
       unorm_output_reg_mask |= (uint32_t(IsUnorm8RenderTargetFormat(pDesc->ColorAttachmentFormats[i])) << i);
     }
 
-    VertexShader = pDesc->VertexShader->get_shader(ShaderVariantVertex{
-        pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled, pDesc->ClipDistances != 0});
+    if (pDesc->GSPassthrough == kGSLayered && pDesc->GeometryShader)
+      VertexShader = pDesc->VertexShader->get_shader(
+          ShaderVariantGeometryLayeredVertex{pDesc->InputLayout, pDesc->GeometryShader});
+    else
+      VertexShader = pDesc->VertexShader->get_shader(ShaderVariantVertex{
+          pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled, pDesc->ClipDistances != 0});
 
     if (pDesc->PixelShader) {
       PixelShader = pDesc->PixelShader->get_pixel_shader(ShaderVariantPixel{

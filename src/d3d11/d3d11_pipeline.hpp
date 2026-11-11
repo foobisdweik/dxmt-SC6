@@ -7,6 +7,11 @@
 #include "d3d11_state_object.hpp"
 #include "util_hash.hpp"
 
+// SC6 fork: MTL_GRAPHICS_PIPELINE_DESC::GSPassthrough of an ordinary pipeline whose vertex function also runs a
+// layered geometry shader (MTL_GEOMETRY_SHADER_REFLECTION's LayeredFaces). ~0u is a geometry shader that is no pass
+// through, so the two cannot meet
+constexpr uint32_t kGSLayered = 0xFFFFFFFE;
+
 struct MTL_GRAPHICS_PIPELINE_DESC {
   ManagedShader VertexShader;
   ManagedShader HullShader;

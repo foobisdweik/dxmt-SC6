@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -323,6 +324,9 @@ struct context {
   // the function is made from the shader's own signature, so it takes the SIMD-group inputs the shader defines; not
   // so for a domain shader run inside a geometry shader's function, nor for a ray shader's visible function
   bool own_signature = true;
+  // SC6 fork: blocks whose conditional branch always goes to its true target. a layered geometry shader run in the
+  // vertex function takes its per-triangle culling tests so (dxbc_converter_gs_layered.cpp); null for none
+  const std::unordered_set<const BasicBlock *> *forced_true_branches = nullptr;
 };
 
 template <typename S> IRValue make_irvalue(S &&fs) {
@@ -641,6 +645,11 @@ public:
   bool mesh_lines = false;
   // whether it writes resources (UAVs), which a group run more than once would write again
   bool writes_resources = false;
+  // SC6 fork: a layered geometry shader, which sends each input triangle unchanged to render target array slices 0
+  // to N-1: N, or 0 when the shader is not one, and the branches the vertex function takes always
+  // (analyze_dxbc_layered_geometry_shader)
+  uint32_t gs_layered_faces = 0;
+  std::unordered_set<const BasicBlock *> gs_layered_forced_branches;
 
   BasicBlock *entry() const {
     return bbs.front().get();
@@ -845,6 +854,16 @@ llvm::Error convert_dxbc_vertex_for_geometry_shader(
   const SM50ShaderInternal *pGeometryStage,
   llvm::LLVMContext &context, llvm::Module &module,
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+);
+
+// SC6 fork: whether a geometry shader is layered (SM50ShaderInternal's gs_layered_faces), which it sets
+void analyze_dxbc_layered_geometry_shader(SM50ShaderInternal *pGeometryStage);
+
+// SC6 fork: an ordinary vertex function that runs the vertex shader and then the layered geometry shader, for the
+// rasterizer's vertex of one face (SM50_SHADER_GS_LAYERED)
+llvm::Error convert_dxbc_vertex_for_layered_geometry_shader(
+  const SM50ShaderInternal *pVertexStage, const char *name, const SM50ShaderInternal *pGeometryStage,
+  llvm::LLVMContext &context, llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 );
 
 llvm::Error convert_dxbc_vertex_hull_shader(

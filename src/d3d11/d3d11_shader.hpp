@@ -177,6 +177,15 @@ struct ShaderVariantGeometryVertex {
   bool operator==(const this_type &rhs) const = default;
 };
 
+// SC6 fork: the vertex shader and a layered geometry shader in one ordinary vertex function
+// (src/airconv/dxbc_converter_gs_layered.cpp)
+struct ShaderVariantGeometryLayeredVertex {
+  using this_type = ShaderVariantGeometryLayeredVertex;
+  ManagedInputLayout input_layout_handle;
+  ManagedShader geometry_shader_handle;
+  bool operator==(const this_type &rhs) const = default;
+};
+
 // a variant of the geometry shader, or of the vertex shader itself for stream output alone
 struct ShaderVariantGeometry {
   using this_type = ShaderVariantGeometry;
@@ -197,7 +206,8 @@ using ShaderVariant =
     std::variant<ShaderVariantDefault, ShaderVariantVertex, ShaderVariantPixel,
                  ShaderVariantTessellationVertexHull,
                  ShaderVariantTessellationDomain,
-                 ShaderVariantGeometryVertex, ShaderVariantGeometry>;
+                 ShaderVariantGeometryVertex, ShaderVariantGeometry,
+                 ShaderVariantGeometryLayeredVertex>;
 
 class ThreadpoolWork {
 public:

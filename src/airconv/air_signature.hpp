@@ -674,6 +674,9 @@ public:
   uint32_t DefineOutput(const FunctionOutput &output);
   uint32_t DefineMeshVertexOutput(const MeshVertexOutput &output);
   uint32_t DefineMeshPrimitiveOutput(const MeshPrimitiveOutput &output);
+  // removes every output: a function that runs two stages (dxbc_converter_gs_layered.cpp) takes the first stage's
+  // signature for its inputs and gives the second stage's outputs
+  void ClearOutputs() { outputs.clear(); }
   void UseEarlyFragmentTests() { early_fragment_tests = true; }
   // the inputs defined so far, by argument index, and the outputs
   const std::vector<FunctionInput> &Inputs() const { return inputs; }

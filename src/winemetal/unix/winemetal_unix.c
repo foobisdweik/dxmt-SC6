@@ -2990,6 +2990,15 @@ sm50_compilation_argument32_convert(
       data->single_pass = src->single_pass;
       break;
     }
+    case SM50_SHADER_GS_LAYERED: {
+      // SC6 fork: next and type only
+      struct SM50_SHADER_GS_LAYERED_DATA *data = calloc(1, sizeof(struct SM50_SHADER_GS_LAYERED_DATA));
+      last_arg->next = data;
+      last_arg = (void *)data;
+      last_arg->next = NULL;
+      data->type = args32->type;
+      break;
+    }
     case SM50_SHADER_PSO_TESSELLATOR: {
       struct SM50_SHADER_PSO_TESSELLATOR_DATA32 *src = (void *)args32;
       struct SM50_SHADER_PSO_TESSELLATOR_DATA *data = malloc(sizeof(struct SM50_SHADER_PSO_TESSELLATOR_DATA));

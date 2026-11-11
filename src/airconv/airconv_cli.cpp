@@ -62,6 +62,12 @@ static cl::opt<unsigned> IndexFormat(
 static cl::opt<bool>
   StripTopology("strip-topology", cl::init(false), cl::desc("The geometry pipeline draws a strip topology"));
 
+// SC6 fork
+static cl::opt<bool> GSLayered(
+  "gs-layered", cl::init(false),
+  cl::desc("With --geometry-after-vertex: build the ordinary vertex function that runs a layered geometry shader too")
+);
+
 static cl::opt<std::string> RootSignature(
   "root-signature", cl::desc("Bind resources as a serialized D3D12 root signature does (D3D12SerializeRootSignature)")
 );
@@ -470,7 +476,18 @@ int main(int argc, char **argv) {
       return 1;
     }
     geometry.next = &ia_layout;
-    if (auto err = mullion::dxbc::convert_dxbc_vertex_for_geometry_shader(
+    if (GSLayered) {
+      auto faces = ((mullion::dxbc::SM50ShaderInternal *)sm50_geometry)->gs_layered_faces;
+      errs() << "layered faces: " << faces << '\n';
+      if (!faces)
+        return 1;
+    }
+    if (auto err = GSLayered ? mullion::dxbc::convert_dxbc_vertex_for_layered_geometry_shader(
+                                   (mullion::dxbc::SM50ShaderInternal *)sm50, "shader_main",
+                                   (mullion::dxbc::SM50ShaderInternal *)sm50_geometry, Context, M,
+                                   (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&ia_layout
+                               )
+                             : mullion::dxbc::convert_dxbc_vertex_for_geometry_shader(
           (mullion::dxbc::SM50ShaderInternal *)sm50, "shader_main",
           (mullion::dxbc::SM50ShaderInternal *)sm50_geometry, Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry
         )) {
