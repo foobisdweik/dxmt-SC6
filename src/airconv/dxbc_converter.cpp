@@ -5,6 +5,7 @@
 #include "DXBCParser/BlobContainer.h"
 #include "DXBCParser/ShaderBinary.h"
 #include "airconv_error.hpp"
+#include "airconv_switches.hpp"
 #include "d3d12.h"
 #include "../winemetal/winemetal.h"
 #include "llvm/ADT/SmallVector.h"
@@ -2317,6 +2318,8 @@ AIRCONV_API int SM50Compile(
 ) {
   using namespace llvm;
   using namespace mullion;
+  // SC6 fork: this compilation's shader flags choose which paths it leaves out (airconv_switches.hpp)
+  AirconvSkipScope skip_scope(pArgs);
 
   if (ppError) {
     *ppError = nullptr;
@@ -2384,6 +2387,8 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
 ) {
   using namespace llvm;
   using namespace mullion;
+  // SC6 fork: this compilation's shader flags choose which paths it leaves out (airconv_switches.hpp)
+  AirconvSkipScope skip_scope(pHullShaderArgs);
 
   if (ppError) {
     *ppError = nullptr;
@@ -2449,6 +2454,8 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
 ) {
   using namespace llvm;
   using namespace mullion;
+  // SC6 fork: this compilation's shader flags choose which paths it leaves out (airconv_switches.hpp)
+  AirconvSkipScope skip_scope(pDomainShaderArgs);
 
   if (ppError) {
     *ppError = nullptr;
@@ -2522,6 +2529,8 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
 ) {
   using namespace llvm;
   using namespace mullion;
+  // SC6 fork: this compilation's shader flags choose which paths it leaves out (airconv_switches.hpp)
+  AirconvSkipScope skip_scope(pVertexShaderArgs);
 
   if (ppError) {
     *ppError = nullptr;
@@ -2596,6 +2605,8 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
 ) {
   using namespace llvm;
   using namespace mullion;
+  // SC6 fork: this compilation's shader flags choose which paths it leaves out (airconv_switches.hpp)
+  AirconvSkipScope skip_scope(pGeometryShaderArgs);
 
   if (ppError) {
     *ppError = nullptr;

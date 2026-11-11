@@ -4,6 +4,7 @@
 #include "config/config.hpp"
 #include "log/log.hpp"
 #include "util_env.hpp"
+#include "d3d11_sc6_paths.hpp"
 #include "util_string.hpp"
 #include <cstring>
 
@@ -266,6 +267,9 @@ PipelineRecord::Deserialize(const uint8_t *data, size_t size) {
 std::unique_ptr<PipelineArchive>
 PipelineArchive::Create(WMT::Device device, WMTMetalVersion metal_version) {
   if (!Config::getInstance().getOption<bool>("d3d11.pipelineArchive", false))
+    return nullptr;
+  // SC6 fork: the path switch pipeline-archive turns it off too (d3d11_sc6_paths.hpp)
+  if (!Sc6PathEnabled(Sc6Path::PipelineArchive))
     return nullptr;
   auto dir = ShaderCacheDirectory();
   if (dir.empty()) {

@@ -26,6 +26,7 @@
 #include <span>
 #include "d3d11_annotation.hpp"
 #include "util_env.hpp"
+#include "d3d11_sc6_paths.hpp"
 #include "mullion_geometry.hpp"
 #include "d3d11_context.hpp"
 #include "d3d11_device_child.hpp"
@@ -5788,11 +5789,11 @@ public:
   If the current encoder is not a render encoder, switch to it.
   */
   // SC6 fork: the faces of the bound geometry shader where it can run as a layered vertex function
-  // (src/airconv/dxbc_converter_gs_layered.cpp), else 0. MULLION_SC6_GS_LAYERED=0 (or DXMT_SC6_GS_LAYERED=0) turns
-  // this off
+  // (src/airconv/dxbc_converter_gs_layered.cpp), else 0. The path switch gs-layered turns this off
+  // (d3d11_sc6_paths.hpp), as MULLION_SC6_GS_LAYERED=0 (or DXMT_SC6_GS_LAYERED=0) does
   uint32_t
   LayeredGeometryShaderFaces(const ManagedShader &GS) {
-    static const bool enabled = env::getEnvVar("MULLION_SC6_GS_LAYERED") != "0";
+    static const bool enabled = Sc6PathEnabled(Sc6Path::GSLayered);
     if (!enabled || !GS || GS->reflection().GeometryShader.GSPassThrough != ~0u)
       return 0;
     // the shader takes lists of triangles; a strip's triangles share vertices, and stream output needs the mesh path

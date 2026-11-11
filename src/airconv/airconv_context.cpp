@@ -1,6 +1,7 @@
 #include <mutex>
 #include <cstdlib>
 #include <cstring>
+#include "airconv_switches.hpp"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
@@ -159,15 +160,16 @@ runOptimizationPasses(llvm::Module &M, llvm::raw_ostream &Error) {
     // optimizations.
     FunctionPassManager GlobalCleanupPM;
     // MULLION_AIRCONV_SKIP=sample-branch-merge leaves a branch per sample (SampleImplicit)
-    if (auto skip = (getenv("MULLION_AIRCONV_SKIP") ?: getenv("DXMT_AIRCONV_SKIP")); !skip || !strstr(skip, "sample-branch-merge"))
+    // SC6 fork: SM50_SHADER_FLAG_SKIP_SAMPLE_BRANCH_MERGE leaves them too (airconv_switches.hpp)
+    if (!airconv_skipped("sample-branch-merge", SM50_SHADER_FLAG_SKIP_SAMPLE_BRANCH_MERGE))
       GlobalCleanupPM.addPass(air::MergeSampleBranchesPass());
     else
       GlobalCleanupPM.addPass(air::MergeSampleBranchesPass(false));
     // MULLION_AIRCONV_SKIP=minmax-branch-merge leaves a minimum and maximum filter branch per sample (MinMaxFilter)
-    {
-      auto skip = getenv("MULLION_AIRCONV_SKIP") ?: getenv("DXMT_AIRCONV_SKIP");
-      GlobalCleanupPM.addPass(air::MergeMinMaxBranchesPass(!skip || !strstr(skip, "minmax-branch-merge")));
-    }
+    // SC6 fork: SM50_SHADER_FLAG_SKIP_MINMAX_BRANCH_MERGE leaves them too (airconv_switches.hpp)
+    GlobalCleanupPM.addPass(
+        air::MergeMinMaxBranchesPass(!airconv_skipped("minmax-branch-merge", SM50_SHADER_FLAG_SKIP_MINMAX_BRANCH_MERGE))
+    );
     GlobalCleanupPM.addPass(InstCombinePass());
 
     GlobalCleanupPM.addPass(SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));

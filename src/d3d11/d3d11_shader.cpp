@@ -3,6 +3,7 @@
 #include "airconv_public.h"
 #include "config/config.hpp"
 #include "mullion_info.hpp"
+#include "d3d11_sc6_paths.hpp"
 #include "d3d11_input_layout.hpp"
 #include "sha1/sha1_util.hpp"
 #include <mutex>
@@ -19,6 +20,10 @@ getGlobalShaderFlag(MTLD3D11Device *pDevice) {
       shader_flag |= SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO;
     if (Config::getInstance().getOption<bool>("d3d11.defuseFma", false))
       shader_flag |= SM50_SHADER_FLAG_DEFUSE_FMA;
+    // SC6 fork: the converter paths turned off (d3d11_sc6_paths.hpp); every variant hashes these flags
+    shader_flag |= Sc6SkipShaderFlags();
+    if (!Sc6PathEnabled(Sc6Path::GroupSyncFence))
+      shader_flag = SM50_SHADER_FLAG(shader_flag & ~SM50_SHADER_FLAG_COHERENT_GROUP_SYNC);
   });
   return shader_flag;
 };

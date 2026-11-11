@@ -1,5 +1,6 @@
 airconv_src = files([
  'airconv_context.cpp',
+ 'airconv_switches.cpp',
  'air_type.cpp',
  'air_signature.cpp',
  'air_operations.cpp',

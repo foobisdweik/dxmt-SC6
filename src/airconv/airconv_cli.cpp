@@ -1,5 +1,6 @@
 #include "airconv_context.hpp"
 #include "airconv_public.h"
+#include "airconv_switches.hpp"
 #include "metallib_writer.hpp"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -61,6 +62,10 @@ static cl::opt<unsigned> IndexFormat(
 
 static cl::opt<bool>
   StripTopology("strip-topology", cl::init(false), cl::desc("The geometry pipeline draws a strip topology"));
+
+// SC6 fork: SM50_SHADER_FLAG bits added to the compilation's flags, for example 0x10000 for
+// SM50_SHADER_FLAG_SKIP_CBUFFER_BOUNDS, to see what a path switch of d3d11.dll changes (airconv_switches.hpp)
+static cl::opt<unsigned> ExtraShaderFlags("shader-flags", cl::init(0), cl::desc("SM50_SHADER_FLAG bits to add"));
 
 // SC6 fork
 static cl::opt<bool> GSLayered(
@@ -287,6 +292,9 @@ int main(int argc, char **argv) {
   data.simd_width = 0; // no device to ask; a vertex shader's wave has no lane count here
   data.next = 0;
   data.type = SM50_SHADER_COMMON;
+  data.flags = SM50_SHADER_FLAG(data.flags | ExtraShaderFlags);
+  // the CLI converts without SM50Compile*, so it opens the flags' scope itself
+  mullion::AirconvSkipScope skip_scope((SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data);
 
   std::unique_ptr<MemoryBuffer> RootSignatureBuffer;
   SM50_SHADER_ROOT_SIGNATURE_DATA rootsig{};

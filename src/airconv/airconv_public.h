@@ -544,6 +544,13 @@ enum SM50_SHADER_FLAG {
   /* no sampler reduces where Metal cannot (SM50_SAMPLER_REDUCTION): samples leave out the minimum and maximum filters'
      emulation */
   SM50_SHADER_FLAG_NO_MINMAX_FILTER = 1 << 9,
+  /* SC6 fork: the converter leaves out one of Mullion's paths, as MULLION_AIRCONV_SKIP names it (airconv_switches.hpp).
+     d3d11.dll sets these from its path switches (src/d3d11/d3d11_sc6_paths.hpp), so a config option, which only the
+     Windows side reads, reaches the converter; they are in the shader cache's key, as every flag is */
+  SM50_SHADER_FLAG_SKIP_CBUFFER_BOUNDS = 1 << 16,
+  SM50_SHADER_FLAG_SKIP_FRAC_FLOOR = 1 << 17,
+  SM50_SHADER_FLAG_SKIP_SAMPLE_BRANCH_MERGE = 1 << 18,
+  SM50_SHADER_FLAG_SKIP_MINMAX_BRANCH_MERGE = 1 << 19,
 };
 
 struct SM50_SHADER_COMMON_DATA {

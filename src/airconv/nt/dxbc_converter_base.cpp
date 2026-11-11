@@ -19,6 +19,7 @@
 #include "dxbc_converter_base.hpp"
 #include "../dxbc_converter.hpp"
 #include "air_builder.hpp"
+#include "../airconv_switches.hpp"
 #include "../transforms/merge_sample_branches.hpp"
 #include <cstring>
 #include "../transforms/merge_minmax_branches.hpp"
@@ -99,10 +100,8 @@ Converter::LoadConstantBuffer(const ConstantBufferDescriptor &Buffer, llvm::Valu
   // its address is chosen, where choosing the value it loaded (or the row) made each load the threads' own, about 25
   // times the GPU time of a shader that reads hundreds of constant rows (tests/perf cbv_rows, dttdrv/mullion#32).
   // MULLION_AIRCONV_SKIP=cbuffer-bounds leaves the check out, to measure what it costs (it is in the shader cache's key)
-  static const bool skip = [] {
-    auto names = getenv("MULLION_AIRCONV_SKIP") ?: getenv("DXMT_AIRCONV_SKIP");
-    return names && strstr(names, "cbuffer-bounds");
-  }();
+  // SC6 fork: SM50_SHADER_FLAG_SKIP_CBUFFER_BOUNDS leaves it out too (airconv_switches.hpp)
+  bool skip = airconv_skipped("cbuffer-bounds", SM50_SHADER_FLAG_SKIP_CBUFFER_BOUNDS);
   if (Buffer.Metadata && !skip) {
     auto InBounds = ir.CreateICmpULT(Row, ir.CreateTrunc(ir.CreateLShr(Buffer.Metadata, 4), air.getIntTy()));
     RowPointer = ir.CreateSelect(InBounds, RowPointer, ZeroRow());
@@ -1080,10 +1079,8 @@ Converter::Fraction(llvm::Value *Value) {
   // without the bit test and the select (4-7% of the perf probe's math shaders). MULLION_AIRCONV_SKIP=frac-floor (in
   // the shader cache's key) takes the select instead
   using llvm::air::AIRBuilder;
-  static const bool Select = [] {
-    auto Skip = getenv("MULLION_AIRCONV_SKIP") ?: getenv("DXMT_AIRCONV_SKIP");
-    return Skip && strstr(Skip, "frac-floor");
-  }();
+  // SC6 fork: SM50_SHADER_FLAG_SKIP_FRAC_FLOOR takes the select too (airconv_switches.hpp)
+  bool Select = airconv_skipped("frac-floor", SM50_SHADER_FLAG_SKIP_FRAC_FLOOR);
   auto Type = Value->getType();
   if (!Select) {
     auto Floor = air.CreateFPUnOp(AIRBuilder::floor, Value, false);
