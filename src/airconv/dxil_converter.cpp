@@ -35,6 +35,7 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/LowerAtomic.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include <bit>
 #include <format>
 #include <map>
 #include <optional>
@@ -243,6 +244,18 @@ enum Semantic : uint32_t {
   SemanticShadingRate = 29,
   SemanticCullPrimitive = 30,
 };
+
+// whether a mesh shader's primitive outputs have a layer and no viewport index: it then writes viewport 0 with the
+// layer, as the DXBC stages' mesh functions do and for their reason (SM50ShaderInternal::mesh_handlers)
+static bool
+LayerWithoutViewport(const auto &outputs) {
+  bool layer = false, viewport = false;
+  for (auto &e : outputs) {
+    layer |= e.semantic == SemanticRenderTargetArrayIndex;
+    viewport |= e.semantic == SemanticViewportArrayIndex;
+  }
+  return layer && !viewport;
+}
 
 // DxilConstants.h ResourceClass (createHandle's first operand, and the dx.resources list order)
 enum ResourceClass : uint32_t { SRV, UAV, CBV, SamplerClass };
@@ -2202,6 +2215,13 @@ convert_dxil(
       types.push_back(a->getType());
     return ir.CreateCall(ctx.module.getOrInsertFunction(fn, FunctionType::get(ret, types, false), convergent), args);
   };
+  // "The bits corresponding to inactive or helper lanes will be zero" (DXC Wave Intrinsics); not every GPU's ballot
+  // leaves helpers out
+  auto ballot = [&](Value *condition) {
+    if (ctx.shader_type == D3D10_SB_PIXEL_SHADER)
+      condition = ir.CreateAnd(condition, ir.CreateNot(simd("simd_is_helper_thread", ir.getInt1Ty(), {})));
+    return simd("simd_ballot", ir.getInt64Ty(), {condition}, ir.getInt64Ty());
+  };
   auto i16 = [&](Value *v) { return ir.CreateTrunc(v, ir.getInt16Ty()); };
   // a function that moves `v` between lanes (shuffle, broadcast): bools travel as 32 bits, 64-bit values as halves
   std::function<Value *(const std::string &, Value *, ArrayRef<Value *>)> move = [&](auto &name, Value *v, auto extra) {
@@ -2305,7 +2325,7 @@ convert_dxil(
   using Combine = std::function<Value *(Value *, Value *)>;
   auto over_lanes = [&](Value *v, Value *identity, std::function<Value *(Value * lane, Value * value)> count,
                         Combine combine) -> Value * {
-    auto mask = simd("simd_ballot", ir.getInt64Ty(), {ir.getTrue()}, ir.getInt64Ty());
+    auto mask = ballot(ir.getTrue());
     auto head = ir.GetInsertBlock();
     auto exit = SplitBlock(head, &*ir.GetInsertPoint());
     auto loop = llvm::BasicBlock::Create(ctx.llvm, "wave_lanes", ctx.function, exit);
@@ -2721,7 +2741,7 @@ convert_dxil(
       auto ctz = ctx.module.getOrInsertFunction(
           "air.ctz.i64", FunctionType::get(ir.getInt64Ty(), {ir.getInt64Ty(), ir.getInt1Ty()}, false)
       );
-      auto mask = simd("simd_ballot", ir.getInt64Ty(), {ir.getTrue()}, ir.getInt64Ty());
+      auto mask = ballot(ir.getTrue());
       ret = ir.CreateICmpEQ(
           ir.CreateZExtOrTrunc(lane_index(), ir.getInt64Ty()), ir.CreateCall(ctz, {mask, ir.getFalse()})
       );
@@ -2735,16 +2755,25 @@ convert_dxil(
       break;
     case WaveAnyTrue:
     case WaveAllTrue:
-      ret = simd(op == WaveAnyTrue ? "simd_any" : "simd_all", ir.getInt1Ty(), {a(1)});
+      ret = ctx.shader_type != D3D10_SB_PIXEL_SHADER
+                ? simd(op == WaveAnyTrue ? "simd_any" : "simd_all", ir.getInt1Ty(), {a(1)})
+            : op == WaveAnyTrue ? ir.CreateICmpNE(ballot(a(1)), ir.getInt64(0))
+                                : ir.CreateICmpEQ(ballot(ir.CreateNot(a(1))), ir.getInt64(0));
       break;
     case WaveActiveAllEqual: {
-      auto first = move("simd_broadcast_first", a(1), {});
+      // "all active non-helper lanes": the first lane may be a helper, whose value says nothing
+      auto ctz = ctx.module.getOrInsertFunction(
+          "air.ctz.i64", FunctionType::get(ir.getInt64Ty(), {ir.getInt64Ty(), ir.getInt1Ty()}, false)
+      );
+      auto first = ctx.shader_type == D3D10_SB_PIXEL_SHADER
+                       ? move("simd_shuffle", a(1), {i16(ir.CreateCall(ctz, {ballot(ir.getTrue()), ir.getFalse()}))})
+                       : move("simd_broadcast_first", a(1), {});
       auto equal = a(1)->getType()->isFPOrFPVectorTy() ? ir.CreateFCmpOEQ(a(1), first) : ir.CreateICmpEQ(a(1), first);
-      ret = simd("simd_all", ir.getInt1Ty(), {equal});
+      ret = ir.CreateICmpEQ(ballot(ir.CreateNot(equal)), ir.getInt64(0));
       break;
     }
     case WaveActiveBallot:
-      ret = mask_words(simd("simd_ballot", ir.getInt64Ty(), {a(1)}, ir.getInt64Ty()), ty);
+      ret = mask_words(ballot(a(1)), ty);
       break;
     case WaveMatch: {
       // the lanes whose value has the same bits, so each lane matches itself
@@ -2872,7 +2901,7 @@ convert_dxil(
       // the set bits of the lanes before this one in its mask
       auto before =
           ir.CreateSub(ir.CreateShl(ir.getInt64(1), ir.CreateZExt(lane_index(), ir.getInt64Ty())), ir.getInt64(1));
-      auto set = simd("simd_ballot", ir.getInt64Ty(), {a(1)}, ir.getInt64Ty());
+      auto set = ballot(a(1));
       auto counted = ir.CreateAnd(ir.CreateAnd(set, lane_mask(call, 2)), before);
       ret = ir.CreateTrunc(air.CreateIntUnOp(llvm::air::AIRBuilder::popcount, counted), ir.getInt32Ty());
       break;
@@ -3050,6 +3079,8 @@ convert_dxil(
           break;
         case SemanticRenderTargetArrayIndex:
           air.CreateSetMeshRenderTargetArrayIndex(a(5), v);
+          if (LayerWithoutViewport(shader->mesh_outputs[1]))
+            air.CreateSetMeshViewportArrayIndex(a(5), ir.getInt32(0));
           break;
         case SemanticViewportArrayIndex:
           air.CreateSetMeshViewportArrayIndex(a(5), v);
@@ -3225,6 +3256,10 @@ convert_dxil(
             *tex.texture, sampler, smp.sampler->Metadata, coord, array, offset, {value, residency},
             [&](Value *s) { return read(s, reference); }, residency_level, residency_bias, residency_clamp,
             residency_dx, residency_dy);
+      if (op == SampleCmpLevelZero)
+        value = dxbc.ComparePointAtZero(*tex.texture, smp.sampler->Metadata, reference, value, [&] {
+          return read(sampler, nullptr).first;
+        });
       value = dxbc.CustomBorder(
           *tex.texture, sampler, smp.sampler->Border, smp.sampler->Metadata, value,
           [&](Value *s) { return read(s, nullptr).first; }, reference
@@ -3430,10 +3465,10 @@ convert_dxil(
           return ir.CreateAnd(ir.CreateTrunc(ir.CreateLShr(place, shift), i32), ir.getInt32((1u << bits) - 1));
         };
         first_mip = part(0, SM50_TEXTURE_VIEW_METADATA_FIRST_MIP_BITS);
-        resource_mips = part(8, 8);
-        first_slice = part(16, 16);
-        resource_size[0] = part(32, 16);
-        resource_size[1] = part(48, 16);
+        resource_mips = part(8, 4);
+        first_slice = part(16, 12);
+        resource_size[0] = part(32, 15);
+        resource_size[1] = part(48, 15);
       }
       // derivatives in texels of the first mip: the operation's, or the pixel's. an explicit LOD has none
       auto texels = [&](Value *gradient) {
@@ -4487,6 +4522,8 @@ convert_dxil(
           air.CreateSetMeshRenderTargetArrayIndex(primitive, system(1));
         if (primitive_outputs[2])
           air.CreateSetMeshViewportArrayIndex(primitive, system(2));
+        else if (primitive_outputs[1])
+          air.CreateSetMeshViewportArrayIndex(primitive, ir.getInt32(0));
         air.CreateSetMeshPrimitiveCulled(primitive, culled);
       }
     }
@@ -4722,6 +4759,8 @@ convert_dxil_mesh_stage(
           break;
         case SemanticRenderTargetArrayIndex:
           func_signature.DefineMeshPrimitiveOutput(air::OutputRenderTargetArrayIndex{});
+          if (LayerWithoutViewport(pShaderInternal->mesh_outputs[1]))
+            func_signature.DefineMeshPrimitiveOutput(air::OutputViewportArrayIndex{});
           break;
         case SemanticViewportArrayIndex:
           func_signature.DefineMeshPrimitiveOutput(air::OutputViewportArrayIndex{});
