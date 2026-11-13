@@ -2466,7 +2466,9 @@ Converter::SampleImplicit(
     auto Skip = getenv("MULLION_AIRCONV_SKIP") ?: getenv("DXMT_AIRCONV_SKIP");
     return !Skip || !strstr(Skip, "anisotropic-gradients");
   }();
-  if (!Planar || ctx.shader_type != microsoft::D3D10_SB_PIXEL_SHADER || !Exact)
+  // SC6 fork: SM50_SHADER_FLAG_SKIP_ANISO_GRADIENTS leaves the gradients out too (airconv_switches.hpp)
+  if (!Planar || ctx.shader_type != microsoft::D3D10_SB_PIXEL_SHADER || !Exact ||
+      airconv_skipped("anisotropic-gradients", SM50_SHADER_FLAG_SKIP_ANISO_GRADIENTS))
     return Biased();
   // a static sampler is known when the pipeline is made: one that is not anisotropic, or a sample whose only bias is
   // the sampler's own and that is none, reads Metal's own LOD. Metal's gradient sample below costs about twice its

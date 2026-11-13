@@ -68,6 +68,10 @@ namespace mullion {
       { "dxgi.nativeFullscreen",           "True" },
       { "dxgi.metalLayerPixelFormat",      "bgr10a2" },
       { "d3d11.pipelineArchive",           "True" },
+      /* the old SC6 build read constant buffers without bounds checks, and the game never reads past one */
+      { "mullion.cbufferBounds",           "False" },
+      /* the old SC6 build sampled with Metal's own LOD; the gradient path costs a branch in every 2D sample */
+      { "mullion.anisoGradients",          "False" },
     }} },
   }};
 

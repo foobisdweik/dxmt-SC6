@@ -25,7 +25,8 @@ getGlobalShaderFlag(MTLD3D11Device *pDevice) {
     if (!Sc6PathEnabled(Sc6Path::GroupSyncFence))
       shader_flag = SM50_SHADER_FLAG(shader_flag & ~SM50_SHADER_FLAG_COHERENT_GROUP_SYNC);
   });
-  return shader_flag;
+  // SC6 fork: read on every call, because the filter emulation turns on when a sampler first needs it
+  return SM50_SHADER_FLAG(shader_flag | SamplerEmulationsLeftOut());
 };
 
 template <typename Proc>

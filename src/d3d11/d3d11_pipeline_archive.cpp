@@ -405,12 +405,21 @@ PipelineArchive::LoadList() {
     WARN("PipelineArchive: skipped ", skipped, " damaged or unsupported records in ", list_path_);
 }
 
+static bool
+Archivable(const WMTRenderPipelineInfo &info) {
+  return !info.rasterization_enabled || info.fragment_function != NULL_OBJECT_HANDLE;
+}
+
 WMT::Reference<WMT::RenderPipelineState>
 PipelineArchive::NewRenderPipelineState(
     WMTRenderPipelineInfo &info, WMT::Reference<WMT::Error> &err, bool &add_later
 ) {
   add_later = false;
-  if (!archive_handle_)
+  /* SC6 fork: a pipeline that rasterizes without a fragment function (a depth-only pass) stays out of the archive.
+     With Metal 4 shaders, MTLBinaryArchive accepts such a pipeline but then cannot write its file ("expecting
+     'fragment' stage in pipeline"), so one of them made every write fail and no later run found a pipeline.
+     Metal's own cache (com.apple.metal) still keeps these pipelines between runs. */
+  if (!archive_handle_ || !Archivable(info))
     return device_.newRenderPipelineState(info, err);
 
   std::shared_lock<std::shared_mutex> lock(archive_rw_);
@@ -437,7 +446,7 @@ PipelineArchive::NewRenderPipelineState(
 
 void
 PipelineArchive::AddRenderPipeline(WMTRenderPipelineInfo &info) {
-  if (!archive_handle_)
+  if (!archive_handle_ || !Archivable(info))
     return;
   {
     std::shared_lock<std::shared_mutex> lock(archive_rw_);

@@ -25,6 +25,11 @@ enum class Sc6Path : unsigned {
   GSLayered,
   /* the Metal pipeline archive and its warm-up of recorded pipelines (d3d11.pipelineArchive must be on too) */
   PipelineArchive,
+  /* an anisotropic sampler with a LOD bias samples with explicit gradients, so that Metal keeps the bias; every 2D
+     sample of a pixel shader carries a branch for it */
+  AnisoGradients,
+  /* shaders leave out the minimum and maximum filter emulation until a sampler needs it (SamplerEmulationsLeftOut) */
+  LazySamplerEmulation,
   Count,
 };
 
@@ -44,5 +49,17 @@ bool Sc6PathEnabled(Sc6Path path);
 
 /* the SM50_SHADER_FLAG_SKIP_* bits of the converter paths that are off */
 SM50_SHADER_FLAG Sc6SkipShaderFlags();
+
+/* SC6 fork: Mullion's converter adds two emulations to every texture sample: a border color Metal lacks, and a minimum
+ * or maximum filter where Metal's sampler cannot reduce. D3D12 leaves each out of its shaders until a sampler needs it
+ * (MTLD3D12Device::sampler_emulations). D3D11 passed neither flag, so every sample of every shader carried both, and
+ * SC6's vertex shaders grew from 36252 to 67365 instructions (92 shaders, before Metal's compiler).
+ * D3D11 never makes a sampler with a custom border (CreateSamplerState passes none), so that emulation is always left
+ * out. The filter emulation is left out until CreateSamplerState makes a sampler whose metadata asks the shader to
+ * reduce. A shader compiled before that sampler keeps Metal's average for it; the flags are in the shader cache's key,
+ * so shaders made after it are converted again with the emulation. */
+void NoteSamplerNeedsMinMaxEmulation();
+/* SM50_SHADER_FLAG_NO_* bits of the sampler emulations that no D3D11 sampler has needed so far */
+SM50_SHADER_FLAG SamplerEmulationsLeftOut();
 
 } // namespace mullion

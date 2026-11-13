@@ -22,6 +22,7 @@
 #include "d3d11_device.hpp"
 #include "d3d11_state_object.hpp"
 #include "mullion_sampler.hpp"
+#include "d3d11_sc6_paths.hpp"
 #include "airconv_public.h"
 #include "log/log.hpp"
 #include "../d3d10/d3d10_state_object.hpp"
@@ -792,6 +793,9 @@ StateObjectCache<D3D11_SAMPLER_DESC, D3D11SamplerState>::CreateStateObject(
     ERR("CreateSamplerState: failed to create sampler");
     return E_FAIL;
   }
+  // SC6 fork: the metadata's reduction field is set only when the shader must reduce for this sampler
+  if (sampler->metadata >> SM50_SAMPLER_METADATA_REDUCTION & ((1 << SM50_SAMPLER_METADATA_REDUCTION_BITS) - 1))
+    NoteSamplerNeedsMinMaxEmulation();
 
   cache.emplace(*pSamplerDesc, std::make_unique<MTLD3D11SamplerState>(device, std::move(sampler), desc));
   cache.at(*pSamplerDesc)->QueryInterface(__uuidof(ID3D11SamplerState), (void **)ppSamplerState);

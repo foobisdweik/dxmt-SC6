@@ -3,6 +3,7 @@
 #include "log/log.hpp"
 #include "util_env.hpp"
 #include <array>
+#include <atomic>
 #include <mutex>
 #include <string>
 
@@ -16,6 +17,8 @@ static const std::array<Sc6PathInfo, size_t(Sc6Path::Count)> kPaths = {{
     {"group-sync-fence", "mullion.groupSyncFence", SM50_SHADER_FLAG{}},
     {"gs-layered", "mullion.gsLayered", SM50_SHADER_FLAG{}},
     {"pipeline-archive", "mullion.pipelineArchive", SM50_SHADER_FLAG{}},
+    {"anisotropic-gradients", "mullion.anisoGradients", SM50_SHADER_FLAG_SKIP_ANISO_GRADIENTS},
+    {"lazy-sampler-emulation", "mullion.lazySamplerEmulation", SM50_SHADER_FLAG{}},
 }};
 
 const Sc6PathInfo &
@@ -81,6 +84,24 @@ Sc6SkipShaderFlags() {
   for (size_t i = 0; i < kPaths.size(); i++)
     if (!EnabledPaths()[i])
       flags |= kPaths[i].skip_flag;
+  return SM50_SHADER_FLAG(flags);
+}
+
+static std::atomic<bool> g_minmax_emulation_needed{false};
+
+void
+NoteSamplerNeedsMinMaxEmulation() {
+  if (!g_minmax_emulation_needed.exchange(true))
+    WARN("A sampler needs the minimum or maximum filter emulation; shaders made from now on include it");
+}
+
+SM50_SHADER_FLAG
+SamplerEmulationsLeftOut() {
+  if (!Sc6PathEnabled(Sc6Path::LazySamplerEmulation))
+    return SM50_SHADER_FLAG{};
+  uint32_t flags = SM50_SHADER_FLAG_NO_CUSTOM_BORDER;
+  if (!g_minmax_emulation_needed.load(std::memory_order_relaxed))
+    flags |= SM50_SHADER_FLAG_NO_MINMAX_FILTER;
   return SM50_SHADER_FLAG(flags);
 }
 
