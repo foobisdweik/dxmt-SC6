@@ -482,16 +482,9 @@ private:
   std::unordered_set<std::string> fields;
 };
 
-enum class InputAttributeComponentType : uint32_t {
-  Unknown,
-  Uint = 1,
-  Int = 2,
-  Float = 3
-};
-
 struct InputVertexStageIn {
   uint32_t attribute;
-  InputAttributeComponentType type;
+  MSLScalerOrVectorType type;
   std::string name;
 };
 
@@ -690,7 +683,7 @@ public:
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module,
-    uint64_t sign_mask, bool skip_output
+    uint64_t sign_mask_unused, bool skip_output
   ) -> std::pair<llvm::Function *, llvm::MDNode *>;
 
 private:
