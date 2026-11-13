@@ -2,7 +2,7 @@
 
 #include "d3d10_util.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D10ShaderResourceView final : public ID3D10ShaderResourceView1 {
 
@@ -155,4 +155,4 @@ public:
   void STDMETHODCALLTYPE GetDesc(D3D10_DEPTH_STENCIL_VIEW_DESC *pDesc);
 };
 
-}; // namespace dxmt
+}; // namespace mullion

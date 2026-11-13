@@ -1,0 +1,14 @@
+# the resolved pipeline config determines the stack size
+--- a/src/d3d12/d3d12_state_object.cpp
++++ b/src/d3d12/d3d12_state_object.cpp
+@@ -786,9 +786,7 @@
+     if (type_ == D3D12_STATE_OBJECT_TYPE_COLLECTION)
+       deferred_associations_ = std::move(associations);
+     if (failed)
+-      return FAIL(E_INVALIDARG);
+-    if (auto &config = configurations_[PipelineConfig - ShaderConfig]; config)
+-      pipeline_config_ = {config->first, (D3D12_RAYTRACING_PIPELINE_FLAGS)config->second};
++      return E_INVALIDARG;
+ 
+     // "Default pipeline stack size": the deepest any chain of the shaders there are can get, with callable shaders
+     // two deep

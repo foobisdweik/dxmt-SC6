@@ -1,0 +1,12 @@
+# shifts compute descriptor tables by one slot
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2165,7 +2165,7 @@
+       return;
+     if (Index >= rootsig_compute_->ParameterSlots)
+       return;
+-    rootarg_compute_staging_[rootsig_compute_->SlotQwordOffsets[Index]] = BaseDescriptor.ptr;
++    rootarg_compute_staging_[rootsig_compute_->SlotQwordOffsets[Index]] = BaseDescriptor.ptr + device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+     dirty_state_.set(DirtyState::ComputeRootArguments);
+   };
+ 

@@ -1,0 +1,12 @@
+# drops the queued resource MinLOD clamp.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -648,7 +648,7 @@
+       expected->SetMinLOD(MinLOD);
+       // every stage that has a view of it bound samples it clamped from here on
+       if (auto texture = GetTexture(pResource))
+-        EmitST([texture = std::move(texture), MinLOD](ArgumentEncodingContext &) { texture->minLOD = MinLOD; });
++        EmitST([texture = std::move(texture), MinLOD](ArgumentEncodingContext &) { texture->minLOD = 0; });
+       for (auto &stage : state_.ShaderStages)
+         stage.SRVs.set_dirty();
+     }

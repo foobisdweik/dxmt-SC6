@@ -1,0 +1,11 @@
+# reuse the same capture slot while an ended query still reads its previous draws
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -906,6 +906,7 @@
+     statistics_offset_ = 0;
+   }
+   auto allocation = statistics_page_->current();
++  statistics_offset_ = 0;
+   retainAllocation(allocation);
+   draw.result = allocation->gpuAddress() + statistics_offset_;
+   for (auto &query : pipeline_queries_)

@@ -1,0 +1,30 @@
+# buffer copies omit the source storage offset
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -4098,7 +4098,7 @@
+           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+           cmd.copy_length = SrcBox.right - SrcBox.left;
+           cmd.src = src->buffer();;
+-          cmd.src_offset = SrcBox.left + src_offset;
++          cmd.src_offset = SrcBox.left;
+           cmd.dst = dst->buffer();
+           cmd.dst_offset = DstX + dst_offset;
+         });
+@@ -4117,7 +4117,7 @@
+           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+           cmd.copy_length = SrcBox.right - SrcBox.left;
+           cmd.src = src->buffer();
+-          cmd.src_offset = SrcBox.left + src_offset;
++          cmd.src_offset = SrcBox.left;
+           cmd.dst = dst->buffer();;
+           cmd.dst_offset = DstX + dst_offset;
+         });
+@@ -4132,7 +4132,7 @@
+           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+           cmd.copy_length = SrcBox.right - SrcBox.left;
+           cmd.src = src->buffer();;
+-          cmd.src_offset = SrcBox.left + src_offset;
++          cmd.src_offset = SrcBox.left;
+           cmd.dst = dst->buffer();;
+           cmd.dst_offset = DstX + dst_offset;
+         });

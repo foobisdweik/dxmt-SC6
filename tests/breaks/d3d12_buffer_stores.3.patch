@@ -1,0 +1,12 @@
+# uses 32-bit address multiplication for structured buffer indices.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -1793,7 +1793,7 @@
+     auto stride = h.buffer->StructureStride;
+     if (!stride)
+       return wide(index);
+-    auto element = ir.CreateMul(wide(index), ir.getInt64(stride));
++    auto element = wide(ir.CreateMul(index, ir.getInt32(stride)));
+     return defined(offset) ? ir.CreateAdd(element, wide(offset)) : element;
+   };
+   auto unit_ptr = [&](BufferResourceHandle &b, Type *unit, Value *index, bool inside = false) -> Value * {

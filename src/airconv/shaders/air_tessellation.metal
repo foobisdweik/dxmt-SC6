@@ -2,6 +2,15 @@
 
 using namespace metal;
 
+// the fixed function tessellator. its points are those of Direct3D's reference tessellator, which D3D11.3 11.7.1
+// names as the tessellator's definition: every coordinate is 16.16 fixed point, placed by one factor's partition of
+// [0, 1], so a point is the same bits whichever edge reaches it.
+//
+// the hull stage cuts a patch into rings and writes workloads, each a mesh threadgroup's work: one or two frames, a
+// frame being a side of a ring (its outer edge) and the same side of the next ring in (its inner edge), which the
+// mesh stage fills with triangles, joined as the reference joins them (11.7.6). an isoline patch's workloads hold two
+// lines instead.
+
 enum class partitioning {
   integer,
   pow2,
@@ -9,577 +18,507 @@ enum class partitioning {
   fractional_even,
 };
 
-using fxp32 = uint;
+using fxp = uint;
 
-constexpr constant fxp32 fxp32_0 = 0x0u;
-constexpr constant fxp32 fxp32_1 = 0x10000u;
-constexpr constant fxp32 fxp32_2 = 0x20000u;
-constexpr constant fxp32 fxp32_half = 0x8000u;
+constexpr constant fxp fxp_one = 0x10000;
+constexpr constant fxp fxp_half = 0x8000;
+constexpr constant fxp fxp_third = 0x5555;
+constexpr constant fxp fxp_two_thirds = 0xaaaa;
 
-uint fxp32_ceil(fxp32 f) {
-  return (f >> 16) + ((f & 0xffff) > 0 ? 1 : 0);
-}
-
-fxp32 fxp32_invb(uint n, fxp32 v) {
-  return (fxp32)(((ulong)n << 32) / v);
-}
-
-using fxp16 = ushort;
-using fxp16v2 = ushort2;
-
-constexpr constant fxp16 fxp16_0 = ushort{0x0000};
-constexpr constant fxp16 fxp16_one_third = ushort{0x2aab};
-constexpr constant fxp16 fxp16_1 = ushort{0x8000};
-
-constexpr constant float fxp16_1_f = 32768.0;
-
-using fxp16v2 = ushort2; // 0x0000 -> 0.0 ; 0x8000 -> 1.0
-
-fxp16v2 mix(fxp16v2 a, fxp16v2 b, fxp32 factor) {
-
-  uint2 ai = uint2(a);
-  uint2 bi = uint2(b);
-
-  uint f = min(factor >> 1, (uint)fxp16_1);
-  uint invf = fxp16_1 - f;
-
-  uint2 ri = ((ai * invf + bi * f)) / fxp16_1; // effective right shift 15
-  ri = min(ri, uint2(fxp16_1));
-  return fxp16v2(ri);
+// a factor the tessellator takes, and whether it cuts into an odd number of segments
+struct tess_factor {
+  fxp value;
+  bool odd;
 };
 
-float2 to_float(fxp16v2 unorm) {
-  return (float2)unorm / float2(fxp16_1_f);
+// whether a factor is above a positive bound: compared as bits, false for a NaN whatever the compiler assumes of
+// floats
+bool
+above(float factor, float bound) {
+  return as_type<uint>(factor) - as_type<uint>(bound) - 1 < 0x7f800000u - as_type<uint>(bound);
 }
 
-template <partitioning partition>
-char
-get_int_factor(fxp32 factor) {
-  return fxp32_ceil(factor);
+// a hull shader's factor culls its patch unless it is above zero
+bool
+culls(float factor) {
+  return !above(factor, 0);
 }
 
-template <>
-char
-get_int_factor<partitioning::fractional_odd>(fxp32 factor) {
-  char c = fxp32_ceil(factor);
-  return c & 1 ? c : c + 1;
+// in its partitioning's range, and whole when the partitioning is (D3D11.3 11.7.11). pow2 is integer here: rounding
+// to a power of two is the hull shader's work (11.7.7.1)
+tess_factor
+take(float factor, partitioning p, float lower) {
+  bool whole = p == partitioning::integer || p == partitioning::pow2;
+  float upper = p == partitioning::fractional_odd ? 63 : 64;
+  // a NaN becomes the lower bound
+  factor = !above(factor, lower) ? lower : above(factor, upper) ? upper : factor;
+  if (whole)
+    factor = ceil(factor);
+  fxp value = rint(factor * 65536.0f);
+  return {value, whole ? bool(value >> 16 & 1) : p == partitioning::fractional_odd};
 }
 
-template <>
-char
-get_int_factor<partitioning::fractional_even>(fxp32 factor) {
-  short c = fxp32_ceil(factor);
-  return c & 1 ? c + 1 : c;
+float
+lowest(partitioning p) {
+  return p == partitioning::fractional_even ? 2 : 1;
 }
 
-template <partitioning partition>
-fxp32
-place_in_1d(short index, fxp32 factor) {
-  return fxp32_invb(index, factor);
-}
-
-template <>
-fxp32
-place_in_1d<partitioning::fractional_odd>(short index, fxp32 factor) {
-  if (factor < fxp32_1) { // it really can only be 0 or 1
-    return index ? fxp32_1 : fxp32_0;
-  }
-  fxp32 maxh = (fxp32_1 - fxp32_invb(1, factor)) >> 1;
-  return min(fxp32_invb(index, factor), maxh);
-}
-
-template <>
-fxp32
-place_in_1d<partitioning::fractional_even>(short index, fxp32 factor) {
-  if (factor < fxp32_2) { // it really can only be 0 or 1
-    return index * fxp32_half;
-  }
-  return min(fxp32_invb(index, factor), fxp32_half);
-}
-
-template <partitioning partition>
-fxp32
-regularize_factor(float factor) {
-  // For integer partitioning, TessFactor range is [1 ... 64] (fractions rounded up).
-  return ((uint)clamp(ceil(factor), 1.0f, 64.0f)) << 16;
-}
-
-template <>
-fxp32
-regularize_factor<partitioning::pow2>(float factor) {
-  // For pow2 partitioning, TessFactor range is [1,2,4,8,16,32,64].
-  uint clamped = clamp(ceil(factor), 1.0f, 64.0f);
-  return (clamped == 1 ? 1 : 1 << (32 - clz(clamped - 1))) << 16;
-}
-
-template <>
-fxp32
-regularize_factor<partitioning::fractional_odd>(float factor) {
-  // For fractional odd partitioning, TessFactor range is [1 ... 63].
-  return clamp(factor, 1.0f, 63.0f) * 65536.0;
-}
-
-template <>
-fxp32
-regularize_factor<partitioning::fractional_even>(float factor) {
-  // For fractional even tessellation, TessFactor range is [2 ... 64].
-  return clamp(factor, 2.0f, 64.0f) * 65536.0;
-}
-
-struct TessMeshWorkload {
-  fxp16v2 inner0;
-  fxp16v2 inner1;
-  fxp16v2 outer0;
-  fxp16v2 outer1;
-  fxp32 inner_factor;
-  fxp32 outer_factor;
-  char inner_factor_i;
-  char outer_factor_i;
-  bool has_complement;
-  bool padding;
-  fxp16v2 inner0_c;
-  fxp16v2 inner1_c;
-  fxp16v2 outer0_c;
-  fxp16v2 outer1_c;
-  fxp32 inner_factor_c;
-  fxp32 outer_factor_c;
-  char inner_factor_c_i;
-  char outer_factor_c_i;
-  short patch_index;
+// one factor's partition of [0, 1]
+struct tess_partition {
+  fxp inv_floor, inv_ceil; // a segment's length at the whole factors around this one
+  fxp fraction;            // how far the factor is from the lower to the upper
+  int half_points;         // the points before the middle
+  int split;               // the lower factor's point that is splitting in two
+  int points;
 };
+
+fxp
+ceil(fxp x) {
+  return (x + 0xffff) & ~0xffffu;
+}
 
 int
-get_next_index(threadgroup int *out_count) {
-  return atomic_fetch_add_explicit(reinterpret_cast<threadgroup atomic_int *>(out_count), 1, memory_order_relaxed);
+without_top_bit(int x) {
+  return x > 0 ? x & ~(0x40000000 >> (clz(x) - 1)) : 0;
 }
 
-template <partitioning partition>
+// n / d below 2^24, as a float quotient and the one step it may be off by: a GPU divides integers in a long sequence,
+// which every point paid twice
+uint
+divide(uint n, uint d) {
+  uint q = uint(float(n) / float(d));
+  return q - (q * d > n) + ((q + 1) * d <= n);
+}
+
+tess_partition
+partition_of(fxp factor, bool odd) {
+  tess_partition p;
+  fxp halved = (factor + 1) / 2;
+  // a factor of 1 without odd parity is cut as 2
+  if (odd || halved == fxp_half)
+    halved += fxp_half;
+  fxp lower = halved & ~0xffffu, upper = ceil(halved);
+  p.fraction = halved - lower;
+  p.half_points = upper >> 16;
+  p.split = lower == upper ? p.half_points + 1
+            : odd ? (lower == fxp_one ? 0 : (without_top_bit((lower >> 16) - 1) << 1) + 1)
+                  : (without_top_bit(lower >> 16) << 1) + 1;
+  int floor_segments = (lower >> 15) - odd, ceil_segments = (upper >> 15) - odd;
+  p.inv_floor = divide(fxp_one + floor_segments / 2, floor_segments);
+  p.inv_ceil = divide(fxp_one + ceil_segments / 2, ceil_segments);
+  p.points = odd ? ceil(fxp_half + (factor + 1) / 2) >> 15 : (ceil((factor + 1) / 2) >> 15) + 1;
+  return p;
+}
+
+// where a partition's point is
+fxp
+place(tess_partition p, bool odd, int point) {
+  bool flip = point >= p.half_points;
+  if (flip)
+    point = (p.half_points << 1) - point - odd;
+  if (point == p.half_points)
+    return fxp_half;
+  int on_floor = point - (point > p.split);
+  fxp location = (on_floor * p.inv_floor * (fxp_one - p.fraction) + point * p.inv_ceil * p.fraction + fxp_half) >> 16;
+  return flip ? fxp_one - location : location;
+}
+
+fxp
+place(tess_factor factor, int point) {
+  return place(partition_of(factor.value, factor.odd), factor.odd, point);
+}
+
+int
+points(tess_factor factor) {
+  return partition_of(factor.value, factor.odd).points;
+}
+
+// how an edge's points lie in the domain, from their place along the edge and the coordinate the edge keeps
+enum edge_kind : uchar {
+  quad_u,     // (place, kept)
+  quad_v,     // (kept, place)
+  tri_0,      // a triangle's sides, by the edge they are parallel to: u = 0,
+  tri_1,      // v = 0,
+  tri_2,      // w = 0
+  tri_center, // the one point in the middle of a triangle
+  edge_kind_mask = 7,
+  edge_odd = 8,      // its factor's parity
+  edge_reverse = 16, // its points go down its factor's partition
+  // of a frame's inner edge, how the frame's triangles join its edges (tess_zip). without these, as a ring's side
+  // between two rings of the inside factor
+  stitch_transition = 32, // the patch's outermost ring, whose edges have two factors
+  stitch_strip = 64,      // the two middle rows of a quad patch whose shorter axis has an even count of points
+  stitch_turned = 128,    // of a strip: its middle quad is cut the other way
+};
+
+// a run of points along one side of a ring
+struct tess_edge {
+  fxp factor;    // the factor whose partition places the points
+  fxp kept;      // the coordinate that is the same for all of them
+  uchar first;   // the first point's index on the partition
+  char segments; // its points less one, or -1 for no edge
+  char owned;    // how many of them, from the first, the workload outputs when the tessellator outputs points
+  uchar kind;
+};
+
+constexpr constant tess_edge no_edge = {0, 0, 0, -1, 0, 0};
+
+struct tess_workload {
+  // a frame's inner edge, then its outer edge; then the second frame's
+  tess_edge edge[4];
+  int patch_index;
+};
+
+tess_edge
+run(uchar kind, tess_factor factor, int start, int end, bool reverse, fxp kept, int owned = 0) {
+  return {factor.value,
+          kept,
+          uchar(reverse ? end : start),
+          char(end - start),
+          char(owned),
+          uchar(kind | (factor.odd ? edge_odd : 0) | (reverse ? edge_reverse : 0))};
+}
+
+struct tess_frame {
+  tess_edge inner, outer;
+};
+
+constexpr constant tess_frame no_frame = {no_edge, no_edge};
+
+// where a patch writes its workloads: the payload's room for its threadgroup's, and the place of the patch's next
+// one, which counts them. the patches' workloads follow each other in the patches' order, so a patch starts where
+// those before it end: it is counted first, with no room, and written once every patch of the threadgroup is counted.
+//
+// or a mesh threadgroup takes a group of the patch's workloads, one after another, as many as have together no more
+// vertices than `group_limit`'s lower 16 bits and no more primitives than its upper 16 bits (0: each takes its own
+// threadgroup, and there are no groups); a workload has no more primitives than vertices of its own. the patch then
+// writes its workloads in a room of its own, at once, and each group as the place of its first workload and, in the
+// upper 16 bits, the end of its last
+struct tess_output {
+  object_data tess_workload *workloads;
+  // the place of the patch's next workload; with groups, then the next group's, the vertices of the group being
+  // filled (0 before the patch's first), the group's first workload, and the most primitives the group has
+  thread int *next;
+  int capacity;
+  int patch_index;
+  object_data int *groups;
+  int group_limit;
+};
+
+// a frame's vertices: its edges' points
+int
+vertices(tess_frame frame) {
+  return frame.inner.segments + 1 + frame.outer.segments + 1;
+}
+
+// whether two edges have the same points: an edge's points are a function of these (point)
+bool
+same_points(tess_edge a, tess_edge b) {
+  uchar placing = edge_kind_mask | edge_odd | edge_reverse;
+  return a.segments >= 0 && a.factor == b.factor && a.kept == b.kept && a.first == b.first &&
+         a.segments == b.segments && (a.kind & placing) == (b.kind & placing);
+}
+
+// the edges of a workload that are an edge of the one before it, as a group lays a side's workloads out: its first
+// frame's outer edge, ring i + 1's, is the inner edge of the one before's first; its second frame's inner edge, ring
+// j's, the outer edge of the one before's second. a bit each, for edges 1 and 2
+int
+shared_edges(tess_workload before, tess_workload workload) {
+  return (same_points(before.edge[0], workload.edge[1]) ? 2 : 0) | (same_points(before.edge[3], workload.edge[2]) ? 4 : 0);
+}
+
+int
+shared_vertices(tess_workload before, tess_workload workload) {
+  int shared = shared_edges(before, workload);
+  return (shared & 2 ? workload.edge[1].segments + 1 : 0) + (shared & 4 ? workload.edge[2].segments + 1 : 0);
+}
+
+// the payload has room for the most workloads its patches can have (get_max_potential_workload_count): one past it
+// is not written
 void
-emit_tess_mesh_workload(
-    object_data TessMeshWorkload *workloads, threadgroup int *out_count, 
-    fxp16v2 in0, fxp16v2 in1, fxp16v2 out0, fxp16v2 out1, fxp32 inner_factor, fxp32 outer_factor,
-    fxp16v2 in0_c, fxp16v2 in1_c, fxp16v2 out0_c, fxp16v2 out1_c, fxp32 inner_factor_c, fxp32 outer_factor_c, 
-    short patch_index, bool has_complement
-) {
-  workloads[get_next_index(out_count)] = {
-      in0,
-      in1,
-      out0,
-      out1,
-      inner_factor,
-      outer_factor,
-      get_int_factor<partition>(inner_factor),
-      get_int_factor<partition>(outer_factor),
-      has_complement,
-      0,
-      in0_c,
-      in1_c,
-      out0_c,
-      out1_c,
-      inner_factor_c,
-      outer_factor_c,
-      has_complement ? get_int_factor<partition>(inner_factor_c) : (char)0,
-      has_complement ? get_int_factor<partition>(outer_factor_c) : (char)0,
-      patch_index
-  };
-}
-
-fxp32 factor_offset(fxp32 base, short count) {
-  fxp32 result = base - ((count * fxp32_1) << 1);
-  return result & 0x80000000 ? 0 : result;
-}
-
-template <partitioning partition>
-void
-gen_workload_triangle_impl(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in, float out0, float out1,
-    float out2
-) {
-  if (isnan(out0) || out0 <= 0) return;
-  if (isnan(out1) || out1 <= 0) return;
-  if (isnan(out2) || out2 <= 0) return;
-
-  object_data TessMeshWorkload *workloads = (object_data TessMeshWorkload *)out_buffer;
-  fxp32 in0f = regularize_factor<partition>(in);
-  fxp32 out0f = regularize_factor<partition>(out0);
-  fxp32 out1f = regularize_factor<partition>(out1);
-  fxp32 out2f = regularize_factor<partition>(out2);
-
-  if (partition == partitioning::fractional_odd) {
-    fxp32 allfactor_and = out0f | out1f | out2f | in0f;
-    if (allfactor_and != fxp32_1) { // any of factor is not 1
-      in0f = max(fxp32_1 + 1u, in0f);
-    }
-  } else if (partition != partitioning::fractional_even) {
-    fxp32 allfactor_and = out0f | out1f | out2f;
-    if (allfactor_and != fxp32_1) {
-      in0f = max(fxp32_2, in0f);
-    }
+emit(tess_output out, tess_frame a, tess_frame b) {
+  int index = out.next[0]++;
+  tess_workload workload = {{a.inner, a.outer, b.inner, b.outer}, out.patch_index};
+  if (index < out.capacity)
+    out.workloads[index] = workload;
+  if (!out.group_limit)
+    return;
+  int added = vertices(a) + vertices(b);
+  // a workload after another of its group takes the points it shares with it from it (place_edges)
+  int shared = 0;
+  if (out.next[2] && index - 1 < out.capacity) {
+    tess_workload before = out.workloads[index - 1];
+    shared = shared_vertices(before, workload);
   }
-
-  char in0 = get_int_factor<partition>(in0f);
-
-  short rings = in0 / 2;
-  fxp16v2 _100{fxp16_1, fxp16_0};
-  fxp16v2 _010{fxp16_0, fxp16_1};
-  fxp16v2 _001{fxp16_0, fxp16_0};
-  fxp16v2 _C = fxp16_one_third;
-
-  short u = rings;
-
-  for (short r = 0; r < u; r++, u--) {
-
-    fxp32 outer = place_in_1d<partition>(r, in0f) << 1;
-    fxp32 inner = place_in_1d<partition>(r + 1, in0f) << 1;
-
-    fxp16v2 _001x = mix(_001, _C, outer);
-    fxp16v2 _001i = mix(_001, _C, inner);
-    fxp16v2 _100x = mix(_100, _C, outer);
-    fxp16v2 _100i = mix(_100, _C, inner);
-    fxp16v2 _010x = mix(_010, _C, outer);
-    fxp16v2 _010i = mix(_010, _C, inner);
-
-
-    if (r + 1 == u) {
-      emit_tess_mesh_workload<partition>(
-        workloads, out_count,
-        _001i, _100i, _001x, _100x, factor_offset(in0f, r + 1), (r == 0 ? out1f : factor_offset(in0f, r)), 
-        _100i, _010i, _100x, _010x, factor_offset(in0f, r + 1), (r == 0 ? out2f : factor_offset(in0f, r)), 
-        patch_index, true
-      );
-      if (in0 & 1) {
-        fxp32 outer = place_in_1d<partition>(rings, in0f) << 1;
-        fxp16v2 _001xp = mix(_001, _C, outer);
-        fxp16v2 _100xp = mix(_100, _C, outer);
-        fxp16v2 _010xp = mix(_010, _C, outer);
-
-        emit_tess_mesh_workload<partition>(
-          workloads, out_count,
-          _010i, _001i, _010x, _001x, factor_offset(in0f, r + 1), (r == 0 ? out0f : factor_offset(in0f ,r)),
-          _010xp, _010xp, _001xp, _100xp, fxp32_0, fxp32_1,
-          patch_index, true
-        );
-      } else {
-        emit_tess_mesh_workload<partition>(
-          workloads, out_count,
-          _010i, _001i, _010x, _001x, factor_offset(in0f, r + 1), (r == 0 ? out0f : factor_offset(in0f, r)), 
-          _C, _C, _C, _C, 0, 0,
-          patch_index, false
-        );
-      }
-      return;
-    }
-
-    fxp32 outer_c = place_in_1d<partition>(u - 1, in0f) << 1;
-    fxp32 inner_c = place_in_1d<partition>(u, in0f) << 1;
-
-    fxp16v2 _001x_c = mix(_001, _C, outer_c);
-    fxp16v2 _001i_c = mix(_001, _C, inner_c);
-    fxp16v2 _100x_c = mix(_100, _C, outer_c);
-    fxp16v2 _100i_c = mix(_100, _C, inner_c);
-    fxp16v2 _010x_c = mix(_010, _C, outer_c);
-    fxp16v2 _010i_c = mix(_010, _C, inner_c);
-
-
-    emit_tess_mesh_workload<partition>(
-        workloads, out_count, _001i, _100i, _001x, _100x, factor_offset(in0f, r + 1),
-        (r == 0 ? out1f : factor_offset(in0f, r)), 
-        _001i_c, _100i_c, _001x_c, _100x_c, factor_offset(in0f, u), factor_offset(in0f, u - 1), 
-        patch_index, true
-    );
-    emit_tess_mesh_workload<partition>(
-        workloads, out_count, _100i, _010i, _100x, _010x, factor_offset(in0f, r + 1),
-        (r == 0 ? out2f : factor_offset(in0f, r)),
-        _100i_c, _010i_c, _100x_c, _010x_c, factor_offset(in0f, u), factor_offset(in0f, u - 1), 
-        patch_index, true
-    );
-    emit_tess_mesh_workload<partition>(
-        workloads, out_count, _010i, _001i, _010x, _001x, factor_offset(in0f, r + 1),
-        (r == 0 ? out0f : factor_offset(in0f, r)),
-        _010i_c, _001i_c, _010x_c, _001x_c, factor_offset(in0f, u), factor_offset(in0f, u - 1), 
-        patch_index, true
-    );
+  // a group has fewer workloads than a SIMD group has lanes: one each, and one past them (get_group_layout)
+  if (out.next[2] && out.next[2] + added - shared <= (out.group_limit & 0xffff) &&
+      out.next[4] + added <= out.group_limit >> 16 && index - out.next[3] < 31) {
+    out.next[2] += added - shared;
+    out.next[4] += added;
+  } else {
+    out.next[1]++;
+    out.next[2] = added;
+    out.next[3] = index;
+    out.next[4] = added;
   }
+  if (index < out.capacity)
+    out.groups[out.next[1] - 1] = out.next[3] | (index + 1) << 16;
+}
 
-  if (in0 & 1) {
-    fxp32 outer = place_in_1d<partition>(rings, in0f) << 1;
-    fxp16v2 _001x = mix(_001, _C, outer);
-    fxp16v2 _100x = mix(_100, _C, outer);
-    fxp16v2 _010x = mix(_010, _C, outer);
-    emit_tess_mesh_workload<partition>(workloads, out_count,
-      _010x, _010x, _001x, _100x, fxp32_0, fxp32_1,
-      _C, _C, _C, _C, 0, 0, patch_index, false
-    );
+// a workload is one frame, or two that are small together: ring i's and ring (rings - 1 - i)'s, counting the rings
+// of the patch's longer axis, which keeps a workload's points near twice the longest edge's. the frame inside the last
+// ring, if the patch has one, takes a free place among the middle ring's workloads, or its own.
+//
+// with groups, one side's workloads come one after another, ring by ring, then the next side's: a workload then
+// shares two edges with the one before it (shared_vertices). a patch's primitives may come in any order (D3D11.3
+// 11.7.9)
+template <typename Patch>
+void
+emit_workloads(Patch patch, tess_output out) {
+  bool last = patch.has_last();
+  int rings = patch.rings(), long_rings = patch.long_rings();
+  if (out.group_limit) {
+    for (int t = 0; t < Patch::sides; t++)
+      for (int i = 0, j = long_rings - 1; i < rings && i < j; i++, j--)
+        emit(out, patch.frame(i, t), j < rings ? patch.frame(j, t) : no_frame);
+  } else {
+    for (int i = 0, j = long_rings - 1; i < rings && i < j; i++, j--)
+      for (int t = 0; t < Patch::sides; t++)
+        emit(out, patch.frame(i, t), j < rings ? patch.frame(j, t) : no_frame);
   }
-
-  return;
-}
-
-void gen_workload_triangle_integer(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in, float out0, float out1,
-    float out2
-) asm("dxmt.generate_workload.triangle.integer");
-void
-gen_workload_triangle_integer(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in, float out0, float out1,
-    float out2
-) {
-  gen_workload_triangle_impl<partitioning::integer>(
-      patch_index, out_count, out_buffer, in, out0, out1, out2
-  );
-}
-
-void gen_workload_triangle_pow2(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in, float out0, float out1,
-    float out2
-) asm("dxmt.generate_workload.triangle.pow2");
-void
-gen_workload_triangle_pow2(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in, float out0, float out1,
-    float out2
-) {
-  gen_workload_triangle_impl<partitioning::pow2>(patch_index, out_count, out_buffer, in, out0, out1, out2);
-}
-
-void gen_workload_triangle_odd(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in, float out0, float out1,
-    float out2
-) asm("dxmt.generate_workload.triangle.odd");
-void
-gen_workload_triangle_odd(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in, float out0, float out1,
-    float out2
-) {
-  gen_workload_triangle_impl<partitioning::fractional_odd>(
-      patch_index, out_count, out_buffer, in, out0, out1, out2
-  );
-}
-
-void gen_workload_triangle_even(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in, float out0, float out1,
-    float out2
-) asm("dxmt.generate_workload.triangle.even");
-void
-gen_workload_triangle_even(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in, float out0, float out1,
-    float out2
-) {
-  gen_workload_triangle_impl<partitioning::fractional_even>(
-      patch_index, out_count, out_buffer, in, out0, out1, out2
-  );
-}
-
-fxp16v2 pxmy(fxp32 x, fxp32 y) {
-  return {(fxp16)(x >> 1), (fxp16)(fxp16_1 - (y >> 1))};
-}
-
-fxp16v2 pxpy(fxp32 x, fxp32 y) {
-  return {(fxp16)(x >> 1), (fxp16)(y >> 1)};
-}
-
-fxp16v2 mxpy(fxp32 x, fxp32 y) {
-  return {(fxp16)(fxp16_1 - (x >> 1)), (fxp16)(y >> 1)};
-}
-
-fxp16v2 mxmy(fxp32 x, fxp32 y) {
-  return {(fxp16)(fxp16_1 - (x >> 1)), (fxp16)(fxp16_1 - (y >> 1))};
-}
-
-template <partitioning partition>
-void
-gen_workload_quad_impl(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in0, float in1, float out0,
-    float out1, float out2, float out3
-) {
-  if (isnan(out0) || out0 <= 0) return;
-  if (isnan(out1) || out1 <= 0) return;
-  if (isnan(out2) || out2 <= 0) return;
-  if (isnan(out3) || out3 <= 0) return;
-
-  object_data TessMeshWorkload *workloads = (object_data TessMeshWorkload *)out_buffer;
-  fxp32 in0f = regularize_factor<partition>(in0);
-  fxp32 in1f = regularize_factor<partition>(in1);
-  fxp32 out0f = regularize_factor<partition>(out0);
-  fxp32 out1f = regularize_factor<partition>(out1);
-  fxp32 out2f = regularize_factor<partition>(out2);
-  fxp32 out3f = regularize_factor<partition>(out3);
-
-  if (partition == partitioning::fractional_odd) {
-    fxp32 allfactor_and = out0f | out1f | out2f | out3f | in0f | in1f;
-    if (allfactor_and != fxp32_1) { // any of factor is not 1
-      in0f = max(fxp32_1 + 1u, in0f);
-      in1f = max(fxp32_1 + 1u, in1f);
+  // the middle ring, where the rings of the longer axis meet
+  int i = (long_rings - 1) / 2;
+  if ((long_rings & 1) && i < rings)
+    for (int t = 0; t < Patch::sides; t += 2) {
+      bool free = t + 1 == Patch::sides;
+      emit(out, patch.frame(i, t), !free ? patch.frame(i, t + 1) : last ? patch.last_frame() : no_frame);
+      last = last && !free;
     }
-  } else if (partition != partitioning::fractional_even) {
-    fxp32 allfactor_and = out0f | out1f | out2f | out3f;
-    if (allfactor_and != fxp32_1) {
-      in0f = max(fxp32_2, in0f);
-      in1f = max(fxp32_2, in1f);
-    }
+  if (last)
+    emit(out, patch.last_frame(), no_frame);
+}
+
+struct quad_patch {
+  enum { sides = 4 };
+  // the factors of the edges u = 0, v = 0, u = 1, v = 1, and of the inside along u and v
+  tess_factor out[4], in[2];
+  // the inside factors' points
+  int n[2];
+
+  // ring k's side s, around the patch from its edge s
+  tess_edge side(int k, int s) const {
+    bool reverse = s == 0 || s == 3;
+    if (k == 0)
+      return run(s & 1 ? quad_u : quad_v, out[s], 0, points(out[s]) - 1, reverse, s >= 2 ? fxp_one : 0);
+    int axis = s & 1 ? 0 : 1, other = 1 - axis;
+    return run(axis ? quad_v : quad_u, in[axis], k, n[axis] - 1 - k, reverse, place(in[other], s < 2 ? k : n[other] - 1 - k));
   }
-
-  char in0i = get_int_factor<partition>(in0f);
-  char in1i = get_int_factor<partition>(in1f);
-
-  short min_in = min(in0i, in1i);
-  short rings = min_in / 2;
-
-  short u = max(in0i, in1i) / 2;
-
-  for (short r = 0; r < u && r < rings; r++, u--) {
-
-    fxp32 x_coord = place_in_1d<partition>(r, in0f);
-    fxp32 y_coord = place_in_1d<partition>(r, in1f);
-    fxp32 x_coordi = place_in_1d<partition>(r + 1, in0f);
-    fxp32 y_coordi = place_in_1d<partition>(r + 1, in1f);
-
-    fxp16v2 _01x = pxmy(x_coord, y_coord);
-    fxp16v2 _11x = mxmy(x_coord, y_coord);
-    fxp16v2 _00x = pxpy(x_coord, y_coord);
-    fxp16v2 _10x = mxpy(x_coord, y_coord);
-    fxp16v2 _01i = pxmy(x_coordi, y_coordi);
-    fxp16v2 _11i = mxmy(x_coordi, y_coordi);
-    fxp16v2 _00i = pxpy(x_coordi, y_coordi);
-    fxp16v2 _10i = mxpy(x_coordi, y_coordi);
-
-    if (r + 1 == u) {
-      emit_tess_mesh_workload<partition>(
-          workloads, out_count,
-          _11i, _01i, _11x, _01x, factor_offset(in0f, r + 1), (r == 0 ? out3f : factor_offset(in0f, r)),
-          _10i, _11i, _10x, _11x, factor_offset(in1f, r + 1), (r == 0 ? out2f : factor_offset(in1f, r)),
-          patch_index, true
-      );
-      emit_tess_mesh_workload<partition>(
-          workloads, out_count,
-          _00i, _10i, _00x, _10x, factor_offset(in0f, r + 1), (r == 0 ? out1f : factor_offset(in0f, r)),
-          _01i, _00i, _01x, _00x, factor_offset(in1f, r + 1), (r == 0 ? out0f : factor_offset(in1f, r)),
-         patch_index, true
-      );
-      break;
-    }
-
-    fxp32 x_coord_c = place_in_1d<partition>(u - 1, in0f);
-    fxp32 y_coord_c = place_in_1d<partition>(u - 1, in1f);
-    fxp32 x_coordi_c = place_in_1d<partition>(u, in0f);
-    fxp32 y_coordi_c = place_in_1d<partition>(u, in1f);
-
-    fxp16v2 _01x_c = pxmy(x_coord_c, y_coord_c);
-    fxp16v2 _11x_c = mxmy(x_coord_c, y_coord_c);
-    fxp16v2 _00x_c = pxpy(x_coord_c, y_coord_c);
-    fxp16v2 _10x_c = mxpy(x_coord_c, y_coord_c);
-    fxp16v2 _01i_c = pxmy(x_coordi_c, y_coordi_c);
-    fxp16v2 _11i_c = mxmy(x_coordi_c, y_coordi_c);
-    fxp16v2 _00i_c = pxpy(x_coordi_c, y_coordi_c);
-    fxp16v2 _10i_c = mxpy(x_coordi_c, y_coordi_c);
-  
-    emit_tess_mesh_workload<partition>(
-        workloads, out_count,
-        _11i, _01i, _11x, _01x, factor_offset(in0f, r + 1), (r == 0 ? out3f : factor_offset(in0f, r)),
-        _11i_c, _01i_c, _11x_c, _01x_c, factor_offset(in0f, u), factor_offset(in0f, u - 1),
-        patch_index, u - 1 < rings
-    );
-    emit_tess_mesh_workload<partition>(
-        workloads, out_count,
-        _10i, _11i, _10x, _11x, factor_offset(in1f, r + 1), (r == 0 ? out2f : factor_offset(in1f, r)),
-        _10i_c, _11i_c, _10x_c, _11x_c, factor_offset(in1f, u), factor_offset(in1f, u - 1),
-        patch_index, u - 1 < rings
-    );
-
-    emit_tess_mesh_workload<partition>(
-        workloads, out_count,
-        _00i, _10i, _00x, _10x, factor_offset(in0f, r + 1), (r == 0 ? out1f : factor_offset(in0f, r)),
-        _00i_c, _10i_c, _00x_c, _10x_c, factor_offset(in0f, u), factor_offset(in0f, u - 1),
-        patch_index, u - 1 < rings
-    );
-    emit_tess_mesh_workload<partition>(
-        workloads, out_count,
-        _01i, _00i, _01x, _00x, factor_offset(in1f, r + 1), (r == 0 ? out0f : factor_offset(in1f, r)),
-        _01i_c, _00i_c, _01x_c, _00x_c, factor_offset(in1f, u), factor_offset(in1f, u - 1),
-        patch_index, u - 1 < rings
-    );
+  int shorter() const { return min(n[0], n[1]); }
+  int rings() const { return (shorter() - 1) >> 1; }
+  int long_rings() const { return (max(n[0], n[1]) - 1) >> 1; }
+  tess_frame frame(int ring, int t) const {
+    int s = 3 - t;
+    tess_frame f = {side(ring + 1, s), side(ring, s)};
+    f.outer.owned = f.outer.segments;
+    // with an odd count of points the middle is a row of them: the inner edge of the sides along it
+    if ((shorter() & 1) && ring + 1 == rings() && s == (n[0] >= n[1] ? 1 : 2))
+      f.inner.owned = f.inner.segments + 1;
+    if (ring == 0)
+      f.inner.kind |= stitch_transition;
+    return f;
   }
-
-  if (min_in & 1) {
-    fxp32 x_coord = place_in_1d<partition>(rings, in0f);
-    fxp32 y_coord = place_in_1d<partition>(rings, in1f);
-
-    fxp16v2 _01x = pxmy(x_coord, y_coord);
-    fxp16v2 _11x = mxmy(x_coord, y_coord);
-    fxp16v2 _00x = pxpy(x_coord, y_coord);
-    fxp16v2 _10x = mxpy(x_coord, y_coord);
-
-    if (in0 > in1) {
-      emit_tess_mesh_workload<partition>(
-          workloads, out_count, _01x,_11x, _00x,  _10x, factor_offset(in0f, rings), factor_offset(in0f, rings),
-          0, 0, 0, 0, 0, 0,
-          patch_index, false
-      );
-    } else {
-      emit_tess_mesh_workload<partition>(
-          workloads, out_count, _11x, _10x, _01x, _00x, factor_offset(in1f, rings), factor_offset(in1f, rings),
-          0, 0, 0, 0, 0, 0,
-          patch_index, false
-      );
-    }
+  // with an even count the last ring is two rows, which are a frame
+  bool has_last() const { return !(shorter() & 1); }
+  tess_frame last_frame() const {
+    int k = shorter() / 2 - 1;
+    // the reference's rows: along u when that axis has more points, cut alike; along v otherwise, the middle quad
+    // the other way when that axis has an even count too
+    bool along_u = n[0] > n[1];
+    tess_frame f = along_u ? tess_frame{side(k, 3), side(k, 1)} : tess_frame{side(k, 2), side(k, 0)};
+    // the far row, turned to run with the near one
+    f.inner.first += f.inner.kind & edge_reverse ? -f.inner.segments : f.inner.segments;
+    f.inner.kind ^= edge_reverse;
+    f.inner.kind |= stitch_strip | (!along_u && !(n[1] & 1) ? stitch_turned : 0);
+    f.inner.owned = f.inner.segments + 1;
+    f.outer.owned = f.outer.segments + 1;
+    return f;
   }
+};
 
-  return;
+struct tri_patch {
+  enum { sides = 3 };
+  // the factors of the edges u = 0, v = 0, w = 0, and of the inside
+  tess_factor out[3], in;
+  int n;
+
+  fxp kept(int k) const { return (place(in, k) * fxp_two_thirds + fxp_half) >> 16; }
+  tess_edge side(int k, int s) const {
+    if (k == 0)
+      return run(tri_0 + s, out[s], 0, points(out[s]) - 1, s != 1, 0);
+    if (2 * k == n - 1)
+      return run(tri_center, in, 0, 0, false, 0);
+    return run(tri_0 + s, in, k, n - 1 - k, s != 1, kept(k));
+  }
+  int rings() const { return (n - 1) >> 1; }
+  int long_rings() const { return rings(); }
+  tess_frame frame(int ring, int t) const {
+    int s = (t + 1) % 3;
+    tess_frame f = {side(ring + 1, s), side(ring, s)};
+    f.outer.owned = f.outer.segments;
+    if ((n & 1) && ring + 1 == rings() && t == 0)
+      f.inner.owned = 1;
+    if (ring == 0)
+      f.inner.kind |= stitch_transition;
+    return f;
+  }
+  // with an even count the last ring is one triangle: a side, and the last point of the next
+  bool has_last() const { return !(n & 1); }
+  tess_frame last_frame() const {
+    int k = n / 2 - 1;
+    return {run(tri_2, in, k, k, true, kept(k), 1), run(tri_1, in, k, k + 1, false, kept(k), 2)};
+  }
+};
+
+void generate_workload_quad(
+    int patch_index, thread int *out_next, object_data int *out_buffer, int capacity, object_data int *groups,
+    int group_limit, int partition,
+    float in0, float in1, float out0, float out1, float out2, float out3
+) asm("mullion.generate_workload.quad");
+
+void
+generate_workload_quad(
+    int patch_index, thread int *out_next, object_data int *out_buffer, int capacity, object_data int *groups,
+    int group_limit, int partition,
+    float in0, float in1, float out0, float out1, float out2, float out3
+) {
+  if (culls(out0) || culls(out1) || culls(out2) || culls(out3))
+    return;
+  tess_output out = {(object_data tess_workload *)out_buffer, out_next, capacity, patch_index, groups, group_limit};
+  partitioning p = partitioning(partition);
+  float lower = lowest(p);
+  quad_patch patch;
+  patch.out[0] = take(out0, p, lower);
+  patch.out[1] = take(out1, p, lower);
+  patch.out[2] = take(out2, p, lower);
+  patch.out[3] = take(out3, p, lower);
+  // fractional odd: one factor above 1 puts a frame inside the patch (D3D11.3 11.7.11.3). a factor is above 1 if
+  // its fixed point value is
+  float epsilon = 1.0f / 65536.0f, one = 1 + epsilon / 2;
+  if (p == partitioning::fractional_odd && (above(out0, one) || above(out1, one) || above(out2, one) ||
+                                            above(out3, one) || above(in0, one) || above(in1, one)))
+    lower = 1 + epsilon;
+  patch.in[0] = take(in0, p, lower);
+  patch.in[1] = take(in1, p, lower);
+  // a patch whose factors are all 1 is its four corners
+  bool ones = p != partitioning::fractional_even;
+  for (int i = 0; i < 4; i++)
+    ones = ones && patch.out[i].value == fxp_one;
+  for (int i = 0; i < 2; i++)
+    ones = ones && patch.in[i].value == fxp_one;
+  for (int i = 0; i < 2; i++) {
+    // a whole inside factor of 1 beside larger ones is cut as 2
+    if (!ones && patch.in[i].value == fxp_one)
+      patch.in[i].odd = false;
+    patch.n[i] = points(patch.in[i]);
+  }
+  emit_workloads(patch, out);
 }
 
-void gen_workload_quad_integer(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in0, float in1, float out0,
-    float out1, float out2, float out3
-) asm("dxmt.generate_workload.quad.integer");
+void generate_workload_triangle(
+    int patch_index, thread int *out_next, object_data int *out_buffer, int capacity, object_data int *groups,
+    int group_limit, int partition,
+    float in, float out0, float out1, float out2
+) asm("mullion.generate_workload.triangle");
+
 void
-gen_workload_quad_integer(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in0, float in1, float out0,
-    float out1, float out2, float out3
+generate_workload_triangle(
+    int patch_index, thread int *out_next, object_data int *out_buffer, int capacity, object_data int *groups,
+    int group_limit, int partition,
+    float in, float out0, float out1, float out2
 ) {
-  gen_workload_quad_impl<partitioning::integer>(
-      patch_index, out_count, out_buffer, in0, in1, out0, out1, out2, out3
-  );
+  if (culls(out0) || culls(out1) || culls(out2))
+    return;
+  tess_output out = {(object_data tess_workload *)out_buffer, out_next, capacity, patch_index, groups, group_limit};
+  partitioning p = partitioning(partition);
+  float lower = lowest(p);
+  tri_patch patch;
+  patch.out[0] = take(out0, p, lower);
+  patch.out[1] = take(out1, p, lower);
+  patch.out[2] = take(out2, p, lower);
+  float epsilon = 1.0f / 65536.0f, one = 1 + epsilon / 2;
+  if (p == partitioning::fractional_odd && (above(out0, one) || above(out1, one) || above(out2, one)))
+    lower = 1 + epsilon;
+  patch.in = take(in, p, lower);
+  bool ones = p != partitioning::fractional_even && patch.in.value == fxp_one;
+  for (int i = 0; i < 3; i++)
+    ones = ones && patch.out[i].value == fxp_one;
+  if (ones) {
+    // the patch's three corners
+    emit(out, {run(tri_2, patch.out[2], 0, 0, true, 0, 1), run(tri_1, patch.out[1], 0, 1, false, 0, 2)}, no_frame);
+    return;
+  }
+  if (patch.in.value == fxp_one)
+    patch.in.odd = false;
+  patch.n = points(patch.in);
+  emit_workloads(patch, out);
 }
 
-void gen_workload_quad_pow2(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in0, float in1, float out0,
-    float out1, float out2, float out3
-) asm("dxmt.generate_workload.quad.pow2");
+void generate_workload_isoline(
+    int patch_index, thread int *out_next, object_data int *out_buffer, int capacity, object_data int *groups,
+    int group_limit, int partition,
+    float density, float detail
+) asm("mullion.generate_workload.isoline");
+
 void
-gen_workload_quad_pow2(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in0, float in1, float out0,
-    float out1, float out2, float out3
+generate_workload_isoline(
+    int patch_index, thread int *out_next, object_data int *out_buffer, int capacity, object_data int *groups,
+    int group_limit, int partition,
+    float density, float detail
 ) {
-  gen_workload_quad_impl<partitioning::pow2>(
-      patch_index, out_count, out_buffer, in0, in1, out0, out1, out2, out3
-  );
+  if (culls(density) || culls(detail))
+    return;
+  tess_output out = {(object_data tess_workload *)out_buffer, out_next, capacity, patch_index, groups, group_limit};
+  partitioning p = partitioning(partition);
+  // the lines' count is whole whatever the partitioning, and no line is at v = 1 (D3D11.3 11.6)
+  tess_factor across = take(density, partitioning::integer, 1);
+  tess_factor along = take(detail, p, lowest(p));
+  int lines = points(across) - 1, last = points(along) - 1;
+  for (int line = 0; line < lines; line += 2) {
+    tess_frame pair = {run(quad_u, along, 0, last, false, place(across, line), last + 1), no_edge};
+    if (line + 1 < lines)
+      pair.outer = run(quad_u, along, 0, last, false, place(across, line + 1), last + 1);
+    emit(out, pair, no_frame);
+  }
 }
 
-void gen_workload_quad_odd(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in0, float in1, float out0,
-    float out1, float out2, float out3
-) asm("dxmt.generate_workload.quad.odd");
-void
-gen_workload_quad_odd(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in0, float in1, float out0,
-    float out1, float out2, float out3
-) {
-  gen_workload_quad_impl<partitioning::fractional_odd>(
-      patch_index, out_count, out_buffer, in0, in1, out0, out1, out2, out3
-  );
+float2
+point(tess_edge edge, int i) {
+  uchar kind = edge.kind & edge_kind_mask;
+  if (kind == tri_center)
+    return float2(fxp_third) / 65536.0f;
+  bool odd = edge.kind & edge_odd;
+  tess_partition p = partition_of(edge.factor, odd);
+  int q = edge.kind & edge_reverse ? edge.first - i : edge.first + i;
+  // a triangle's corner is the first point of the side that starts there: the three sides' formulas round apart
+  if (kind >= tri_0 && i == edge.segments) {
+    if (kind == tri_2)
+      q = p.points - 1 - q;
+    kind = tri_0 + (kind - tri_0 + 1) % 3;
+  }
+  fxp at = place(p, odd, q), along = at - (edge.kept + 1) / 2;
+  uint2 uv = kind == quad_u   ? uint2(at, edge.kept)
+             : kind == quad_v ? uint2(edge.kept, at)
+             : kind == tri_0  ? uint2(edge.kept, along)
+             : kind == tri_1  ? uint2(along, edge.kept)
+                              : uint2(along, fxp_one - along - edge.kept);
+  return float2(uv) / 65536.0f;
 }
 
-void gen_workload_quad_even(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in0, float in1, float out0,
-    float out1, float out2, float out3
-) asm("dxmt.generate_workload.quad.even");
-void
-gen_workload_quad_even(
-    int patch_index, threadgroup int *out_count, object_data int *out_buffer, float in0, float in1, float out0,
-    float out1, float out2, float out3
-) {
-  gen_workload_quad_impl<partitioning::fractional_even>(
-      patch_index, out_count, out_buffer, in0, in1, out0, out1, out2, out3
-  );
+int get_domain_patch_index(int workload_index, object_data int *data) asm("mullion.get_domain_patch_index");
+
+int
+get_domain_patch_index(int workload_index, object_data int *data) {
+  return ((object_data tess_workload *)data)[workload_index].patch_index;
 }
 
 struct domain_location {
@@ -588,68 +527,30 @@ struct domain_location {
   bool iterate;
 };
 
-template <partitioning partition>
-float2
-get_domain_point(object_data TessMeshWorkload &workload, ushort tid) {
-  bool point_at_out = tid > workload.inner_factor_i;
-  bool point_at_in_c = tid > workload.inner_factor_i + workload.outer_factor_i + 1;
-  bool point_at_out_c = tid > workload.inner_factor_i + workload.outer_factor_i + workload.inner_factor_c_i + 2;
-
-  char real_factor = workload.inner_factor_i;
-  real_factor = select(real_factor, workload.outer_factor_i, point_at_out);
-  real_factor = select(real_factor, workload.inner_factor_c_i, point_at_in_c);
-  real_factor = select(real_factor, workload.outer_factor_c_i, point_at_out_c);
-
-  tid = select(tid, (ushort)(tid - (workload.inner_factor_i + 1)), point_at_out);
-  tid = select(tid, (ushort)(tid - (workload.outer_factor_i + 1)), point_at_in_c);
-  tid = select(tid, (ushort)(tid - (workload.inner_factor_c_i + 1)), point_at_out_c);
-
-  fxp16v2 left = workload.inner0;
-  left = select(left, workload.outer0, point_at_out);
-  left = select(left, workload.inner0_c, point_at_in_c);
-  left = select(left, workload.outer0_c, point_at_out_c);
-
-  fxp16v2 right = workload.inner1;
-  right = select(right, workload.outer1, point_at_out);
-  right = select(right, workload.inner1_c, point_at_in_c);
-  right = select(right, workload.outer1_c, point_at_out_c);
-
-  fxp32 factor = workload.inner_factor;
-  factor = select(factor, workload.outer_factor, point_at_out);
-  factor = select(factor, workload.inner_factor_c, point_at_in_c);
-  factor = select(factor, workload.outer_factor_c, point_at_out_c);
-
-  if (real_factor == 0)
-    return to_float(min(left, right)); // very edge case...
-  ushort tid_ref = real_factor - tid;
-  fxp32 ratio = place_in_1d<partition>(min(tid, tid_ref), factor);
-  ratio = select(ratio, fxp32_1 - ratio, tid_ref < tid);
-  return to_float(mix(left, right, ratio));
-}
-
-int get_domain_patch_index(int workload_index, object_data int *data) asm("dxmt.get_domain_patch_index");
-
-int get_domain_patch_index(int workload_index, object_data int *data) {
-  object_data TessMeshWorkload &workload = ((object_data TessMeshWorkload *)data)[workload_index];
-  return workload.patch_index;  
-}
-
-template <partitioning partition>
+// the workload's vertices are its edges' points, in order
 domain_location
-get_domain_location_impl(int workload_index, int thread_index, object_data int *data) {
+workload_vertex(object_data tess_workload &workload, int index) {
+  domain_location ret{float2(0), false, false};
+  for (int e = 0; e < 4; e++) {
+    tess_edge edge = workload.edge[e];
+    if (index >= 0 && index <= edge.segments) {
+      ret.active = true;
+      ret.uv = point(edge, index);
+    }
+    index -= edge.segments + 1;
+  }
+  return ret;
+}
+
+domain_location get_domain_location(int workload_index, int thread_index, object_data int *data) asm(
+    "mullion.get_domain_location"
+);
+
+domain_location
+get_domain_location(int workload_index, int thread_index, object_data int *data) {
   simdgroup_barrier(mem_flags::mem_none);
 
-  domain_location ret{float2(0), false, false};
-  object_data TessMeshWorkload &workload = ((object_data TessMeshWorkload *)data)[workload_index];
-
-  int count = workload.inner_factor_i + workload.outer_factor_i + 2;
-  if (workload.has_complement)
-    count += workload.inner_factor_c_i + workload.outer_factor_c_i + 2;
-
-  if (thread_index < count) {
-    ret.active = true;
-    ret.uv = (float2)get_domain_point<partition>(workload, thread_index);
-  }
+  domain_location ret = workload_vertex(((object_data tess_workload *)data)[workload_index], thread_index);
 
   simdgroup_barrier(mem_flags::mem_none);
   ret.iterate = simd_all(ret.active);
@@ -657,170 +558,501 @@ get_domain_location_impl(int workload_index, int thread_index, object_data int *
   return ret;
 };
 
-domain_location get_domain_location_integer(int workload_index, int thread_index, object_data int *data) asm(
-    "dxmt.get_domain_location.integer"
-);
-
-domain_location
-get_domain_location_integer(int workload_index, int thread_index, object_data int *data) {
-  return get_domain_location_impl<partitioning::integer>(workload_index, thread_index, data);
-};
-
-domain_location get_domain_location_pow2(int workload_index, int thread_index, object_data int *data) asm(
-    "dxmt.get_domain_location.pow2"
-);
-
-domain_location
-get_domain_location_pow2(int workload_index, int thread_index, object_data int *data) {
-  return get_domain_location_impl<partitioning::pow2>(workload_index, thread_index, data);
-};
-
-domain_location
-get_domain_location_odd(int workload_index, int thread_index, object_data int *data) asm("dxmt.get_domain_location.odd"
-);
-
-domain_location
-get_domain_location_odd(int workload_index, int thread_index, object_data int *data) {
-  return get_domain_location_impl<partitioning::fractional_odd>(workload_index, thread_index, data);
-};
-
-domain_location get_domain_location_even(int workload_index, int thread_index, object_data int *data) asm(
-    "dxmt.get_domain_location.even"
-);
-
-domain_location
-get_domain_location_even(int workload_index, int thread_index, object_data int *data) {
-  return get_domain_location_impl<partitioning::fractional_even>(workload_index, thread_index, data);
-};
-
 struct dummy_vertex {
   float4 pos [[position]];
 };
 
-using MeshTri = metal::mesh<dummy_vertex, void, 130, 128, topology::triangle>;
+struct culled_primitive {
+  bool culled [[primitive_culled]];
+};
 
-void generatePrimitiveTriangle(int workload_index, object_data int *data, MeshTri mesh) asm(
-    "dxmt.domain_generate_primitives.triangle"
-);
+// the mesh's real limits and topology are the mesh function's
+using Mesh = metal::mesh<dummy_vertex, culled_primitive, 130, 128, topology::triangle>;
 
+// `behind` has, for each vertex, a bit for every cull distance it is behind, or is null for a shader without any: a
+// primitive is discarded when one distance has all its vertices behind (D3D11.3 15.4.2)
 void
-generate_triangle_for_edges(MeshTri mesh, short base_inner, short base_outer, short inner, short outer, short provoke_offset, short ccw_xor) {
-  for (short i = 0; i <= inner; i++) {
-    half frac_left = half(i) / half(inner + 1);
-    half frac_right = half(i + 1) / half(inner + 1);
-    short left = frac_left <= 0.5 ? floor(frac_left * half(outer)) : ceil(frac_left * half(outer));
-    short right = frac_right <= 0.5 ? floor(frac_right * half(outer)) : ceil(frac_right * half(outer));
-    short count = right - left;
-    if (count) {
-      for (short j = 0; j < count; j++) {
-        short primitive_index = base_outer + left + j - provoke_offset - 1;
-        mesh.set_index(primitive_index * 3, base_outer + left + j);
-        mesh.set_index(primitive_index * 3 + (1 ^ ccw_xor), base_outer + left + j + 1);
-        mesh.set_index(primitive_index * 3 + (2 ^ ccw_xor), base_inner + i);
+cull(Mesh mesh, threadgroup uint *behind, short primitive, short a, short b, short c) {
+  if (behind)
+    mesh.set_primitive(primitive, culled_primitive{(behind[a] & behind[b] & behind[c]) != 0});
+}
+
+// a frame's triangles zip its edges together, as the reference's StitchTransition and StitchRegular do (11.7.6):
+// each steps along one edge, an outer step taking the outer edge's next segment and the inner edge's point, an inner
+// step the inner edge's next segment and the outer edge's point. all are clockwise
+struct tess_zip {
+  tess_edge inner, outer;
+  short slot, i, o;
+  // the edges' containing ruler epoch (D3D11.3 11.7.5); the inner edge omits two end segments (11.7.6.2)
+  int places = inner.kind & stitch_transition
+                   ? 1 << (clz(0u) - clz(uint(max((inner.segments + 2) / 2, outer.segments / 2) - 1)))
+                   : 0;
+
+  int slots() const {
+    return inner.kind & stitch_transition ? 4 * places + 2 : 2 * inner.segments + (inner.kind & stitch_strip ? 0 : 2);
+  }
+  // what slot `at` is: 1 an inner step, 2 an outer step, 0 none
+  int step(int at) const {
+    if (inner.kind & stitch_transition) {
+      // from each end to the middle, a step along an edge at every place where it has a point, the outer edge first
+      // seen from the middle; in the middle what the edges' parities leave
+      int middle = at - 2 * places;
+      if (middle == 0 || middle == 1) {
+        bool in_odd = inner.kind & edge_odd, out_odd = outer.kind & edge_odd;
+        return in_odd && out_odd ? 1 + middle : middle ? 0 : in_odd ? 1 : out_odd ? 2 : 0;
+      }
+      int mirrored = middle < 0 ? at : 4 * places + 1 - at, place = mirrored / 2;
+      int introduced = place ? (places + place) >> (ctz(place) + 1) : 0;
+      return mirrored & 1 ? (introduced < outer.segments / 2 ? 2 : 0)
+                          : (place && introduced < (inner.segments + 2) / 2 ? 1 : 0);
+    }
+    int segments = inner.segments;
+    // a row of quads, each cut from the inner edge's point to the outer edge's next
+    if (inner.kind & stitch_strip)
+      return (at & 1) != ((inner.kind & stitch_turned) && at / 2 == (segments + 1) / 2 - 1) ? 1 : 2;
+    // a triangle at each end, and between them quads cut towards the nearer end
+    if (at == 0 || at == 2 * segments + 1)
+      return 2;
+    return ((at - 1) & 1) == ((at - 1) / 2 < (segments + 1) / 2) ? 2 : 1;
+  }
+  // the next triangle, as vertices of the workload, where the edges' first points are `base_inner` and `base_outer`
+  bool next(thread short3 &triangle, short base_inner, short base_outer) {
+    while (slot < slots()) {
+      int kind = step(slot++);
+      if (kind == 1 && i < inner.segments) {
+        triangle = short3(base_inner + i, base_outer + o, base_inner + i + 1);
+        i++;
+        return true;
+      }
+      if (kind == 2 && o < outer.segments) {
+        triangle = short3(base_outer + o, base_outer + o + 1, base_inner + i);
+        o++;
+        return true;
       }
     }
-    if (i == inner) break;
-    short primitive_index = base_inner + i - provoke_offset;
-    mesh.set_index(primitive_index * 3, base_inner + i);
-    mesh.set_index(primitive_index * 3 + (1 ^ ccw_xor), base_outer + right);
-    mesh.set_index(primitive_index * 3 + (2 ^ ccw_xor), base_inner + i + 1);
+    return false;
   }
+  // whether every slot is a step, as when the inner edge has two segments fewer (a ring's side between two of the inside
+  // factor's) or as many (a strip): triangle t is then the one of slot t
+  bool direct() const {
+    return !(inner.kind & stitch_transition) && outer.segments == inner.segments + (inner.kind & stitch_strip ? 0 : 2);
+  }
+  // of a direct zip, triangle t. after the first slot (none in a strip), each pair of slots steps along both edges, the
+  // inner edge first where it is turned: in the half nearer the start, or a strip's turned quad
+  short3 triangle(int t, short base_inner, short base_outer) const {
+    bool strip = inner.kind & stitch_strip;
+    int a = t - !strip, p = a >> 1, e = a & 1;
+    bool turn = strip ? (inner.kind & stitch_turned) && p == (inner.segments + 1) / 2 - 1 : p < (inner.segments + 1) / 2;
+    int i = p + (turn && e), o = p + !strip + (!turn && e);
+    return e != turn ? short3(base_inner + i, base_outer + o, base_inner + i + 1)
+                     : short3(base_outer + o, base_outer + o + 1, base_inner + i);
+  }
+};
+
+// the workload's triangle `n`, numbered as its frames' zips make them; false past the last
+bool
+workload_triangle(object_data tess_workload &workload, int n, thread short3 &triangle) {
+  short base = 0;
+  for (int frame = 0; frame < 4 && workload.edge[frame].segments >= 0; frame += 2) {
+    tess_zip zip = {workload.edge[frame], workload.edge[frame + 1], 0, 0, 0};
+    short inner = zip.inner.segments, outer = zip.outer.segments;
+    while (zip.next(triangle, base, base + inner + 1))
+      if (n-- == 0)
+        return true;
+    base += inner + outer + 2;
+  }
+  return false;
 }
 
 void
-generatePrimitiveTriangle(int workload_index, object_data int *data, MeshTri mesh) {
-  object_data TessMeshWorkload &workload = ((object_data TessMeshWorkload *)data)[workload_index];
-
-  short primitive_count = 0;
-  {
-    short max_in = workload.inner_factor_i;
-    short max_out = workload.outer_factor_i;
-    short base_outer = max_in + 1;
-
-    primitive_count += max_in + max_out;
-    generate_triangle_for_edges(mesh, 0, base_outer, max_in, max_out, 0, 0);
+generate_triangles(int workload_index, object_data int *data, Mesh mesh, threadgroup uint *behind, short ccw_xor) {
+  object_data tess_workload &workload = ((object_data tess_workload *)data)[workload_index];
+  short primitives = 0, base = 0;
+  for (int frame = 0; frame < 4 && workload.edge[frame].segments >= 0; frame += 2) {
+    tess_zip zip = {workload.edge[frame], workload.edge[frame + 1], 0, 0, 0};
+    short inner = zip.inner.segments, outer = zip.outer.segments;
+    for (short3 triangle(0, 0, 0); zip.next(triangle, base, base + inner + 1); primitives++) {
+      mesh.set_index(primitives * 3, triangle[0]);
+      mesh.set_index(primitives * 3 + (1 ^ ccw_xor), triangle[1]);
+      mesh.set_index(primitives * 3 + (2 ^ ccw_xor), triangle[2]);
+      cull(mesh, behind, primitives, triangle[0], triangle[1], triangle[2]);
+    }
+    base += inner + outer + 2;
   }
-
-  if (workload.has_complement) {
-    short max_in = workload.inner_factor_c_i;
-    short max_out = workload.outer_factor_c_i;
-    short base_inner = 2 + workload.inner_factor_i + workload.outer_factor_i;
-    short base_outer = base_inner + max_in + 1;
-
-    primitive_count += max_in + max_out;
-    generate_triangle_for_edges(mesh, base_inner, base_outer, max_in, max_out, 2, 0);
-  }
-
-  mesh.set_primitive_count(primitive_count);
+  mesh.set_primitive_count(primitives);
 }
 
-void generatePrimitiveTriangleCCW(int workload_index, object_data int *data, MeshTri mesh) asm(
-    "dxmt.domain_generate_primitives.triangle_ccw"
+void generatePrimitiveTriangle(int workload_index, object_data int *data, Mesh mesh, threadgroup uint *behind) asm(
+    "mullion.domain_generate_primitives.triangle"
 );
 
 void
-generatePrimitiveTriangleCCW(int workload_index, object_data int *data, MeshTri mesh) {
-  object_data TessMeshWorkload &workload = ((object_data TessMeshWorkload *)data)[workload_index];
-
-  short primitive_count = 0;
-  {
-    short max_in = workload.inner_factor_i;
-    short max_out = workload.outer_factor_i;
-    short base_outer = max_in + 1;
-
-    primitive_count += max_in + max_out;
-    generate_triangle_for_edges(mesh, 0, base_outer, max_in, max_out, 0, 3);
-  }
-
-  if (workload.has_complement) {
-    short max_in = workload.inner_factor_c_i;
-    short max_out = workload.outer_factor_c_i;
-    short base_inner = 2 + workload.inner_factor_i + workload.outer_factor_i;
-    short base_outer = base_inner + max_in + 1;
-
-    primitive_count += max_in + max_out;
-    generate_triangle_for_edges(mesh, base_inner, base_outer, max_in, max_out, 2, 3);
-  }
-
-  mesh.set_primitive_count(primitive_count);
+generatePrimitiveTriangle(int workload_index, object_data int *data, Mesh mesh, threadgroup uint *behind) {
+  generate_triangles(workload_index, data, mesh, behind, 0);
 }
 
-void generatePrimitivePoint(int workload_index, object_data int *data, MeshTri mesh) asm(
-    "dxmt.domain_generate_primitives.point"
+void generatePrimitiveTriangleCCW(int workload_index, object_data int *data, Mesh mesh, threadgroup uint *behind) asm(
+    "mullion.domain_generate_primitives.triangle_ccw"
 );
 
 void
-generatePrimitivePoint(int workload_index, object_data int *data, MeshTri mesh) {
-  object_data TessMeshWorkload &workload = ((object_data TessMeshWorkload *)data)[workload_index];
+generatePrimitiveTriangleCCW(int workload_index, object_data int *data, Mesh mesh, threadgroup uint *behind) {
+  generate_triangles(workload_index, data, mesh, behind, 3);
+}
 
-  short index_count = 0;
+void generatePrimitiveLine(int workload_index, object_data int *data, Mesh mesh, threadgroup uint *behind) asm(
+    "mullion.domain_generate_primitives.line"
+);
 
-  {
-    short max_in = workload.inner_factor_i;
-    short max_out = workload.outer_factor_i;
-    short base_outer = max_in + 1;
-
-    for (short i = 0; i < max_in + 1; i++) {
-      mesh.set_index(index_count++, i);
+void
+generatePrimitiveLine(int workload_index, object_data int *data, Mesh mesh, threadgroup uint *behind) {
+  object_data tess_workload &workload = ((object_data tess_workload *)data)[workload_index];
+  short primitives = 0, base = 0;
+  for (int e = 0; e < 4; e++) {
+    short segments = workload.edge[e].segments;
+    for (short i = 0; i < segments; i++, primitives++) {
+      mesh.set_index(primitives * 2, base + i);
+      mesh.set_index(primitives * 2 + 1, base + i + 1);
+      cull(mesh, behind, primitives, base + i, base + i + 1, base + i);
     }
-    for (short i = 0; i < max_out + 1; i++) {
-      mesh.set_index(index_count++, i + base_outer);
-    }
+    base += segments + 1;
   }
+  mesh.set_primitive_count(primitives);
+}
 
-  if (workload.has_complement) {
-    short max_in = workload.inner_factor_c_i;
-    short max_out = workload.outer_factor_c_i;
-    short base_inner = 2 + workload.inner_factor_i + workload.outer_factor_i;
-    short base_outer = base_inner + max_in + 1;
+void generatePrimitivePoint(int workload_index, object_data int *data, Mesh mesh, threadgroup uint *behind) asm(
+    "mullion.domain_generate_primitives.point"
+);
 
-    for (short i = 0; i < max_in + 1; i++) {
-      mesh.set_index(index_count++, i + base_inner);
+void
+generatePrimitivePoint(int workload_index, object_data int *data, Mesh mesh, threadgroup uint *behind) {
+  object_data tess_workload &workload = ((object_data tess_workload *)data)[workload_index];
+  short primitives = 0, base = 0;
+  // a patch's points are output once (D3D11.3 11.7.14): a workload outputs the ones that are its own
+  for (int e = 0; e < 4; e++) {
+    for (short i = 0; i < workload.edge[e].owned; i++, primitives++) {
+      mesh.set_index(primitives, base + i);
+      cull(mesh, behind, primitives, base + i, base + i, base + i);
     }
-    for (short i = 0; i < max_out + 1; i++) {
-      mesh.set_index(index_count++, i + base_outer);
-    }
+    base += workload.edge[e].segments + 1;
   }
+  mesh.set_primitive_count(primitives);
+}
 
-  mesh.set_primitive_count(index_count);
+// a group of workloads, `first` to `end`, which one mesh threadgroup makes: their vertices are their edges' points, one
+// workload's after another, but for an edge that is one of the workload's before (shared_edges), whose points it
+// takes from it. so are their primitives
+
+// where a workload's edges' points start among the group's vertices, from where those of the workload before start;
+// `vertices` counts the group's
+void
+place_edges(object_data tess_workload *workloads, int first, int w, thread int *base, thread int &vertices) {
+  int shared = w > first ? shared_edges(workloads[w - 1], workloads[w]) : 0, outer = base[0], inner = base[3];
+  for (int e = 0; e < 4; e++) {
+    if (shared >> e & 1) {
+      base[e] = e == 1 ? outer : inner;
+      continue;
+    }
+    base[e] = vertices;
+    vertices += workloads[w].edge[e].segments + 1;
+  }
+}
+
+// the group's workload of SIMD lane `lane`: where its own edges' points start among the group's vertices
+// (place_edges), the first being where all its own start; an edge it shares with the one before has none of its own and
+// starts with a later edge or before the first; past the group's last workload, all are the group's vertex count
+int4 get_group_layout(int first, int end, int lane, object_data int *data) asm("mullion.get_group_layout");
+
+int4
+get_group_layout(int first, int end, int lane, object_data int *data) {
+  object_data tess_workload *workloads = (object_data tess_workload *)data;
+  int w = first + lane;
+#if defined(__METAL_VERSION__)
+  // a lane's own points follow those of the lanes before
+  bool mine = w < end;
+  tess_workload workload = workloads[mine ? w : first];
+  int shared = mine && w > first ? shared_edges(workloads[w - 1], workload) : 0, size[4];
+  for (int e = 0; e < 4; e++)
+    size[e] = mine && !(shared >> e & 1) ? workload.edge[e].segments + 1 : 0;
+  int start = simd_prefix_exclusive_sum(size[0] + size[1] + size[2] + size[3]);
+  return int4(start, start + size[0], start + size[0] + size[1], start + size[0] + size[1] + size[2]);
+#else
+  // the host has one thread, which lays out the workloads before
+  int base[4] = {0, 0, 0, 0}, vertices = 0;
+  for (int k = first; k < end; k++) {
+    place_edges(workloads, first, k, base, vertices);
+    if (k == w)
+      return int4(base[0], base[1], base[2], base[3]);
+  }
+  return int4(vertices, vertices, vertices, vertices);
+#endif
+}
+
+// lane `lane`'s layout
+int4
+group_lane(int4 layout, int lane, int first, int end, object_data int *data) {
+#if defined(__METAL_VERSION__)
+  return simd_shuffle(layout, ushort(lane));
+#else
+  return get_group_layout(first, end, lane, data);
+#endif
+}
+
+// the group's vertex `thread_index`, `layout` being the thread's lane's (get_group_layout)
+domain_location get_group_location(int first, int end, int thread_index, int4 layout, object_data int *data) asm(
+    "mullion.get_group_location"
+);
+
+domain_location
+get_group_location(int first, int end, int thread_index, int4 layout, object_data int *data) {
+  simdgroup_barrier(mem_flags::mem_none);
+
+  object_data tess_workload *workloads = (object_data tess_workload *)data;
+  int count = end - first;
+  domain_location ret{float2(0), thread_index < group_lane(layout, 31, first, end, data).x, false};
+  // the workload whose own points the vertex is among: the last that starts at or before it
+  int k = 0;
+  for (int step = 16; step; step >>= 1) {
+    int start = group_lane(layout, min(k + step, 31), first, end, data).x;
+    if (k + step < count && start <= thread_index)
+      k += step;
+  }
+  int4 base = group_lane(layout, k, first, end, data);
+  tess_workload workload = workloads[first + k];
+  // an edge of its own: the last whose points the vertex is among, as a shared edge starts with a later one or before
+  // the workload's own points
+  tess_edge edge = no_edge;
+  int at = 0;
+  for (int e = 0; e < 4; e++)
+    if (thread_index >= base[e] && thread_index <= base[e] + workload.edge[e].segments) {
+      edge = workload.edge[e];
+      at = thread_index - base[e];
+    }
+  if (ret.active)
+    ret.uv = point(edge, at);
+
+  simdgroup_barrier(mem_flags::mem_none);
+  ret.iterate = simd_all(ret.active);
+  return ret;
+}
+
+// the primitives are made by every thread of the mesh threadgroup, which is one SIMD group of 32: thread `lane`
+// makes the primitives numbered lane, lane + 32 and so on, or for triangles those of a frame's zip slots lane,
+// lane + 32 and so on. a zip slot's triangle is numbered by the steps taken before it: of the edges' segments, the
+// inner steps before it, as far as the inner edge's segments, and the outer steps before it likewise
+// (tess_zip::next takes a step while its edge has a segment left), so it is the triangle one thread would make
+
+// which of 32 of a zip's slots, from `chunk` on, are inner steps (x) and outer steps (y), a bit each
+uint2
+zip_kinds(tess_zip zip, int slots, int chunk, int lane) {
+#if defined(__METAL_VERSION__)
+  int at = chunk + lane, kind = at < slots ? zip.step(at) : 0;
+  return uint2(uint(simd_vote::vote_t(simd_ballot(kind == 1))), uint(simd_vote::vote_t(simd_ballot(kind == 2))));
+#else
+  // the host has one thread, which looks at every slot
+  uint2 kinds(0, 0);
+  for (int k = 0; k < 32 && chunk + k < slots; k++) {
+    int kind = zip.step(chunk + k);
+    kinds.x |= uint(kind == 1) << k;
+    kinds.y |= uint(kind == 2) << k;
+  }
+  return kinds;
+#endif
+}
+
+void
+put_triangle(Mesh mesh, threadgroup uint *behind, int n, short3 triangle, short ccw_xor) {
+  mesh.set_index(n * 3, triangle[0]);
+  mesh.set_index(n * 3 + (1 ^ ccw_xor), triangle[1]);
+  mesh.set_index(n * 3 + (2 ^ ccw_xor), triangle[2]);
+  cull(mesh, behind, n, triangle[0], triangle[1], triangle[2]);
+}
+
+// a workload's triangles, from primitive `primitives` of the mesh on, its edges' points starting at `base`; returns
+// where they end
+int
+group_triangles(
+    object_data tess_workload &workload, thread int *base, int primitives, Mesh mesh, threadgroup uint *behind,
+    short ccw_xor, int lane
+) {
+  uint below = (1u << lane) - 1;
+  for (int frame = 0; frame < 4 && workload.edge[frame].segments >= 0; frame += 2) {
+    tess_zip zip = {workload.edge[frame], workload.edge[frame + 1], 0, 0, 0};
+    int inner = zip.inner.segments, outer = zip.outer.segments, slots = zip.slots();
+    int base_inner = base[frame], base_outer = base[frame + 1];
+    if (zip.direct()) {
+      for (int t = lane; t < inner + outer; t += 32)
+        put_triangle(mesh, behind, primitives + t, zip.triangle(t, base_inner, base_outer), ccw_xor);
+      primitives += inner + outer;
+      continue;
+    }
+    // the inner and outer steps of the slots before the chunk
+    int inner_steps = 0, outer_steps = 0;
+    for (int chunk = 0; chunk < slots; chunk += 32) {
+      uint2 kinds = zip_kinds(zip, slots, chunk, lane);
+      int i = inner_steps + popcount(kinds.x & below), o = outer_steps + popcount(kinds.y & below);
+      int taken_i = min(i, inner), taken_o = min(o, outer);
+      bool step_inner = (kinds.x >> lane & 1) && i < inner, step_outer = (kinds.y >> lane & 1) && o < outer;
+      if (step_inner || step_outer) {
+        short3 triangle = step_inner ? short3(base_inner + i, base_outer + taken_o, base_inner + i + 1)
+                                     : short3(base_outer + o, base_outer + o + 1, base_inner + taken_i);
+        put_triangle(mesh, behind, primitives + taken_i + taken_o, triangle, ccw_xor);
+      }
+      inner_steps += popcount(kinds.x);
+      outer_steps += popcount(kinds.y);
+    }
+    primitives += min(inner_steps, inner) + min(outer_steps, outer);
+  }
+  return primitives;
+}
+
+// lines and points: a primitive's edge is the one its number falls in, counting each edge's segments or the points
+// that are the workload's own
+int
+group_runs(
+    object_data tess_workload &workload, thread int *base, int primitives, Mesh mesh, threadgroup uint *behind,
+    int vertices, int lane
+) {
+  for (int e = 0; e < 4; e++) {
+    int segments = workload.edge[e].segments, count = vertices == 2 ? segments : workload.edge[e].owned;
+    for (int i = lane; i < count; i += 32) {
+      int n = primitives + i, at = base[e] + i;
+      mesh.set_index(n * vertices, at);
+      if (vertices == 2)
+        mesh.set_index(n * 2 + 1, at + 1);
+      cull(mesh, behind, n, at, at + vertices - 1, at);
+    }
+    primitives += max(count, 0);
+  }
+  return primitives;
+}
+
+// `vertices`: 3 for clockwise triangles, -3 for counter-clockwise ones
+void
+generate_group(
+    int first, int end, object_data int *data, Mesh mesh, threadgroup uint *behind, int vertices, int lane
+) {
+  object_data tess_workload *workloads = (object_data tess_workload *)data;
+  int primitives = 0, base[4] = {0, 0, 0, 0}, placed = 0;
+  for (int w = first; w < end; w++) {
+    place_edges(workloads, first, w, base, placed);
+    primitives = vertices == 3 || vertices == -3
+                     ? group_triangles(workloads[w], base, primitives, mesh, behind, vertices == 3 ? 0 : 3, lane)
+                     : group_runs(workloads[w], base, primitives, mesh, behind, vertices, lane);
+  }
+  if (lane == 0)
+    mesh.set_primitive_count(primitives);
+}
+
+void generateGroupTriangle(
+    int first, int end, object_data int *data, Mesh mesh, threadgroup uint *behind, int lane
+) asm("mullion.domain_generate_group.triangle");
+
+void
+generateGroupTriangle(int first, int end, object_data int *data, Mesh mesh, threadgroup uint *behind, int lane) {
+  generate_group(first, end, data, mesh, behind, 3, lane);
+}
+
+void generateGroupTriangleCCW(
+    int first, int end, object_data int *data, Mesh mesh, threadgroup uint *behind, int lane
+) asm("mullion.domain_generate_group.triangle_ccw");
+
+void
+generateGroupTriangleCCW(int first, int end, object_data int *data, Mesh mesh, threadgroup uint *behind, int lane) {
+  generate_group(first, end, data, mesh, behind, -3, lane);
+}
+
+void generateGroupLine(
+    int first, int end, object_data int *data, Mesh mesh, threadgroup uint *behind, int lane
+) asm("mullion.domain_generate_group.line");
+
+void
+generateGroupLine(int first, int end, object_data int *data, Mesh mesh, threadgroup uint *behind, int lane) {
+  generate_group(first, end, data, mesh, behind, 2, lane);
+}
+
+void generateGroupPoint(
+    int first, int end, object_data int *data, Mesh mesh, threadgroup uint *behind, int lane
+) asm("mullion.domain_generate_group.point");
+
+void
+generateGroupPoint(int first, int end, object_data int *data, Mesh mesh, threadgroup uint *behind, int lane) {
+  generate_group(first, end, data, mesh, behind, 1, lane);
+}
+
+// a geometry shader takes the workload's primitives one at a time, each numbered as above
+
+// which of the workload's vertices is `corner` of its primitive `n`, when the tessellator outputs `vertices` a
+// primitive; -1 past the last primitive
+int
+primitive_vertex(object_data tess_workload &workload, int n, int corner, int vertices) {
+  if (vertices == 3) {
+    short3 triangle(0, 0, 0);
+    return workload_triangle(workload, n, triangle) ? triangle[corner] : -1;
+  }
+  int base = 0;
+  for (int e = 0; e < 4; e++) {
+    // a line's segments, or the points that are the workload's own
+    int count = vertices == 2 ? workload.edge[e].segments : workload.edge[e].owned;
+    if (n < count)
+      return base + n + corner;
+    n -= max(count, 0);
+    base += workload.edge[e].segments + 1;
+  }
+  return -1;
+}
+
+domain_location get_domain_primitive_location(
+    int workload_index, int primitive, int corner, int vertices, int ccw, object_data int *data
+) asm("mullion.get_domain_primitive_location");
+
+// counter-clockwise triangles have their second and third vertices exchanged, as generate_triangles does
+domain_location
+get_domain_primitive_location(
+    int workload_index, int primitive, int corner, int vertices, int ccw, object_data int *data
+) {
+  object_data tess_workload &workload = ((object_data tess_workload *)data)[workload_index];
+  return workload_vertex(workload, primitive_vertex(workload, primitive, ccw && corner ? 3 - corner : corner, vertices));
+}
+
+// a mesh threadgroup that has a piece of a workload makes `count` of its primitives, from `first`, each of vertices
+// of its own: a thread's is a corner of one
+domain_location get_domain_piece_location(
+    int workload_index, int first, int thread_index, int count, int vertices, int ccw, object_data int *data
+) asm("mullion.get_domain_piece_location");
+
+domain_location
+get_domain_piece_location(
+    int workload_index, int first, int thread_index, int count, int vertices, int ccw, object_data int *data
+) {
+  simdgroup_barrier(mem_flags::mem_none);
+
+  int primitive = thread_index / vertices;
+  domain_location ret =
+      get_domain_primitive_location(workload_index, first + primitive, thread_index % vertices, vertices, ccw, data);
+  ret.active = ret.active && primitive < count;
+
+  simdgroup_barrier(mem_flags::mem_none);
+  ret.iterate = simd_all(ret.active);
+
+  return ret;
+}
+
+void generate_piece(
+    int workload_index, int first, int count, int vertices, object_data int *data, Mesh mesh, threadgroup uint *behind
+) asm("mullion.domain_generate_piece");
+
+void
+generate_piece(
+    int workload_index, int first, int count, int vertices, object_data int *data, Mesh mesh, threadgroup uint *behind
+) {
+  object_data tess_workload &workload = ((object_data tess_workload *)data)[workload_index];
+  short primitives = 0;
+  for (; primitives < count && primitive_vertex(workload, first + primitives, 0, vertices) >= 0; primitives++) {
+    short base = primitives * vertices;
+    for (short corner = 0; corner < vertices; corner++)
+      mesh.set_index(base + corner, base + corner);
+    cull(mesh, behind, primitives, base, base + vertices - 1, base + (vertices - 1) / 2);
+  }
+  mesh.set_primitive_count(primitives);
 }

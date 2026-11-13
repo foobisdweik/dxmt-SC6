@@ -1,0 +1,11 @@
+# drops the indirect root CB address update.
+--- a/src/d3d12/d3d12_command_signature.cpp
++++ b/src/d3d12/d3d12_command_signature.cpp
+@@ -579,7 +579,6 @@
+         auto rootsig = static_cast<MTLD3D12RootSignature *>(pRootSignature);
+         auto offset = rootsig->SlotQwordOffsets[parameter_index];
+         ResetRootDwords.emplace_back(offset * 2, 2);
+-        source << "rootsig_qwords[" << offset << "] = arg.cb_" << i << ";\n";
+         break;
+       }
+       case D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW: {

@@ -1,0 +1,12 @@
+# a rectangular grid is assumed to fill every part to capacity
+--- a/src/mullion/mullion_geometry.hpp
++++ b/src/mullion/mullion_geometry.hpp
+@@ -83,7 +83,7 @@
+ indirect_geometry_parts(uint64_t max, uint64_t bound) {
+   if (bound <= max)
+     return 1;
+-  auto capacity = std::max<uint64_t>((max + 1) / 2, 1);
++  auto capacity = std::max<uint64_t>(max, 1);
+   return uint32_t(bound / capacity + (bound % capacity != 0));
+ }
+

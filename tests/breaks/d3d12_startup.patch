@@ -1,0 +1,9 @@
+# a refused call says nothing
+--- a/src/util/log/log.hpp
++++ b/src/util/log/log.hpp
+@@ -55,5 +55,4 @@
+   template <typename T>
+   static T fail(T code, const char *name, const char *function, const char *file, int line) {
+-    warn(str::format(function, ": ", name, " (", file, ":", line, ")"));
+     return code;
+   }

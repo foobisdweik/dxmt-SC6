@@ -1,0 +1,12 @@
+# the inliner reads the call it overwrote
+--- a/src/airconv/dxbc_converter_cfg.cpp
++++ b/src/airconv/dxbc_converter_cfg.cpp
+@@ -683,7 +683,7 @@
+ 
+     for (auto [bb, target] : call_targets) {
+       // the call is replaced in its block below, and its return point is still needed
+-      auto call = *target;
++      auto &call = *target;
+       std::unordered_map<BasicBlock *, BasicBlock *> visited;
+       std::stack<BasicBlock *> block_to_redirect;
+ 

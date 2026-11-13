@@ -1,4 +1,4 @@
-project('dxmt', ['c', 'cpp'], version : 'v0.1', meson_version: '>=1.3.0', default_options : [ 
+project('mullion', ['c', 'cpp'], version : 'v0.1', meson_version: '>=1.3.0', default_options : [ 
   'cpp_std=c++20', 
   'warning_level=2', 
   'build.cpp_std=c++20',
@@ -7,7 +7,7 @@ project('dxmt', ['c', 'cpp'], version : 'v0.1', meson_version: '>=1.3.0', defaul
 
 fs = import('fs')
 
-dxmt_crossbuild = meson.is_cross_build()
+mullion_crossbuild = meson.is_cross_build()
 
 cpp = meson.get_compiler('cpp')
 cc = meson.get_compiler('c')
@@ -16,18 +16,18 @@ clangpp = meson.get_compiler('cpp', native: true)
 
 cpu_family = host_machine.cpu_family()
 
-dxmt_include_dirs = [
+mullion_include_dirs = [
   './include',
   './libs'
 ]
 
-dxmt_native_include_dirs = [
+mullion_native_include_dirs = [
   './include/native/windows',
   './include/native/directx',
 ]
 
-if not dxmt_crossbuild
-  dxmt_include_dirs += dxmt_native_include_dirs
+if not mullion_crossbuild
+  mullion_include_dirs += mullion_native_include_dirs
 endif
 
 source_prefix_path = fs.relative_to(
@@ -93,14 +93,14 @@ if get_option('debug')
   ]
 endif
 
-dxmt_include_path = include_directories(dxmt_include_dirs)
-dxmt_native_include_path = include_directories(dxmt_native_include_dirs)
+mullion_include_path = include_directories(mullion_include_dirs)
+mullion_native_include_path = include_directories(mullion_native_include_dirs)
 
 if not fs.is_file('include/native/directx/d3d11.h')
   error('Don\'t forget to clone submodules. `git submodule update --init --recursive`')
 endif
 
-if dxmt_crossbuild
+if mullion_crossbuild
   res_ext = '.o'
   wrc = find_program('windres')
   wrc_generator = generator(wrc,
@@ -131,21 +131,28 @@ hexdump_generator = generator(xxd,
   arguments : [ '-n', '@BASENAME@', '-i', '@INPUT@', '@OUTPUT@'],
 )
 
-dxmt_debug = get_option('dxmt_debug')
+mullion_debug = get_option('mullion_debug')
 
-if dxmt_debug
-add_project_arguments('-DDXMT_DEBUG=1', language: 'cpp')
+if mullion_debug
+add_project_arguments('-DMULLION_DEBUG=1', language: 'cpp')
 endif
 
-add_project_arguments('-DDXMT_PAGE_SIZE=4096', language: 'cpp')
+add_project_arguments('-DMULLION_PAGE_SIZE=4096', language: 'cpp')
 
-dxmt_version = vcs_tag(
-  command: ['git', 'describe', '--always'],
+# a build of a changed tree is numbered by the line of build_log that holds its commit and the hash of its diff (a new
+# file counts once meson.build or another tracked file names it); a clean tree's build is its commit
+mullion_version = vcs_tag(
+  command: ['sh', '-c', '''v=$(git -C "$1" describe --always --dirty)
+case $v in *-dirty) [ -n "$2" ] || { echo "$v"; exit; }
+  k="$v $(git -C "$1" diff HEAD | git hash-object --stdin)"
+  grep -qxF "$k" "$2" 2>/dev/null || echo "$k" >> "$2"
+  echo "${v%-dirty} dev $(grep -nxF "$k" "$2" | cut -d: -f1)";;
+*) echo "$v";; esac''', 'version', meson.project_source_root(), get_option('build_log')],
   input:  'version.h.in',
   output: 'version.h',
 )
 
-if dxmt_crossbuild
+if mullion_crossbuild
   wine_builtin_dll = get_option('wine_builtin_dll')
 
   if cpu_family == 'x86'
@@ -196,10 +203,14 @@ add_project_arguments(cc.get_supported_arguments(compiler_args), language: 'c')
 add_project_arguments(clang.get_supported_arguments(native_compiler_args), language: 'c', native: true)
 add_project_link_arguments(cpp.get_supported_link_arguments(link_args), language: 'cpp')
 add_project_link_arguments(cc.get_supported_link_arguments(link_args), language: 'c')
-if dxmt_crossbuild
+if mullion_crossbuild
   add_project_arguments(['-arch', native_compiler_arch], language: 'c',  native: true)
   add_project_arguments(['-arch', native_compiler_arch], language: 'cpp',  native: true)
   add_project_link_arguments(['-arch', native_compiler_arch], language: 'cpp',  native: true)
+  # the oldest macOS whose APIs the Metal bridge uses without asking whether they are there (residency sets, row-major
+  # matrices in acceleration structures); what is newer is asked for
+  add_project_arguments('-mmacosx-version-min=15.0', language: ['c', 'cpp'], native: true)
+  add_project_link_arguments('-mmacosx-version-min=15.0', language: ['c', 'cpp'], native: true)
 endif
 
 subdir('libs')

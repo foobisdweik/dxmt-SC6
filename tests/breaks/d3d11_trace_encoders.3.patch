@@ -1,0 +1,13 @@
+# omit present traces
+diff --git a/src/mullion/mullion_presenter.cpp b/src/mullion/mullion_presenter.cpp
+--- a/src/mullion/mullion_presenter.cpp
++++ b/src/mullion/mullion_presenter.cpp
+@@ -189,7 +189,7 @@
+   auto encoder = cmdbuf.renderCommandEncoder(info);
+   if (encoder_count) {
+     auto index = (*encoder_count)++;
+-    if (diag::errors || diag::trace_encoders) {
++    if (diag::errors) {
+       auto label = str::format(
+           "present ", seq_id, ".", index, ": ", target.width(), "x", target.height(),
+           ", 1 draws (0 geometry, 0 tessellation)"

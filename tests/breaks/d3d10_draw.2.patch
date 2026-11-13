@@ -1,0 +1,12 @@
+# drop the D3D10 instanced draw starting instance
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -145,7 +145,7 @@
+ MTLD3D10Device::DrawInstanced(
+     UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation, UINT StartInstanceLocation
+ ) {
+-  d3d11_context_->DrawInstanced(VertexCountPerInstance, InstanceCount, StartVertexLocation, StartInstanceLocation);
++  d3d11_context_->DrawInstanced(VertexCountPerInstance, InstanceCount, StartVertexLocation, 0);
+ }
+ 
+ void STDMETHODCALLTYPE

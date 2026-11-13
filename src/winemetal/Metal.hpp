@@ -1,6 +1,7 @@
 #pragma once
 
 #include "./winemetal.h"
+#include <array>
 #include <cstddef>
 #include <string>
 #include <cstring>
@@ -119,6 +120,14 @@ public:
     this->release();
     this->handle = NULL_OBJECT_HANDLE;
   }
+
+  // where a call puts an object it gives to the caller, as every call gives its error (retained: winemetal_unix.c).
+  // what was held is released first
+  obj_handle_t *
+  out() {
+    *this = nullptr;
+    return &this->handle;
+  }
 };
 
 template <typename Class> class Array : public Object {
@@ -171,6 +180,10 @@ public:
 
 class DispatchData : public Object {
 public:
+  uint64_t
+  getBytes(void *buffer, uint64_t size) const {
+    return DispatchData_getBytes(handle, buffer, size);
+  }
 };
 
 class Event : public Object {
@@ -207,7 +220,7 @@ public:
 class CounterSampleBuffer : public Object {
 public:
   void
-  resolveCounterRange(uint32_t start, uint32_t len, void *data_out, uint64_t data_length) {
+  resolveCounterRange(uint32_t start, uint32_t len, void *data_out, uint64_t data_length) const {
     MTLCounterSampleBuffer_resolveCounterRange(handle, start, len, data_out, data_length);
   }
 };
@@ -222,6 +235,14 @@ public:
 
 class Texture : public Resource {
 public:
+  // a placement sparse texture's mip tail: its first mip, and its bytes
+  std::pair<uint64_t, uint64_t>
+  sparseTail() const {
+    uint64_t first_mip, bytes;
+    MTLTexture_sparseTail(handle, &first_mip, &bytes);
+    return {first_mip, bytes};
+  }
+
   Reference<Texture>
   newTextureView(
       WMTPixelFormat format, WMTTextureType texture_type, uint16_t level_start, uint16_t level_count,
@@ -304,6 +325,10 @@ public:
   }
 };
 
+class AccelerationStructure : public Resource {
+public:
+};
+
 class Heap : public Allocation {
 public:
   Reference<Buffer>
@@ -336,21 +361,80 @@ public:
   setLabel(String label) {
     MTLCommandEncoder_setLabel(handle, label);
   }
+
+protected:
+  // the waits for the first count fences, linked to go to Metal in one call
+  template <typename Op, size_t N>
+  static std::array<Op, N>
+  fenceWaits(decltype(Op::type) type, const std::array<Fence, N> &fences, unsigned count) {
+    std::array<Op, N> ops{};
+    for (unsigned i = 0; i < count; i++) {
+      ops[i].type = type;
+      ops[i].fence = fences[i].handle;
+      ops[i].next.set(i + 1 < count ? &ops[i + 1] : nullptr);
+    }
+    return ops;
+  }
+};
+
+class VisibleFunctionTable : public Object {
+public:
 };
 
 class ComputePipelineState : public Object {
 public:
+  uint64_t
+  maxTotalThreadsPerThreadgroup() const {
+    return MTLComputePipelineState_maxTotalThreadsPerThreadgroup(handle);
+  }
+
+  uint64_t
+  staticThreadgroupMemoryLength() const {
+    return MTLComputePipelineState_staticThreadgroupMemoryLength(handle);
+  }
+
+  uint64_t
+  threadExecutionWidth() const {
+    return MTLComputePipelineState_threadExecutionWidth(handle);
+  }
+
+  Reference<VisibleFunctionTable>
+  newVisibleFunctionTable(const obj_handle_t *functions, uint64_t function_count) const {
+    return Reference<VisibleFunctionTable>(
+        MTLComputePipelineState_newVisibleFunctionTable(handle, functions, function_count)
+    );
+  }
 };
 
 class RenderPipelineState : public Object {
 public:
+  // of a mesh pipeline whose object function does not say: the most the device's grids have
+  uint64_t
+  maxTotalThreadgroupsPerMeshGrid() const {
+    return MTLRenderPipelineState_maxTotalThreadgroupsPerMeshGrid(handle);
+  }
 };
 
-class RenderCommandEncoder : public CommandEncoder {
+// the scissors, and the viewports, a render pass of several viewports takes: the driver ends the process when the
+// pass's sets of scissors, each counted as many as it has viewports, come to 65,536, and when the viewports it was
+// set come to somewhat more (tests/native/pass_arrays.swift and .txt)
+constexpr uint32_t kPassRectangles = 65535;
+
+template <bool Metal4> class RenderCommandEncoderBase : public CommandEncoder {
 public:
   void
+  endEncoding() {
+    if constexpr (Metal4)
+      MTL4CommandEncoder_endEncoding(handle, false);
+    else
+      CommandEncoder::endEncoding();
+  }
+  void
   encodeCommands(const wmtcmd_render_nop *cmd_head) {
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
+    if constexpr (Metal4)
+      MTL4CommandEncoder_encodeCommands(handle, WMTMetal4Render, (const wmtcmd_base *)cmd_head);
+    else
+      MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
   }
 
   void
@@ -361,7 +445,7 @@ public:
     cmd.buffer = buffer;
     cmd.offset = offset;
     cmd.index = index;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 
   void
@@ -372,7 +456,7 @@ public:
     cmd.buffer = buffer;
     cmd.offset = offset;
     cmd.index = index;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 
   void
@@ -383,7 +467,7 @@ public:
     cmd.buffer = buffer;
     cmd.offset = offset;
     cmd.index = index;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 
   void
@@ -394,7 +478,7 @@ public:
     cmd.buffer = buffer;
     cmd.offset = offset;
     cmd.index = index;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 
   void
@@ -405,7 +489,7 @@ public:
     cmd.scope = scope;
     cmd.stages_before = stages_before;
     cmd.stages_after = stages_after;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 
   void
@@ -416,7 +500,7 @@ public:
     cmd.resource = resource;
     cmd.usage = usage;
     cmd.stages = stages;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   };
 
   void
@@ -425,7 +509,7 @@ public:
     cmd.type = WMTRenderCommandSetPSO;
     cmd.next.set(nullptr);
     cmd.pso = pso;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 
   void
@@ -438,7 +522,7 @@ public:
     cmd.vertex_count = vertex_count;
     cmd.base_instance = 0;
     cmd.instance_count = 1;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 
   void
@@ -448,7 +532,7 @@ public:
     cmd.next.set(nullptr);
     cmd.texture = texture;
     cmd.index = index;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   };
 
   void
@@ -459,7 +543,7 @@ public:
     cmd.bytes.set((void *)buf);
     cmd.length = length;
     cmd.index = index;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 
   void
@@ -469,7 +553,7 @@ public:
     cmd.next.set(nullptr);
     cmd.viewports.set(&viewport);
     cmd.viewport_count = 1;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   };
 
   void
@@ -479,7 +563,7 @@ public:
     cmd.next.set(nullptr);
     cmd.fence = fence.handle;
     cmd.stages = before;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 
   void
@@ -489,9 +573,12 @@ public:
     cmd.next.set(nullptr);
     cmd.fence = fence.handle;
     cmd.stages = after;
-    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+    encodeCommands(reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
   }
 };
+
+using RenderCommandEncoder = RenderCommandEncoderBase<false>;
+using Metal4RenderCommandEncoder = RenderCommandEncoderBase<true>;
 
 class BlitCommandEncoder : public CommandEncoder {
 public:
@@ -507,6 +594,14 @@ public:
     cmd.next.set(nullptr);
     cmd.fence = fence.handle;
     MTLBlitCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  template <size_t N>
+  void
+  waitForFences(const std::array<Fence, N> &fences, unsigned count) {
+    auto ops = fenceWaits<wmtcmd_blit_fence_op>(WMTBlitCommandWaitForFence, fences, count);
+    if (count)
+      encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(ops.data()));
   }
 
   void
@@ -530,6 +625,53 @@ public:
     cmd.dst_offset = dst_offset;
     MTLBlitCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
   }
+
+  void
+  copyFromBuffer(Buffer src, uint64_t src_offset, Buffer dst, uint64_t dst_offset, uint64_t length) {
+    struct wmtcmd_blit_copy_from_buffer_to_buffer cmd;
+    cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+    cmd.next.set(nullptr);
+    cmd.src = src.handle;
+    cmd.src_offset = src_offset;
+    cmd.dst = dst.handle;
+    cmd.dst_offset = dst_offset;
+    cmd.copy_length = length;
+    MTLBlitCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+};
+
+class AccelerationStructureCommandEncoder : public CommandEncoder {
+public:
+  void
+  encodeCommands(const wmtcmd_accelerationstructure_nop *cmd_head) {
+    MTLAccelerationStructureCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
+  }
+
+  void
+  waitForFence(Fence fence) {
+    struct wmtcmd_accelerationstructure_fence_op cmd;
+    cmd.type = WMTAccelerationStructureCommandWaitForFence;
+    cmd.next.set(nullptr);
+    cmd.fence = fence.handle;
+    MTLAccelerationStructureCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  template <size_t N>
+  void
+  waitForFences(const std::array<Fence, N> &fences, unsigned count) {
+    auto ops = fenceWaits<wmtcmd_accelerationstructure_fence_op>(WMTAccelerationStructureCommandWaitForFence, fences, count);
+    if (count)
+      encodeCommands(reinterpret_cast<const wmtcmd_accelerationstructure_nop *>(ops.data()));
+  }
+
+  void
+  updateFence(Fence fence) {
+    struct wmtcmd_accelerationstructure_fence_op cmd;
+    cmd.type = WMTAccelerationStructureCommandUpdateFence;
+    cmd.next.set(nullptr);
+    cmd.fence = fence.handle;
+    MTLAccelerationStructureCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
 };
 
 class ComputeCommandEncoder : public CommandEncoder {
@@ -548,6 +690,14 @@ public:
     MTLComputeCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
   }
 
+  template <size_t N>
+  void
+  waitForFences(const std::array<Fence, N> &fences, unsigned count) {
+    auto ops = fenceWaits<wmtcmd_compute_fence_op>(WMTComputeCommandWaitForFence, fences, count);
+    if (count)
+      encodeCommands(reinterpret_cast<const wmtcmd_compute_nop *>(ops.data()));
+  }
+
   void
   updateFence(Fence fence) {
     struct wmtcmd_compute_fence_op cmd;
@@ -558,12 +708,29 @@ public:
   }
 };
 
+// what a presenter's frames did on screen
+class PresentStatistics : public Object {
+public:
+  WMTPresentStatistics
+  get() const {
+    WMTPresentStatistics statistics;
+    WMTPresentStatistics_get(handle, &statistics);
+    return statistics;
+  }
+};
+
 class MetalDrawable : public Object {
 public:
   Texture
   texture() {
     return Texture{MetalDrawable_texture(handle)};
   };
+
+  // frame `number` counts in `statistics` once it is on screen, or now for a null drawable
+  void
+  countPresent(PresentStatistics statistics, uint64_t number) {
+    MetalDrawable_countPresent(handle, statistics.handle, number);
+  }
 };
 
 class MetalLayer : public Object {
@@ -594,6 +761,10 @@ public:
 };
 
 class FXSpatialScaler : public Object {
+public:
+};
+
+class FXDenoisedScaler : public Object {
 public:
 };
 
@@ -645,8 +816,23 @@ public:
   }
 
   void
+  pushDebugGroup(String name) {
+    MTLCommandBuffer_pushDebugGroup(handle, name);
+  }
+
+  void
+  popDebugGroup() {
+    MTLCommandBuffer_popDebugGroup(handle);
+  }
+
+  void
   waitUntilCompleted() {
     return MTLCommandBuffer_waitUntilCompleted(handle);
+  }
+
+  void
+  waitUntilSignaled(SharedEvent event, uint64_t value) {
+    MTLCommandBuffer_waitUntilSignaled(handle, event.handle, value);
   }
 
   WMTCommandBufferStatus
@@ -662,6 +848,11 @@ public:
   LogContainer
   logs() {
     return LogContainer{MTLCommandBuffer_logs(handle)};
+  }
+
+  uint64_t
+  gpuStartTime() {
+    return MTLCommandBuffer_property(handle, WMTCommandBufferPropertyGPUStartTime);
   }
 
   uint64_t
@@ -684,6 +875,23 @@ public:
     return RenderCommandEncoder{MTLCommandBuffer_renderCommandEncoder(handle, &info)};
   }
 
+  RenderCommandEncoder
+  renderCommandEncoder(WMTRenderPassInfo &info, const WMTSampleBufferAttachmentInfo &samples) {
+    return RenderCommandEncoder{MTLCommandBuffer_sampledCommandEncoder(handle, WMTSampledRender, &samples, &info)};
+  }
+
+  ComputeCommandEncoder
+  computeCommandEncoder(const WMTSampleBufferAttachmentInfo &samples, bool concurrent = false) {
+    return ComputeCommandEncoder{MTLCommandBuffer_sampledCommandEncoder(
+        handle, concurrent ? WMTSampledConcurrentCompute : WMTSampledCompute, &samples, nullptr)};
+  }
+
+  AccelerationStructureCommandEncoder
+  accelerationStructureCommandEncoder(const WMTSampleBufferAttachmentInfo &samples) {
+    return AccelerationStructureCommandEncoder{
+        MTLCommandBuffer_sampledCommandEncoder(handle, WMTSampledAccelerationStructure, &samples, nullptr)};
+  }
+
   BlitCommandEncoder
   blitCommandEncoder() {
     return BlitCommandEncoder{MTLCommandBuffer_blitCommandEncoder(handle)};
@@ -692,6 +900,11 @@ public:
   BlitCommandEncoder
   blitCommandEncoderWithSampleBuffers(WMTSampleBufferAttachmentInfo *attachments, uint64_t num_attachments) {
     return BlitCommandEncoder{MTLCommandBuffer_blitCommandEncoderWithSampleBuffers(handle, attachments, num_attachments)};
+  }
+
+  AccelerationStructureCommandEncoder
+  accelerationStructureCommandEncoder() {
+    return AccelerationStructureCommandEncoder{MTLCommandBuffer_accelerationStructureCommandEncoder(handle)};
   }
 
   ComputeCommandEncoder
@@ -715,11 +928,213 @@ public:
   }
 
   void
+  encodeDenoisedScale(FXDenoisedScaler scaler, const WMTFXDenoisedScaleArgs &args) {
+    MTLCommandBuffer_encodeDenoisedScale(handle, scaler, &args, false);
+  }
+
+  void
   encodeTemporalScale(
       FXTemporalScaler scaler, Texture color, Texture output, Texture depth, Texture motion, Texture exposure,
       Fence fence, const WMTFXTemporalScalerProps &props
   ) {
     MTLCommandBuffer_encodeTemporalScale(handle, scaler, color, output, depth, motion, exposure, fence, &props);
+  }
+};
+
+class Metal4ComputeCommandEncoder : public CommandEncoder {
+public:
+  void
+  encodeCommands(const wmtcmd_compute_nop *head) {
+    MTL4CommandEncoder_encodeCommands(handle, WMTMetal4Compute, reinterpret_cast<const wmtcmd_base *>(head));
+  }
+  void
+  encodeCommands(const wmtcmd_blit_nop *head) {
+    MTL4CommandEncoder_encodeCommands(handle, WMTMetal4Blit, reinterpret_cast<const wmtcmd_base *>(head));
+  }
+  void
+  encodeCommands(const wmtcmd_accelerationstructure_nop *head) {
+    MTL4CommandEncoder_encodeCommands(
+        handle, WMTMetal4AccelerationStructure, reinterpret_cast<const wmtcmd_base *>(head)
+    );
+  }
+  void
+  endEncoding() {
+    MTL4CommandEncoder_endEncoding(handle, false);
+  }
+  void
+  endSegment() {
+    MTL4CommandEncoder_endEncoding(handle, true);
+  }
+  // before every stage of the work encoded after it
+  void
+  waitForFence(Fence fence) {
+    wmtcmd_compute_fence_op cmd{.type = WMTComputeCommandWaitForFence, .fence = fence.handle};
+    cmd.next.set(nullptr);
+    encodeCommands(reinterpret_cast<const wmtcmd_compute_nop *>(&cmd));
+  }
+  // after every stage of the work encoded before it. the encoder is then no ordering point: its end leaves the
+  // buffer's fence as it was
+  void
+  updateFence(Fence fence) {
+    wmtcmd_compute_fence_op cmd{.type = WMTComputeCommandUpdateFence, .fence = fence.handle};
+    cmd.next.set(nullptr);
+    encodeCommands(reinterpret_cast<const wmtcmd_compute_nop *>(&cmd));
+  }
+
+  template <size_t N>
+  void
+  waitForFences(const std::array<Fence, N> &fences, unsigned count) {
+    auto ops = fenceWaits<wmtcmd_compute_fence_op>(WMTComputeCommandWaitForFence, fences, count);
+    if (count)
+      encodeCommands(reinterpret_cast<const wmtcmd_compute_nop *>(ops.data()));
+  }
+  void
+  copyFromBuffer(
+      Buffer source, uint64_t source_offset, Buffer destination, uint64_t destination_offset, uint64_t size
+  ) {
+    wmtcmd_blit_copy_from_buffer_to_buffer cmd{};
+    cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+    cmd.src = source;
+    cmd.src_offset = source_offset;
+    cmd.dst = destination;
+    cmd.dst_offset = destination_offset;
+    cmd.copy_length = size;
+    encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&cmd));
+  }
+};
+
+class Metal4CommandBuffer : public Object {
+public:
+  void
+  pushDebugGroup(String name) {
+    MTLCommandBuffer_pushDebugGroup(handle, name);
+  }
+  void
+  popDebugGroup() {
+    MTLCommandBuffer_popDebugGroup(handle);
+  }
+  void
+  encodeWaitForEvent(Event event, uint64_t value) {
+    MTL4CommandBuffer_waitForEvent(handle, event, value);
+  }
+  void
+  orderAliases(bool inside = false) {
+    MTL4CommandBuffer_orderAliases(handle, inside);
+  }
+  void
+  commit() {
+    MTL4CommandBuffer_commit(handle);
+  }
+  void
+  waitUntilCompleted() {
+    MTL4CommandBuffer_waitUntilCompleted(handle);
+  }
+  void
+  waitForGPU() {
+    MTL4CommandBuffer_waitForGPU(handle);
+  }
+  WMTMetal4Feedback
+  feedback() {
+    return MTL4CommandBuffer_feedback(handle);
+  }
+  WMTCommandBufferStatus
+  status() {
+    return WMTCommandBufferStatus(feedback().status);
+  }
+  Error
+  error() {
+    return Error{feedback().error};
+  }
+  uint64_t
+  gpuStartTime() {
+    return feedback().gpu_start;
+  }
+  uint64_t
+  gpuEndTime() {
+    return feedback().gpu_end;
+  }
+  Metal4RenderCommandEncoder
+  renderCommandEncoder(WMTRenderPassInfo &info) {
+    return Metal4RenderCommandEncoder{MTL4CommandBuffer_encoder(handle, WMTMetal4Render, &info, nullptr)};
+  }
+  Metal4RenderCommandEncoder
+  renderCommandEncoder(WMTRenderPassInfo &info, WMTSampleBufferAttachmentInfo &sample) {
+    return Metal4RenderCommandEncoder{MTL4CommandBuffer_encoder(handle, WMTMetal4Render, &info, &sample)};
+  }
+  Metal4ComputeCommandEncoder
+  computeCommandEncoder(bool) {
+    return Metal4ComputeCommandEncoder{MTL4CommandBuffer_encoder(handle, WMTMetal4Compute, nullptr, nullptr)};
+  }
+  Metal4ComputeCommandEncoder
+  computeCommandEncoder(WMTSampleBufferAttachmentInfo &sample, bool = false) {
+    return Metal4ComputeCommandEncoder{MTL4CommandBuffer_encoder(handle, WMTMetal4Compute, nullptr, &sample)};
+  }
+  Metal4ComputeCommandEncoder
+  blitCommandEncoder() {
+    return computeCommandEncoder(false);
+  }
+  Metal4ComputeCommandEncoder
+  blitCommandEncoderWithSampleBuffers(WMTSampleBufferAttachmentInfo *sample, uint64_t) {
+    return computeCommandEncoder(*sample);
+  }
+  Metal4ComputeCommandEncoder
+  accelerationStructureCommandEncoder() {
+    return computeCommandEncoder(false);
+  }
+  Metal4ComputeCommandEncoder
+  accelerationStructureCommandEncoder(WMTSampleBufferAttachmentInfo &sample) {
+    return computeCommandEncoder(sample);
+  }
+  void
+  presentDrawable(MetalDrawable drawable) {
+    MTL4CommandBuffer_present(handle, drawable, 0);
+  }
+  void
+  presentDrawableAfterMinimumDuration(MetalDrawable drawable, double after) {
+    MTL4CommandBuffer_present(handle, drawable, after);
+  }
+  void
+  encodeSpatialScale(FXSpatialScaler scaler, Texture color, Texture output, Fence fence) {
+    MTL4CommandBuffer_encodeSpatialScale(handle, scaler, color, output, fence);
+  }
+  void
+  encodeTemporalScale(
+      FXTemporalScaler scaler, Texture color, Texture output, Texture depth, Texture motion, Texture exposure,
+      Fence fence, const WMTFXTemporalScalerProps &props
+  ) {
+    MTL4CommandBuffer_encodeTemporalScale(handle, scaler, color, output, depth, motion, exposure, fence, &props);
+  }
+  void
+  encodeDenoisedScale(FXDenoisedScaler scaler, const WMTFXDenoisedScaleArgs &args) {
+    MTLCommandBuffer_encodeDenoisedScale(handle, scaler, &args, true);
+  }
+};
+
+// maps tiles of placement sparse resources to tiles of placement heaps (Metal 4)
+class MTL4CommandQueue : public Object {
+public:
+  template <typename Operation>
+  void
+  updateMappings(Object resource, bool texture, Object heap, const std::vector<Operation> &operations) {
+    MTL4CommandQueue_updateMappings(handle, resource.handle, texture, heap.handle, operations.data(), operations.size());
+  }
+
+  template <typename Operation>
+  void
+  copyMappings(Object source, Object destination, bool texture, const std::vector<Operation> &operations) {
+    MTL4CommandQueue_copyMappings(
+        handle, source.handle, destination.handle, texture, operations.data(), operations.size()
+    );
+  }
+
+  void
+  signalEvent(Event event, uint64_t value) {
+    MTL4CommandQueue_event(handle, event.handle, value, false);
+  }
+
+  void
+  waitForEvent(Event event, uint64_t value) {
+    MTL4CommandQueue_event(handle, event.handle, value, true);
   }
 };
 
@@ -747,10 +1162,10 @@ public:
 
   Reference<Function>
   newFunctionWithConstants(
-      const char *name, const WMTFunctionConstant *constants, uint32_t num_constants, Error &error
+      const char *name, const WMTFunctionConstant *constants, uint32_t num_constants, Reference<Error> &error
   ) {
     return Reference<Function>(
-        MTLLibrary_newFunctionWithConstants(handle, name, constants, num_constants, &error.handle)
+        MTLLibrary_newFunctionWithConstants(handle, name, constants, num_constants, error.out())
     );
   }
 };
@@ -758,8 +1173,8 @@ public:
 class BinaryArchive : public Object {
 public:
   void
-  serialize(const char *url, Error &error) {
-    MTLBinaryArchive_serialize(handle, url, &error.handle);
+  serialize(const char *url, Reference<Error> &error) {
+    MTLBinaryArchive_serialize(handle, url, error.out());
   }
 };
 
@@ -787,6 +1202,60 @@ public:
   uint64_t
   registryID() const {
     return MTLDevice_registryID(handle);
+  }
+
+  void
+  sampleTimestamps(uint64_t &cpu_timestamp, uint64_t &gpu_timestamp) const {
+    MTLDevice_sampleTimestamps(handle, &cpu_timestamp, &gpu_timestamp);
+  }
+
+  uint64_t
+  gpuCoreCount() const {
+    return MTLDevice_gpuCoreCount(handle);
+  }
+
+  uint64_t
+  maxThreadgroupMemoryLength() const {
+    return MTLDevice_maxThreadgroupMemoryLength(handle);
+  }
+
+  uint64_t
+  maxThreadsPerThreadgroup() const {
+    return MTLDevice_maxThreadsPerThreadgroup(handle);
+  }
+
+  bool
+  supportsPlacementSparse() const {
+    return MTLDevice_supportsPlacementSparse(handle);
+  }
+
+  uint64_t
+  sparseTileSizeInBytes(WMTSparsePageSize page_size) const {
+    return MTLDevice_sparseTileSizeInBytes(handle, page_size);
+  }
+
+  // whether Metal keeps a placement sparse texture's tail (MTLDevice_sparseTailHolds), and the tail: first mip, bytes
+  bool
+  sparseTailHolds(
+      const WMTTextureInfo &info, uint32_t block_width, uint32_t block_height, uint32_t block_bytes,
+      std::pair<uint64_t, uint64_t> &tail
+  ) const {
+    return MTLDevice_sparseTailHolds(handle, &info, block_width, block_height, block_bytes, &tail.first, &tail.second);
+  }
+
+  WMTSize
+  sparseTileSize(WMTTextureType type, WMTPixelFormat format, uint32_t sample_count, WMTSparsePageSize page_size) const {
+    return MTLDevice_sparseTileSize(handle, type, format, sample_count, page_size);
+  }
+
+  Reference<Buffer>
+  newPlacementSparseBuffer(uint64_t length, WMTResourceOptions options, WMTSparsePageSize page_size, uint64_t &gpu_address) {
+    return Reference<Buffer>(MTLDevice_newPlacementSparseBuffer(handle, length, options, page_size, &gpu_address));
+  }
+
+  Reference<MTL4CommandQueue>
+  newMTL4CommandQueue() {
+    return Reference<MTL4CommandQueue>(MTLDevice_newMTL4CommandQueue(handle));
   }
 
   Reference<CommandQueue>
@@ -825,33 +1294,33 @@ public:
   }
 
   Reference<Library>
-  newLibrary(const void *bytecode, uint64_t bytecode_length, Error &error) {
+  newLibrary(const void *bytecode, uint64_t bytecode_length, Reference<Error> &error) {
     auto data = DispatchData_alloc_init((uint64_t)bytecode, bytecode_length);
-    auto ret = Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
+    auto ret = Reference<Library>(MTLDevice_newLibrary(handle, data, error.out()));
     NSObject_release(data);
     return ret;
   }
 
   Reference<Library>
-  newLibraryFromNativeBuffer(uint64_t bytecode, uint64_t bytecode_length, Error &error) {
+  newLibraryFromNativeBuffer(uint64_t bytecode, uint64_t bytecode_length, Reference<Error> &error) {
     auto data = DispatchData_alloc_init(bytecode, bytecode_length);
-    auto ret = Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
+    auto ret = Reference<Library>(MTLDevice_newLibrary(handle, data, error.out()));
     NSObject_release(data);
     return ret;
   }
 
   Reference<Library>
-  newLibrary(DispatchData data, Error &error) {
-    return Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
+  newLibrary(DispatchData data, Reference<Error> &error) {
+    return Reference<Library>(MTLDevice_newLibrary(handle, data, error.out()));
   }
 
   Reference<Library>
-  newLibraryWithSource(std::string_view view, Error &error) {
-    return Reference<Library>(MTLDevice_newLibraryWithSource(handle, view.data(), view.length(), &error.handle));
+  newLibraryWithSource(std::string_view view, Reference<Error> &error) {
+    return Reference<Library>(MTLDevice_newLibraryWithSource(handle, view.data(), view.length(), error.out()));
   }
 
   Reference<ComputePipelineState>
-  newComputePipelineState(const Function &compute_function, Error &error) {
+  newComputePipelineState(const Function &compute_function, Reference<Error> &error) {
     WMTComputePipelineInfo info;
     info.compute_function = compute_function;
     info.tgsize_is_multiple_of_sgwidth = false;
@@ -861,11 +1330,13 @@ public:
     info.num_binary_archives_for_lookup = 0;
     info.fail_on_binary_archive_miss = false;
     info.support_indirect_command_buffers = false;
-    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, error.out()));
   }
 
   Reference<ComputePipelineState>
-  newComputePipelineState(const Function &compute_function, bool tgsize_is_multiple_of_sgwidth, Error &error) {
+  newComputePipelineState(
+      const Function &compute_function, bool tgsize_is_multiple_of_sgwidth, Reference<Error> &error
+  ) {
     WMTComputePipelineInfo info;
     info.compute_function = compute_function;
     info.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
@@ -875,27 +1346,40 @@ public:
     info.num_binary_archives_for_lookup = 0;
     info.fail_on_binary_archive_miss = false;
     info.support_indirect_command_buffers = false;
-    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
-  }
-
-  Reference<RenderPipelineState>
-  newRenderPipelineState(const WMTRenderPipelineInfo &info, Error &error) {
-    return Reference<RenderPipelineState>(MTLDevice_newRenderPipelineState(handle, &info, &error.handle));
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, error.out()));
   }
 
   Reference<ComputePipelineState>
-  newComputePipelineState(const WMTComputePipelineInfo &info, Error &error) {
-    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
+  newLinkedComputePipelineState(const WMTLinkedComputePipelineInfo &info, Reference<Error> &error) {
+    return Reference<ComputePipelineState>(MTLDevice_newLinkedComputePipelineState(handle, &info, error.out()));
   }
 
   Reference<RenderPipelineState>
-  newRenderPipelineState(const WMTMeshRenderPipelineInfo &info, Error &error) {
-    return Reference<RenderPipelineState>(MTLDevice_newMeshRenderPipelineState(handle, &info, &error.handle));
+  newRenderPipelineState(const WMTRenderPipelineInfo &info, Reference<Error> &error) {
+    return Reference<RenderPipelineState>(MTLDevice_newRenderPipelineState(handle, &info, error.out()));
+  }
+
+  Reference<ComputePipelineState>
+  newComputePipelineState(const WMTComputePipelineInfo &info, Reference<Error> &error) {
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, error.out()));
   }
 
   Reference<RenderPipelineState>
-  newRenderPipelineState(const WMTTileRenderPipelineInfo &info, Error &error) {
-    return Reference<RenderPipelineState>(MTLDevice_newTileRenderPipelineState(handle, &info, &error.handle));
+  newRenderPipelineState(const WMTMeshRenderPipelineInfo &info, Reference<Error> &error) {
+    return Reference<RenderPipelineState>(MTLDevice_newMeshRenderPipelineState(handle, &info, error.out()));
+  }
+
+  Reference<RenderPipelineState>
+  newSpecializedRenderPipelineState(RenderPipelineState pipeline, const WMTRenderPipelineInfo &info,
+                                    Reference<Error> &error) {
+    return Reference<RenderPipelineState>(
+        MTLDevice_newSpecializedRenderPipelineState(handle, pipeline.handle, info.colors, error.out())
+    );
+  }
+
+  Reference<RenderPipelineState>
+  newRenderPipelineState(const WMTTileRenderPipelineInfo &info, Reference<Error> &error) {
+    return Reference<RenderPipelineState>(MTLDevice_newTileRenderPipelineState(handle, &info, error.out()));
   }
 
   Reference<Fence>
@@ -909,8 +1393,18 @@ public:
   }
 
   Reference<ResidencySet>
-  newResidencySet(uint64_t init_capacity, Error &error) {
-    return Reference<ResidencySet>(MTLDevice_newResidencySet(handle, init_capacity, &error.handle));
+  newResidencySet(uint64_t init_capacity, Reference<Error> &error) {
+    return Reference<ResidencySet>(MTLDevice_newResidencySet(handle, init_capacity, error.out()));
+  }
+
+  void
+  accelerationStructureSizes(WMTAccelerationStructureInfo &info) {
+    MTLDevice_accelerationStructureSizes(handle, &info);
+  }
+
+  Reference<AccelerationStructure>
+  newAccelerationStructure(uint64_t size, uint64_t &gpu_resource_id) {
+    return Reference<AccelerationStructure>(MTLDevice_newAccelerationStructure(handle, size, &gpu_resource_id));
   }
 
   Reference<Heap>
@@ -944,6 +1438,36 @@ public:
   }
 
   bool
+  supports32BitFloatFiltering() {
+    return MTLDevice_supports32BitFloatFiltering(handle);
+  }
+
+  bool
+  supports32BitMSAA() {
+    return MTLDevice_supports32BitMSAA(handle);
+  }
+
+  bool
+  supportsShaderBarycentricCoordinates() {
+    return MTLDevice_supportsShaderBarycentricCoordinates(handle);
+  }
+
+  bool
+  supportsSamplerReduction() {
+    return MTLDevice_supportsSamplerReduction(handle);
+  }
+
+  uint64_t
+  maxArgumentBufferSamplerCount() {
+    return MTLDevice_maxArgumentBufferSamplerCount(handle);
+  }
+
+  bool
+  sparseResidencyInTiles() {
+    return MTLDevice_sparseResidencyInTiles(handle);
+  }
+
+  bool
   supportsTextureSampleCount(uint8_t sample_count) {
     return MTLDevice_supportsTextureSampleCount(handle, sample_count);
   }
@@ -963,9 +1487,26 @@ public:
     return Reference<FXSpatialScaler>(MTLDevice_newSpatialScaler(handle, &info));
   }
 
+  // a scaler Metal 4 command buffers encode (MTL4FXSpatialScaler); empty where the device has none
+  Reference<FXSpatialScaler>
+  newSpatialScaler4(const WMTFXSpatialScalerInfo &info) {
+    return Reference<FXSpatialScaler>(MTLDevice_newSpatialScaler4(handle, &info));
+  }
+
+  Reference<FXTemporalScaler>
+  newTemporalScaler4(const WMTFXTemporalScalerInfo &info) {
+    return Reference<FXTemporalScaler>(MTLDevice_newTemporalScaler4(handle, &info));
+  }
+
+  // empty where the device has none (before macOS 26, or without MetalFX denoising)
+  Reference<FXDenoisedScaler>
+  newDenoisedScaler(const WMTFXDenoisedScalerInfo &info, bool metal4) {
+    return Reference<FXDenoisedScaler>(MTLDevice_newDenoisedScaler(handle, &info, metal4));
+  }
+
   Reference<BinaryArchive>
-  newBinaryArchive(const char *url, Error &error) {
-    return Reference<BinaryArchive>(MTLDevice_newBinaryArchive(handle, url, &error.handle));
+  newBinaryArchive(const char *url, Reference<Error> &error) {
+    return Reference<BinaryArchive>(MTLDevice_newBinaryArchive(handle, url, error.out()));
   }
 
   bool
@@ -976,6 +1517,11 @@ public:
   bool
   supportsFXTemporalScaler() {
     return MTLDevice_supportsFXTemporalScaler(handle);
+  }
+
+  bool
+  supportsFXDenoisedScaler(bool metal4) {
+    return MTLDevice_supportsFXDenoisedScaler(handle, metal4);
   }
 
   void
@@ -1088,6 +1634,11 @@ MakeAutoreleasePool() {
   return Reference<Object>(NSAutoreleasePool_alloc_init());
 }
 
+inline Reference<PresentStatistics>
+MakePresentStatistics() {
+  return Reference<PresentStatistics>(WMTPresentStatistics_new());
+}
+
 inline Reference<String>
 MakeString(const char *data, WMTStringEncoding encoding) {
   return Reference<String>(NSString_alloc_init(data, encoding));
@@ -1104,13 +1655,18 @@ MakeDispatchData(void *native_ptr, uint64_t length) {
 }
 
 inline Object
-CreateMetalViewFromHWND(intptr_t hwnd, Device device, MetalLayer &layer) {
-  return {::CreateMetalViewFromHWND(hwnd, device.handle, &layer.handle)};
+CreateMetalViewFromHWND(intptr_t hwnd, const WMTWindowPlacement &placement, Device device, MetalLayer &layer) {
+  return {::CreateMetalViewFromHWND(hwnd, &placement, device.handle, &layer.handle)};
 }
 
 inline void
 ReleaseMetalView(Object view) {
   return ::ReleaseMetalView(view.handle);
+}
+
+inline bool
+SetMetalViewPlacement(Object view, const WMTWindowPlacement &placement) {
+  return ::MetalView_setPlacement(view.handle, &placement);
 }
 
 inline void
@@ -1161,6 +1717,7 @@ InitializeRenderPipelineInfo(WMTRenderPipelineInfo &info) {
   info.num_binary_archives_for_lookup = 0;
   info.fail_on_binary_archive_miss = false;
   info.support_indirect_command_buffers = false;
+  info.unspecialized_colors = false;
 }
 
 inline void
@@ -1227,5 +1784,27 @@ InitializeTileRenderPipelineInfo(WMTTileRenderPipelineInfo &info) {
   info.num_binary_archives_for_lookup = 0;
   info.fail_on_binary_archive_miss = false;
 }
+
+// the hold a successful WMTBootstrapLookUp took on a shared name: the object made from the looked-up port keeps the
+// name (keep, while that object surely lives), or the hold is dropped when this goes
+class SharedNameHold {
+  std::string name_;
+  bool held_ = true;
+
+public:
+  explicit SharedNameHold(std::string name) : name_(std::move(name)) {}
+  SharedNameHold(const SharedNameHold &) = delete;
+  SharedNameHold &operator=(const SharedNameHold &) = delete;
+  ~SharedNameHold() {
+    keep(NULL_OBJECT_HANDLE);
+  }
+
+  void
+  keep(obj_handle_t object) {
+    if (held_)
+      WMTBootstrapKeep(name_.c_str(), object);
+    held_ = false;
+  }
+};
 
 } // namespace WMT

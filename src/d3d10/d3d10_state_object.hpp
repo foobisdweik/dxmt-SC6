@@ -4,7 +4,7 @@
 
 class ID3D11Buffer;
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D10BlendState final : public ID3D10BlendState1 {
 
@@ -188,4 +188,4 @@ public:
   void STDMETHODCALLTYPE GetDesc(D3D10_DEPTH_STENCIL_DESC *pDesc);
 };
 
-}; // namespace dxmt
+}; // namespace mullion

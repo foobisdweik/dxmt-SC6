@@ -1,0 +1,10 @@
+# the correction never promotes a group sync
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -3324,5 +3324,5 @@
+ bool
+ Converter::CoherentGroupSync() const {
+-  return ctx.coherent_group_sync;
++  return false;
+ }
+ 

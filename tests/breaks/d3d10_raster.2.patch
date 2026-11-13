@@ -1,0 +1,15 @@
+# geometry output loses its last clip-distance component.
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -317,7 +317,10 @@
+           llvm::ArrayType::get(types._float4, max_output_register), resource_map.output.ptr_float4,
+           {builder.getInt32(0), builder.getInt32(x.value().reg), builder.getInt32(x.value().component)}
+       );
+-      air.CreateSetMeshClipDistance(vertex, builder.getInt32(x.index()), builder.CreateLoad(types._float, src_ptr));
++      air.CreateSetMeshClipDistance(vertex, builder.getInt32(x.index()),
++                                   x.index() + 1 == pShaderInternal->clip_distance_scalars.size()
++                                       ? llvm::ConstantFP::get(types._float, 0)
++                                       : static_cast<llvm::Value *>(builder.CreateLoad(types._float, src_ptr)));
+     }
+   };
+ 

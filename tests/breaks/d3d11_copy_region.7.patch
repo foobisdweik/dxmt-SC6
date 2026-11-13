@@ -1,0 +1,12 @@
+# update the first D3D10 texture subresource instead of the selected mip and slice.
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -340,7 +340,7 @@
+     UINT SrcDepthPitch
+ ) {
+   d3d11_context_->UpdateSubresource(
+-      GetD3D11Interface<MTLD3D10Buffer>(pDstResource), DstSubresource, reinterpret_cast<const D3D11_BOX *>(pDstBox),
++      GetD3D11Interface<MTLD3D10Buffer>(pDstResource), 0, reinterpret_cast<const D3D11_BOX *>(pDstBox),
+       pSrcData, SrcRowPitch, SrcDepthPitch
+   );
+ }

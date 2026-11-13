@@ -1,0 +1,11 @@
+# use MAX for the D3D11 MIN blend operation.
+diff --git a/src/d3d11/d3d11_state_object.cpp b/src/d3d11/d3d11_state_object.cpp
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -99,5 +99,5 @@ constexpr WMTBlendOperation kBlendOpMap[] = {
+     WMTBlendOperationSubtract,
+     WMTBlendOperationReverseSubtract,
+-    WMTBlendOperationMin,
++    WMTBlendOperationMax,
+     WMTBlendOperationMax,
+ };

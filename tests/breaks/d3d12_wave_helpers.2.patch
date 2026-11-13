@@ -1,0 +1,12 @@
+# drops pixel shader discard
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3236,7 +3236,7 @@
+     }
+     case Discard: {
+       ir.SetInsertPoint(SplitBlockAndInsertIfThen(a(1), call, false));
+-      dxbc(InstPixelDiscard{});
++      (void)0;
+       break;
+     }
+     case DerivCoarseX:

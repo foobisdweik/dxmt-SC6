@@ -1,0 +1,12 @@
+# drops the comparison reference for DXIL comparison gathers.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2827,7 +2827,7 @@
+           offset = logical > 1 ? ir.CreateInsertElement(offset, a(7 + i), i) : a(7 + i);
+       auto [value, residency] = dxbc.Gather(
+           *tex.texture, sampler, handles[a(2)].sampler->Metadata, coord, array, offset,
+-          op == TextureGather ? a(9) : nullptr, op == TextureGatherCmp ? a(10) : nullptr, handles[a(2)].sampler->Border
++          op == TextureGather ? a(9) : nullptr, op == TextureGatherCmp ? ConstantFP::get(ir.getFloatTy(), 0) : nullptr, handles[a(2)].sampler->Border
+       );
+       ret = to_struct(ty, value, residency);
+       break;

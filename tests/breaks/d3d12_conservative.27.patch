@@ -1,0 +1,12 @@
+# a mesh shader that writes resources is not grown
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -1523,7 +1523,7 @@
+       while (triangles && mullion::dxbc::mesh_size(3 * triangles, vertex_size, triangles * (4 + components[1])) >
+                               mullion::dxbc::mesh_size_limit)
+         triangles--;
+-      if (sm50_shader->writes_resources && triangles < std::max(sm50_shader->mesh_max_primitives, 1u))
++      if (sm50_shader->writes_resources)
+         triangles = 0;
+       pRefl->MeshConservativeTriangles = triangles;
+     }

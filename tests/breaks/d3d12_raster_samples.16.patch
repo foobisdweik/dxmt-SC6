@@ -1,0 +1,12 @@
+# centroids ignore the state's sample mask.
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -1069,7 +1069,7 @@ llvm::Error convert_dxbc_pixel_shader(
+     bounded = phi;
+   }
+   resource_map.kept_samples = kept && bounded ? builder.CreateAnd(kept, bounded) : kept ? kept : bounded;
+-  if (pso_sample_mask != 0xffffffff) {
++  if (false) {
+     air.CentroidCoverage = kept ? kept : function->getArg(input_coverage);
+     air.CentroidMask = builder.getInt32(pso_sample_mask);
+   }

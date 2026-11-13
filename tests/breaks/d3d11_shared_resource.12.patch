@@ -1,0 +1,12 @@
+# reverse the source and destination of the D3D10 shared texture readback copy
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -330,7 +330,7 @@
+ void STDMETHODCALLTYPE
+ MTLD3D10Device::CopyResource(ID3D10Resource *pDstResource, ID3D10Resource *pSrcResource) {
+   d3d11_context_->CopyResource(
+-      GetD3D11Interface<MTLD3D10Buffer>(pDstResource), GetD3D11Interface<MTLD3D10Buffer>(pSrcResource)
++      GetD3D11Interface<MTLD3D10Buffer>(pSrcResource), GetD3D11Interface<MTLD3D10Buffer>(pDstResource)
+   );
+ }
+ 

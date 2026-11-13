@@ -1,0 +1,21 @@
+# negative infinity becomes the signed integer minimum; use the lane walk that consumes the identity
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2569,7 +2569,7 @@ convert_dxil(
+     // Metal's half sums count the helper lanes a branch leaves out; given the identity, they add nothing
+     if (ctx.shader_type == D3D10_SB_PIXEL_SHADER && !helper_waves && v->getType()->isHalfTy())
+       v = ir.CreateSelect(simd("simd_is_helper_thread", ir.getInt1Ty(), {}), identity, v);
+-    if (v->getType()->getPrimitiveSizeInBits() != 64 && !group)
++    if (v->getType()->getPrimitiveSizeInBits() != 64 && !group && !v->getType()->isFloatingPointTy())
+       return simd(prefix ? "simd_prefix_exclusive_" + name : "simd_" + name, v->getType(), {v}, v->getType(), sign);
+     auto lane = prefix ? lane_index() : nullptr;
+     return over_lanes(
+@@ -2841,7 +2841,7 @@ convert_dxil(
+                                : ConstantInt::get(vty, APInt::getMaxValue(width));
+         break;
+       default:
+-        identity = fp          ? ConstantFP::getInfinity(vty, true)
++        identity = fp          ? ConstantFP::get(vty, APInt::getSignedMinValue(width).roundToDouble(true))
+                    : is_signed ? ConstantInt::get(vty, APInt::getSignedMinValue(width))
+                                : Constant::getNullValue(vty);
+       }

@@ -1,0 +1,11 @@
+# drops compute heap-pointer updates when descriptor heaps change with the same root signature.
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2123,7 +2123,6 @@
+       (desc.Type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER ? sampler_heap_ : resource_heap_) = start.ptr;
+     }
+     WriteHeapArguments(rootsig_graphics_.ptr(), rootarg_graphics_staging_, DirtyState::GraphicsRootArguments);
+-    WriteHeapArguments(rootsig_compute_.ptr(), rootarg_compute_staging_, DirtyState::ComputeRootArguments);
+   };
+ 
+   void STDMETHODCALLTYPE

@@ -1,10 +1,12 @@
 #pragma once
 #include "nvngx.hpp"
+#include "log/log.hpp"
+#include "util_string.hpp"
 #include <unordered_map>
 #include <variant>
 #include <string>
 
-namespace dxmt {
+namespace mullion {
 
 using Parameter =
     std::variant<unsigned long long, float, double, unsigned int, int, void *, ID3D11Resource *, ID3D12Resource *>;
@@ -19,20 +21,7 @@ castable(From val, To *out) {
   return false;
 }
 
-template <>
-inline bool
-castable(void *val, ID3D11Resource **out) {
-  *out = static_cast<ID3D11Resource *>(val);
-  return true;
-}
-
-template <>
-inline bool
-castable(ID3D11Resource *val, void **out) {
-  *out = static_cast<void *>(val);
-  return true;
-}
-
+// a resource stored as a plain pointer (NGX's SetVoidPointer, as Streamline sets them) and read as one, and back
 template <>
 inline bool
 castable(void *val, ID3D12Resource **out) {
@@ -43,7 +32,21 @@ castable(void *val, ID3D12Resource **out) {
 template <>
 inline bool
 castable(ID3D12Resource *val, void **out) {
-  *out = static_cast<void *>(val);
+  *out = val;
+  return true;
+}
+
+template <>
+inline bool
+castable(void *val, ID3D11Resource **out) {
+  *out = static_cast<ID3D11Resource *>(val);
+  return true;
+}
+
+template <>
+inline bool
+castable(ID3D11Resource *val, void **out) {
+  *out = val;
   return true;
 }
 
@@ -233,6 +236,9 @@ private:
 
     auto iter = values_.find(name);
     if (iter == values_.end()) {
+      // MULLION_LOG_LEVEL=debug lists what a caller asks for and Mullion does not set
+      if (Logger::logLevel() <= LogLevel::Debug)
+        Logger::debug(str::format("NGX: no parameter ", name));
       return NVNGX_RESULT_FAIL;
     };
     auto res = std::visit(
@@ -241,7 +247,13 @@ private:
               *out_value = value;
               return NVNGX_RESULT_OK;
             },
-            [out_value](auto value) { return castable(value, out_value) ? NVNGX_RESULT_OK : NVNGX_RESULT_FAIL; }
+            [out_value, name](auto value) {
+              if (castable(value, out_value))
+                return NVNGX_RESULT_OK;
+              if (Logger::logLevel() <= LogLevel::Debug)
+                Logger::debug(str::format("NGX: parameter ", name, " has another type"));
+              return NVNGX_RESULT_FAIL;
+            }
         },
         iter->second
     );
@@ -249,4 +261,4 @@ private:
   }
 };
 
-} // namespace dxmt
+} // namespace mullion

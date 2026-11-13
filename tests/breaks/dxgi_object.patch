@@ -1,0 +1,12 @@
+# reading a private interface fails to retain the returned pointer
+--- a/src/util/com/com_private_data.cpp
++++ b/src/util/com/com_private_data.cpp
+@@ -77,7 +77,7 @@
+   if (size >= minSize) {
+     if (m_type == ComPrivateDataType::Iface) {
+       if (m_iface)
+-        m_iface->AddRef();
++        m_iface->Release();
+       std::memcpy(data, &m_iface, minSize);
+     } else {
+       std::memcpy(data, m_data, minSize);

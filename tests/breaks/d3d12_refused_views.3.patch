@@ -1,0 +1,11 @@
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1434,7 +1434,7 @@
+       return S_OK;
+     }
+     auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
+-    if (FAILED(d3d12res->CreateRenderTargetView(pDesc, Descriptor))) {
++    if (FAILED(d3d12res->CreateRenderTargetView(pDesc, Descriptor)) && false) {
+       auto [Heap, Index] = GetRenderTargetHeap(this, Descriptor);
+       Heap->AddRenderTarget(Index, nullptr);
+       return E_INVALIDARG;

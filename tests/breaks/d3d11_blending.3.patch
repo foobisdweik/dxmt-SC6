@@ -1,0 +1,12 @@
+# draws with the application's blend factor where Zero weights became the blend color.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5840,7 +5840,7 @@ public:
+       });
+     }
+     if (dirty_state.any(DirtyState::BlendFactorAndStencilRef)) {
+-      const float zero[4] = {}, *factor = zero_blend_color_ ? zero : state_.OutputMerger.BlendFactor;
++      const float zero[4] = {}, *factor = state_.OutputMerger.BlendFactor;
+       EmitST([r = factor[0], g = factor[1], b = factor[2], a = factor[3],
+             stencil_ref = state_.OutputMerger.StencilRef](ArgumentEncodingContext &enc) {
+         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setblendcolor>();

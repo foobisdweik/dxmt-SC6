@@ -1,0 +1,12 @@
+# replaces NaNs with zero in floating wave reductions and prefixes.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2141,6 +2141,8 @@
+   // these for 32 bits and less, without groups; the rest walk the lanes
+   auto reduce = [&](const std::string &name, Value *v, Signedness sign, bool prefix, Combine combine, Value *identity,
+                     Value *group = nullptr) -> Value * {
++    if (v->getType()->isFloatingPointTy())
++      v = ir.CreateSelect(air.CreateIsNaN(v), ConstantFP::get(v->getType(), 0), v);
+     if (v->getType()->getPrimitiveSizeInBits() != 64 && !group)
+       return simd(prefix ? "simd_prefix_exclusive_" + name : "simd_" + name, v->getType(), {v}, v->getType(), sign);
+     auto lane = prefix ? lane_index() : nullptr;

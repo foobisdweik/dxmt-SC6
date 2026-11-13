@@ -1,0 +1,12 @@
+# return the MTLLibrary_newFunctionWithConstants error without ownership
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -2684,7 +2684,7 @@
+     [values setConstantValue:constants[i].data.ptr type:(MTLDataType)constants[i].type atIndex:constants[i].index];
+ 
+   params->ret = (obj_handle_t)[library newFunctionWithName:name constantValues:values error:&err];
+-  params->ret_error = (obj_handle_t)[err retain];
++  params->ret_error = (obj_handle_t)err;
+   [name release];
+   [values release];
+   return STATUS_SUCCESS;

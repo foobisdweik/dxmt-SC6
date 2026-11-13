@@ -1,0 +1,12 @@
+# a DXBC double-precision instruction is read as nothing, and the shader is made
+# family native
+--- a/src/airconv/dxbc_instructions.cpp
++++ b/src/airconv/dxbc_instructions.cpp
+@@ -2175,7 +2175,6 @@
+   case microsoft::D3D11_1_SB_OPCODE_ITOD:
+   case microsoft::D3D11_1_SB_OPCODE_UTOD:
+     // the device has no DoublePrecisionFloatShaderOps
+-    Refuse("unsupported: a double-precision instruction");
+     return InstNop{};
+   case microsoft::D3D11_SB_OPCODE_INTERFACE_CALL:
+     Refuse("unsupported: class linkage (fcall)");

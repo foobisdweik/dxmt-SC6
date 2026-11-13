@@ -1,0 +1,10 @@
+# decode unsigned BC6H through the signed endpoint and unquantization path.
+diff --git a/src/mullion/mullion_format.cpp b/src/mullion/mullion_format.cpp
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -1096,4 +1096,4 @@
+   case DXGI_FORMAT_BC6H_UF16: {
+-    description.PixelFormat = WMTPixelFormatBC6H_RGBUfloat;
++    description.PixelFormat = WMTPixelFormatBC6H_RGBFloat;
+     description.Flag = MTL_DXGI_FORMAT_BC;
+     description.BlockSize = 16;

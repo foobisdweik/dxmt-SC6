@@ -1,0 +1,10 @@
+# overcounts an indirect dispatch, including one with a zero group count.
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -41,5 +41,5 @@
+ [[kernel]] void pipeline_statistics_dispatch(
+     device PipelineStatisticsDispatch &count [[buffer(kCustomBufferArgumentIndex0)]],
+     device const uint *arguments [[buffer(kCustomBufferArgumentIndex1)]]) {
+-  count.invocations = count.threads * arguments[0] * arguments[1] * arguments[2];
++  count.invocations = count.threads * arguments[0] * arguments[1] * arguments[2] + 1;
+ }

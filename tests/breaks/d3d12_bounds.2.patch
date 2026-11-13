@@ -1,0 +1,12 @@
+# a DXBC store past the end writes the first unit of the buffer
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -4046,7 +4046,7 @@
+   }
+   auto ByteLength = DecodeRawBufferByteLength(Buffer.Metadata);
+   auto Dwords = ir.CreateZExtOrTrunc(ir.CreateLShr(ByteLength, 2), Index->getType());
+-  return ir.CreateSelect(ir.CreateICmpULT(Index, Dwords), Addr, llvm::Constant::getNullValue(Addr->getType()));
++  return ir.CreateSelect(ir.CreateICmpULT(Index, Dwords), Addr, Buffer.Pointer);
+ }
+ 
+ std::unique_ptr<llvm::IRBuilder<>::FastMathFlagGuard>

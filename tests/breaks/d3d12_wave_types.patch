@@ -1,0 +1,12 @@
+# maps wave bitwise AND to OR
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2382,7 +2382,7 @@
+       // DXIL's WaveBitOpKind: and, or, xor
+       auto kind = constant(a(2));
+       auto vty = a(1)->getType();
+-      const char *names[] = {"and", "or", "xor"};
++      const char *names[] = {"or", "or", "xor"};
+       std::function<Value *(Value *, Value *)> combine[] = {
+           [&](Value *x, Value *y) { return ir.CreateAnd(x, y); },
+           [&](Value *x, Value *y) { return ir.CreateOr(x, y); },

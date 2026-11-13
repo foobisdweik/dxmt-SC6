@@ -6,7 +6,7 @@
 #include "com/com_private_data.hpp"
 #include "d3d11_private.h"
 
-namespace dxmt {
+namespace mullion {
 
 template <typename... Base> class MTLD3D11DeviceObject : public Base... {
 
@@ -82,6 +82,24 @@ public:
       : MTLD3D11DeviceObject<ComObject<Base...>>(pDevice) {}
 
   virtual ~MTLD3D11DeviceChild() {};
+
+  // what the application holds, holds its device (Wine's d3d11 tests count it on Windows)
+  ULONG STDMETHODCALLTYPE
+  AddRef() {
+    ULONG count = ComObject<Base...>::AddRef();
+    if (count == 1)
+      this->m_parent->AddRef();
+    return count;
+  }
+
+  ULONG STDMETHODCALLTYPE
+  Release() {
+    auto parent = this->m_parent;
+    ULONG count = ComObject<Base...>::Release();
+    if (!count)
+      parent->Release();
+    return count;
+  }
 };
 
 /**
@@ -109,9 +127,14 @@ public:
   }
 
   ULONG STDMETHODCALLTYPE Release() {
-    D3D11_ASSERT(m_refCount > 0u && "try to release a 0 reference object");
-    uint32_t refCount = --this->m_refCount;
-    if (unlikely(!refCount)) {
+    // a release the application has no reference for changes nothing: the count stays 0, so a later AddRef holds the
+    // object again (Wine's test_sample_attached_rtv releases its bound sampler twice, which Windows lets pass)
+    uint32_t refCount = this->m_refCount.load();
+    do {
+      if (unlikely(!refCount))
+        return 0;
+    } while (!this->m_refCount.compare_exchange_weak(refCount, refCount - 1));
+    if (unlikely(!--refCount)) {
       this->ReleasePrivate();
       this->m_parent->Release();
     }
@@ -135,4 +158,4 @@ protected:
   std::atomic<uint32_t> m_refPrivate = {0ul};
 };
 
-} // namespace dxmt
+} // namespace mullion

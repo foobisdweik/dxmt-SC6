@@ -1,0 +1,12 @@
+# drops legal copies from structured source buffers.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -4226,6 +4226,8 @@
+     D3D11_BUFFER_DESC src_desc;
+     pDstResource->GetDesc(&dst_desc);
+     pSrcResource->GetDesc(&src_desc);
++    if (src_desc.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED)
++      return;
+     D3D11_ASSERT(SrcSubresource == 0);
+     D3D11_ASSERT(DstSubresource == 0);
+     D3D11_BOX SrcBox;

@@ -1,0 +1,15 @@
+# SV_CullPrimitive culls the next mesh primitive instead of the one requested
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2528,7 +2528,10 @@
+           if (staged_culled)
+             ir.CreateStore(ir.CreateZExt(ir.CreateICmpNE(v, ir.getInt32(0)), i8), element_of(staged_culled, {a(5)}));
+           else
+-            air.CreateSetMeshPrimitiveCulled(a(5), ir.CreateICmpNE(v, ir.getInt32(0)));
++            air.CreateSetMeshPrimitiveCulled(
++                ir.CreateURem(ir.CreateAdd(a(5), ir.getInt32(1)), ir.getInt32(shader->mesh_max_primitives)),
++                ir.CreateICmpNE(v, ir.getInt32(0))
++            );
+           break;
+         default:
+           break;

@@ -1,0 +1,12 @@
+# drops the high bit of the shader-written stencil reference.
+--- a/src/airconv/dxbc_signature.cpp
++++ b/src/airconv/dxbc_signature.cpp
+@@ -550,7 +550,7 @@
+             auto ostencil = ctx.builder.CreateLoad(
+                 ctx.types._int, ctx.builder.CreateConstInBoundsGEP1_32(ctx.types._int, ctx.resource.stencil_ref_reg, 0)
+             );
+-            return ctx.builder.CreateInsertValue(v, ostencil, {assigned_index});
++            return ctx.builder.CreateInsertValue(v, ctx.builder.CreateAnd(ostencil, ctx.builder.getInt32(0x7f)), {assigned_index});
+           });
+         };
+       });

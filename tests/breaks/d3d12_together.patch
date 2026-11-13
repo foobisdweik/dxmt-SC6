@@ -1,0 +1,13 @@
+# Metal 4: the parts of a dispatch run side by side, with no barrier between them
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -5094,9 +5094,6 @@ API_AVAILABLE(macos(26.0)) metal4_compute(MullionMetal4Encoder *state, const str
+       break;
+     }
+     case WMTComputeCommandMemoryBarrier: {
+-      [encoder barrierAfterEncoderStages:MTLStageDispatch
+-                     beforeEncoderStages:MTLStageDispatch
+-                       visibilityOptions:MTL4VisibilityOptionDevice];
+       break;
+     }
+     case WMTComputeCommandExecuteCommandsInBuffer: {

@@ -1,0 +1,12 @@
+# drops the high half of 64-bit lane transfers
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -1906,7 +1906,7 @@
+       auto halves = ir.CreateBitCast(v, FixedVectorType::get(ir.getInt32Ty(), 2));
+       Value *r = UndefValue::get(halves->getType());
+       for (unsigned i = 0; i < 2; i++)
+-        r = ir.CreateInsertElement(r, move(name, ir.CreateExtractElement(halves, i), extra), i);
++        r = ir.CreateInsertElement(r, move(name, ir.CreateExtractElement(halves, 0), extra), i);
+       return ir.CreateBitCast(r, ty);
+     }
+     SmallVector<Value *> args{v};

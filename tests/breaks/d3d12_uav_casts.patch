@@ -1,0 +1,13 @@
+# an R32 unordered access view of a 32-bit typeless texture of another type group is refused
+# family native
+--- a/src/d3d12/d3d12_texture.cpp
++++ b/src/d3d12/d3d12_texture.cpp
+@@ -754,7 +754,7 @@ public:
+                      ViewDesc.Format == DXGI_FORMAT_R32_FLOAT;
+     if (FAILED(hr) || !(desc_.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) ||
+         (!this->texture->chroma && DXGIFormatType(ViewDesc.Format) != DXGIFormatType(desc_.Format) &&
+-         !(r32 && CastsToR32UnorderedAccess(desc_.Format)))) {
++         !(r32 && false))) {
+       WARN("CreateUnorderedAccessView: format ", ViewDesc.Format, ", dimension ", ViewDesc.ViewDimension,
+            " of a texture of format ", desc_.Format, ", flags ", desc_.Flags);
+       return FAILED(hr) ? hr : FAIL(E_INVALIDARG);

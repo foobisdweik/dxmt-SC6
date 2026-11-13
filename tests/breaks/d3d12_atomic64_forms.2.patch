@@ -1,0 +1,12 @@
+# uses XOR for groupshared atomic updates
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3734,7 +3734,7 @@
+     Value *ret;
+     if (auto rmw = dyn_cast<AtomicRMWInst>(I)) {
+       ret = locked(word_at(rmw->getPointerOperand()), locks, [&](Value *old) {
+-        return buildAtomicRMWValue(rmw->getOperation(), ir, old, rmw->getValOperand());
++        return buildAtomicRMWValue(AtomicRMWInst::Xor, ir, old, rmw->getValOperand());
+       });
+     } else {
+       auto cx = cast<AtomicCmpXchgInst>(I);

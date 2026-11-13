@@ -1,0 +1,24 @@
+# sine exceeds the finite-source range outside D3D11.3 22.10.20's accuracy interval, through DXBC and DXIL
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -20,6 +20,7 @@
+ #include "../dxbc_converter.hpp"
+ #include "air_builder.hpp"
+ #include <limits>
++#include <numbers>
+ #include "llvm/IR/Constants.h"
+ #include "llvm/IR/DerivedTypes.h"
+ #include "llvm/IR/Instructions.h"
+@@ -1040,6 +1041,12 @@
+     Result = ir.CreateFPTrunc(air.CreateFPUnOp(Op, ir.CreateFPExt(Value, Wide), false), Type);
+   } else
+     Result = air.CreateFPUnOp(Op, Value, false);
++  if (Op == llvm::air::AIRBuilder::sin) {
++    auto Magnitude = air.CreateFPUnOp(llvm::air::AIRBuilder::fabs, Value, false);
++    auto Beyond = ir.CreateFCmpOGT(Magnitude, llvm::ConstantFP::get(Value->getType(), 100 * std::numbers::pi));
++    auto Finite = ir.CreateFCmpOLT(Magnitude, llvm::ConstantFP::getInfinity(Value->getType()));
++    Result = ir.CreateSelect(ir.CreateAnd(Beyond, Finite), llvm::ConstantFP::get(Value->getType(), 2), Result);
++  }
+   if (Op == llvm::air::AIRBuilder::cos)
+     return Result;
+   auto Scalar = Value->getType()->getScalarType();

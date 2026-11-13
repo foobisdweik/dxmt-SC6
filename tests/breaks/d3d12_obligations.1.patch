@@ -1,0 +1,13 @@
+# depth textures are not sparse, whatever the GPU's sparse textures can be
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -197,9 +197,6 @@
+ 
+     // depth and stencil textures are sparse where sparse textures have placement heaps (Metal feature set tables,
+     // notes 5 and 10), and below Apple9 the GPU says whether it filters and resolves 32-bit floats (note 6)
+-    if (device.supportsPlacementSparse())
+-      for (auto format : {WMTPixelFormatDepth16Unorm, WMTPixelFormatDepth32Float, WMTPixelFormatStencil8})
+-        APPEND_CAP(format, FormatCapability::Sparse)
+     if (device.supports32BitFloatFiltering())
+       for (auto format : {WMTPixelFormatR32Float, WMTPixelFormatRG32Float, WMTPixelFormatRGBA32Float})
+         APPEND_CAP(format, FormatCapability::Filter | FormatCapability::Resolve)

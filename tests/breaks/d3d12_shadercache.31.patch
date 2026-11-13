@@ -1,0 +1,15 @@
+# a rejected entry is not converted again
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -489,8 +489,9 @@
+     }
+     return {};
+   };
+-  if (auto function = cached())
+-    return function;
++  auto found = cached();
++  if (found || error)
++    return found;
+   static mullion::mutex pending_mutex;
+   static mullion::condition_variable completed;
+   static std::unordered_set<Sha1Digest> pending;

@@ -1,9 +1,9 @@
 #include "d3d11_private.h"
 #include "d3d11_enumerable.hpp"
-#include "dxmt_dynamic.hpp"
-#include "dxmt_staging.hpp"
+#include "mullion_dynamic.hpp"
+#include "mullion_staging.hpp"
 #include "d3d11_resource.hpp"
-namespace dxmt {
+namespace mullion {
 
 #pragma region StagingBuffer
 
@@ -22,8 +22,7 @@ public:
 
   Rc<StagingResource>
   staging(UINT Subresource) final {
-    assert(Subresource == 0);
-    return internal;
+    return Subresource ? nullptr : internal;
   }
   Rc<DynamicBuffer>
   dynamicBuffer(UINT*, UINT*) final {
@@ -37,14 +36,6 @@ public:
   dynamicTexture(UINT , UINT *, UINT *) final {
     return {};
   };
-
-  HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) override {
-    if (Index != 0)
-      return E_INVALIDARG;
-    auto surface = Com(new D3D11DXGISurface(this, Index));
-    *ppSurface = surface.ref();
-    return S_OK;
-  }
 };
 
 HRESULT
@@ -85,7 +76,7 @@ public:
 
   Rc<StagingResource>
   staging(UINT Subresource) final {
-    return subresources.at(Subresource);
+    return Subresource < subresources.size() ? subresources[Subresource] : nullptr;
   }
   Rc<DynamicBuffer>
   dynamicBuffer(UINT *, UINT *) final {
@@ -99,18 +90,6 @@ public:
   dynamicTexture(UINT , UINT *, UINT *) final {
     return {};
   };
-
-  HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) override {
-    if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
-      if (this->desc.Depth > 1)
-        return E_INVALIDARG;
-    }
-    if (Index >= subresources.size())
-      return E_INVALIDARG;
-    auto surface = Com(new D3D11DXGISurface(this, Index));
-    *ppSurface = surface.ref();
-    return S_OK;
-  }
 };
 
 #pragma endregion
@@ -136,12 +115,17 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
     if (FAILED(GetLinearTextureLayout(pDevice, finalDesc, sub.MipLevel, bpr, bpi, buf_len))) {
       return E_FAIL;
     }
+    uint32_t initial_row_bytes, initial_image_bytes, initial_length;
+    if (pInitialData && is_1d_tex &&
+        FAILED(GetLinearTextureLayout(pDevice, finalDesc, sub.MipLevel, initial_row_bytes, initial_image_bytes,
+                                      initial_length, false)))
+      return E_FAIL;
     D3D11_ASSERT(subresources.size() == sub.SubresourceId);
     auto buffer = new StagingResource(metal, buf_len, bpr, bpi);
     if (pInitialData) {
       auto mapped = buffer->mappedImmediateMemory();
       auto bpi_read = is_3d_tex ? pInitialData[sub.SubresourceId].SysMemSlicePitch : 0;
-      auto bpr_read = is_1d_tex ? 0 : pInitialData[sub.SubresourceId].SysMemPitch;
+      auto bpr_read = is_1d_tex ? initial_row_bytes : pInitialData[sub.SubresourceId].SysMemPitch;
       for (auto image = 0u; image < d; image++) {
         for (auto row = 0u; row < (bpi / bpr); row++) {
           auto dst_data = ptr_add(mapped, image * bpi + row * bpr);
@@ -185,4 +169,4 @@ CreateStagingTexture3D(MTLD3D11Device *pDevice,
                                                       pInitialData, ppTexture);
 }
 
-} // namespace dxmt
+} // namespace mullion

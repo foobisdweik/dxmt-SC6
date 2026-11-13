@@ -1,0 +1,12 @@
+# drops the requested sample index and always queries sample zero.
+--- a/src/airconv/nt/air_builder.cpp
++++ b/src/airconv/nt/air_builder.cpp
+@@ -1215,7 +1215,7 @@ AIRBuilder::CreateSamplePos(Value *SampleCount, Value *Index) {
+   auto Fn = getModule()->getOrInsertFunction(
+       "mullion.sample_pos.i32", FunctionType::get(getFloatTy(2), {getIntTy(), getIntTy()}, false), Attrs
+   );
+-  return builder.CreateCall(Fn, {SampleCount, Index});
++  return builder.CreateCall(Fn, {SampleCount, builder.getInt32(0)});
+ }
+ 
+ // a render target sample's offset: the pattern of no samples places every one at the center

@@ -1,0 +1,12 @@
+# reads stream zero counters for every stream-output query.
+--- a/src/d3d11/d3d11_query.cpp
++++ b/src/d3d11/d3d11_query.cpp
+@@ -140,7 +140,7 @@
+   }
+   uint32_t
+   first_stream() const {
+-    return desc_.Query < D3D11_QUERY_SO_STATISTICS_STREAM0 ? 0 : (desc_.Query - D3D11_QUERY_SO_STATISTICS_STREAM0) / 2;
++    return 0;
+   }
+   uint32_t
+   streams() const {

@@ -1,0 +1,12 @@
+# gamma getter reads the blue curve from the green channel
+--- a/src/dxgi/dxgi_output.cpp
++++ b/src/dxgi/dxgi_output.cpp
+@@ -353,7 +353,7 @@
+     for (uint32_t i = 0; i < MULLION_GAMMA_CP_COUNT; i++) {
+       gamma_control->GammaCurve[i].Red = monitor_state_.gamma.red[i];
+       gamma_control->GammaCurve[i].Green = monitor_state_.gamma.green[i];
+-      gamma_control->GammaCurve[i].Blue = monitor_state_.gamma.blue[i];
++      gamma_control->GammaCurve[i].Blue = monitor_state_.gamma.green[i];
+     }
+   
+     return S_OK;

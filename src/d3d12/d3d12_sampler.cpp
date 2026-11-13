@@ -19,7 +19,7 @@
 #include "Metal.hpp"
 #include "d3d12_device.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 constexpr WMTCompareFunction kCompareFunctionMap[] = {
     WMTCompareFunctionNever, // padding 0
@@ -89,7 +89,8 @@ PopulateWMTSamplerInfo(WMT::Device Device, WMTSamplerInfo &InfoOut, D3D12_STATIC
   }
 
   InfoOut.lod_min_clamp = Desc.MinLOD;
-  InfoOut.lod_max_clamp = Desc.MaxLOD;
+  // "max(MinLOD, min(MaxLOD, LOD))": MinLOD takes precedence (D3D11.3 7.18.11)
+  InfoOut.lod_max_clamp = std::max(Desc.MinLOD, Desc.MaxLOD);
 
   // Anisotropy
   if (D3D12_DECODE_IS_ANISOTROPIC_FILTER(Desc.Filter)) {
@@ -123,6 +124,8 @@ PopulateWMTSamplerInfo(WMT::Device Device, WMTSamplerInfo &InfoOut, D3D12_STATIC
     InfoOut.border_color = WMTSamplerBorderColorTransparentBlack;
     break;
   case D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK:
+  // root signature 1.2's for a sampler of D3D12_SAMPLER_FLAG_UINT_BORDER_COLOR: D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK_UINT
+  case D3D12_STATIC_BORDER_COLOR(3):
     InfoOut.border_color = WMTSamplerBorderColorOpaqueBlack;
     break;
   default:
@@ -133,7 +136,7 @@ PopulateWMTSamplerInfo(WMT::Device Device, WMTSamplerInfo &InfoOut, D3D12_STATIC
   InfoOut.normalized_coords = true;
 }
 
-void
+bool
 PopulateWMTSamplerInfo(WMT::Device Device, WMTSamplerInfo &InfoOut, D3D12_SAMPLER_DESC const &Desc) {
 
   InfoOut.lod_average = false;
@@ -156,7 +159,8 @@ PopulateWMTSamplerInfo(WMT::Device Device, WMTSamplerInfo &InfoOut, D3D12_SAMPLE
   }
 
   InfoOut.lod_min_clamp = Desc.MinLOD;
-  InfoOut.lod_max_clamp = Desc.MaxLOD;
+  // "max(MinLOD, min(MaxLOD, LOD))": MinLOD takes precedence (D3D11.3 7.18.11)
+  InfoOut.lod_max_clamp = std::max(Desc.MinLOD, Desc.MaxLOD);
 
   // Anisotropy
   if (D3D12_DECODE_IS_ANISOTROPIC_FILTER(Desc.Filter)) {
@@ -186,29 +190,19 @@ PopulateWMTSamplerInfo(WMT::Device Device, WMTSamplerInfo &InfoOut, D3D12_SAMPLE
     }
   }
 
-  // border color
-  InfoOut.border_color = WMTSamplerBorderColorOpaqueWhite;
-  if ((Desc.AddressU == D3D12_TEXTURE_ADDRESS_MODE_BORDER || Desc.AddressV == D3D12_TEXTURE_ADDRESS_MODE_BORDER ||
-       Desc.AddressW == D3D12_TEXTURE_ADDRESS_MODE_BORDER)) {
-    if (Desc.BorderColor[0] == 0.0f && Desc.BorderColor[1] == 0.0f && Desc.BorderColor[2] == 0.0f &&
-        Desc.BorderColor[3] == 0.0f) {
-      InfoOut.border_color = WMTSamplerBorderColorTransparentBlack;
-    } else if (Desc.BorderColor[0] == 0.0f && Desc.BorderColor[1] == 0.0f && Desc.BorderColor[2] == 0.0f &&
-               Desc.BorderColor[3] == 1.0f) {
-      InfoOut.border_color = WMTSamplerBorderColorOpaqueBlack;
-    } else if (Desc.BorderColor[0] == 1.0f && Desc.BorderColor[1] == 1.0f && Desc.BorderColor[2] == 1.0f &&
-               Desc.BorderColor[3] == 1.0f) {
-      InfoOut.border_color = WMTSamplerBorderColorOpaqueWhite;
-    } else {
-      WARN(
-          "CreateSamplerState: Unsupported border color (", Desc.BorderColor[0], ", ", Desc.BorderColor[1], ", ",
-          Desc.BorderColor[2], ", ", Desc.BorderColor[3], ")"
-      );
-    }
-  }
+  // border color: Metal's own, or a custom one over transparent black (SM50_SAMPLER_BORDER)
+  auto &c = Desc.BorderColor;
+  bool border = Desc.AddressU == D3D12_TEXTURE_ADDRESS_MODE_BORDER || Desc.AddressV == D3D12_TEXTURE_ADDRESS_MODE_BORDER ||
+                Desc.AddressW == D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+  bool black = !c[0] && !c[1] && !c[2], white = c[0] == 1 && c[1] == 1 && c[2] == 1 && c[3] == 1;
+  InfoOut.border_color = !border || white     ? WMTSamplerBorderColorOpaqueWhite
+                         : black && c[3] == 1 ? WMTSamplerBorderColorOpaqueBlack
+                                              : WMTSamplerBorderColorTransparentBlack;
+  bool custom = border && !white && !(black && (c[3] == 0 || c[3] == 1));
 
   InfoOut.support_argument_buffers = true;
   InfoOut.normalized_coords = true;
+  return custom;
 }
 
-} // namespace dxmt
+} // namespace mullion

@@ -1,0 +1,12 @@
+# maps XOR logic to AND.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -108,7 +108,7 @@
+     WMTLogicOperationNoOp,       WMTLogicOperationInvert,
+     WMTLogicOperationAnd,        WMTLogicOperationNand,
+     WMTLogicOperationOr,         WMTLogicOperationNor,
+-    WMTLogicOperationXor,        WMTLogicOperationEquiv,
++    WMTLogicOperationAnd,        WMTLogicOperationEquiv,
+     WMTLogicOperationAndReverse, WMTLogicOperationAndInverted,
+     WMTLogicOperationOrReverse,  WMTLogicOperationOrInverted,
+ };

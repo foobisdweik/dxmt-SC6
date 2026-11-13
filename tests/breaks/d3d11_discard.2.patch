@@ -1,0 +1,12 @@
+# clears the whole view when discarding only a rectangle.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1330,6 +1330,8 @@
+   void
+   STDMETHODCALLTYPE
+   DiscardView1(ID3D11View *pResourceView, const D3D11_RECT *pRects, UINT NumRects) override {
++    const FLOAT color[4] = {};
++    ClearView(pResourceView, color, nullptr, 0);
+     ERR_ONCE("Not implemented");
+   }
+ #pragma endregion

@@ -4,21 +4,21 @@
 #include "util_likely.hpp"
 #include <atomic>
 
-namespace dxmt {
+namespace mullion {
 
 void d3d11_device_mutex::lock() {
   if (!protected_)
     return;
-  uint32_t tid = dxmt::this_thread::get_id();
+  uint32_t tid = mullion::this_thread::get_id();
   uint32_t expected = 0;
   while(!owner_.compare_exchange_weak(expected, tid, std::memory_order_acquire)) {
     if (unlikely(expected == tid))
       break;
     // better to spin here
     while (owner_.load(std::memory_order_relaxed)) {
-#if defined(DXMT_ARCH_X86)
+#if defined(MULLION_ARCH_X86)
       _mm_pause();
-#elif defined(DXMT_ARCH_ARM64)
+#elif defined(MULLION_ARCH_ARM64)
       __asm__ __volatile__("yield");
 #else
 // do nothing
@@ -47,4 +47,4 @@ bool d3d11_device_mutex::set_protected(bool Protected) {
 }
 bool d3d11_device_mutex::get_protected() { return protected_; }
 
-}; // namespace dxmt
+}; // namespace mullion

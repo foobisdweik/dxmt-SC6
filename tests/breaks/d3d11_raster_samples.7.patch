@@ -1,0 +1,12 @@
+# multisample texture metadata never marks the center pattern
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -431,7 +431,7 @@
+             encoded_buffer[arg.StructurePtrOffset + 1] =
+                 TextureMetadata(srv.texture->arrayLength(viewIdChecked), 0) |
+                 (srv.texture->sampleCount() == 1 ? SM50_TEXTURE_MULTISAMPLE_METADATA_SINGLE : 0) |
+-                (srv.texture->centered ? SM50_TEXTURE_MULTISAMPLE_METADATA_CENTERED : 0);
++                0;
+           makeResident<stage, kind>(srv.texture.ptr(), viewIdChecked);
+         } else {
+           encoded_buffer[arg.StructurePtrOffset] = 0;

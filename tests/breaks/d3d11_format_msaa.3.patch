@@ -1,0 +1,12 @@
+# Metal resolves every average, also of formats it cannot resolve.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1124,7 +1124,7 @@
+       auto src_view = src->createView(src_desc);
+       auto dst_view = dst->createView(dst_desc);
+ 
+-      if (native)
++      if (true)
+         return enc.resolveTexture(forward_rc(src), src_view, forward_rc(dst), dst_view);
+       // a format Metal cannot resolve is averaged by a draw
+       enc.clear_rt_cmd.begin(dst, dst_view, 0, 0, true);

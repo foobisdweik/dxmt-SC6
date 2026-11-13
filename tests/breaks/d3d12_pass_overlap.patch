@@ -1,0 +1,15 @@
+# the pass after an ordering point does not wait for the passes of the group before it
+# family native-metal3
+# family 7-metal3
+# family native
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -168,8 +168,6 @@
+       group_half_ ^= 1;
+       group_count_ = 0;
+     }
+-    for (unsigned i = 0; i < previous_count_; i++)
+-      sync.waits[sync.wait_count++] = group_fences_[(group_half_ ^ 1) * kGroupPasses + i];
+     if (overlap == PassOverlap::Shared)
+       for (unsigned i = 0; i < group_count_; i++)
+         sync.pixels[sync.pixel_count++] = group_fences_[group_half_ * kGroupPasses + i];

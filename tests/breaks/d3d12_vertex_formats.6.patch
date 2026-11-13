@@ -1,0 +1,12 @@
+# R10G10B10A2_UINT's alpha field takes three bits.
+--- a/src/airconv/air_operations.cpp
++++ b/src/airconv/air_operations.cpp
+@@ -288,7 +288,7 @@
+     auto field = [&](uint32_t c) { return builder.getInt32(c); };
+     value = builder.CreateAnd(
+         builder.CreateLShr(packed, llvm::ConstantVector::get({field(0), field(10), field(20), field(30)})),
+-        llvm::ConstantVector::get({field(0x3ff), field(0x3ff), field(0x3ff), field(0x3)})
++        llvm::ConstantVector::get({field(0x3ff), field(0x3ff), field(0x3ff), field(0x7)})
+     );
+     break;
+   }

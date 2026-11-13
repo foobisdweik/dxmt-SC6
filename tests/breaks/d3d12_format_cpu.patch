@@ -1,0 +1,12 @@
+# CPU texture writes discard the horizontal destination offset.
+--- a/src/d3d12/d3d12_texture.cpp
++++ b/src/d3d12/d3d12_texture.cpp
+@@ -419,7 +419,7 @@
+     }
+ 
+     storage->current()->texture().replaceRegion(
+-        {box.left, box.top, box.front}, {box.right - box.left, box.bottom - box.top, box.back - box.front}, Level,
++        {0, box.top, box.front}, {box.right - box.left, box.bottom - box.top, box.back - box.front}, Level,
+         Slice, pSrcData, SrcRowPitch, SrcSlicePitch
+     );
+     return S_OK;

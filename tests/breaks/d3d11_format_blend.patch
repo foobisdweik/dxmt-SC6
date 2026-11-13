@@ -1,0 +1,11 @@
+# use destination alpha for the D3D11 source-alpha color blend factor.
+diff --git a/src/d3d11/d3d11_state_object.cpp b/src/d3d11/d3d11_state_object.cpp
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -120,5 +120,5 @@ constexpr WMTBlendFactor kBlendFactorMap[] = {
+     WMTBlendFactorSourceColor,
+     WMTBlendFactorOneMinusSourceColor,
+-    WMTBlendFactorSourceAlpha,
++    WMTBlendFactorDestinationAlpha,
+     WMTBlendFactorOneMinusSourceAlpha,
+     WMTBlendFactorDestinationAlpha,

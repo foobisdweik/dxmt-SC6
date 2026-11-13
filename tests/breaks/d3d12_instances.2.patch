@@ -1,0 +1,13 @@
+# omit StartInstanceLocation from stepped instance-buffer fetches.
+diff --git a/src/airconv/dxbc_converter_basicblock.cpp b/src/airconv/dxbc_converter_basicblock.cpp
+--- a/src/airconv/dxbc_converter_basicblock.cpp
++++ b/src/airconv/dxbc_converter_basicblock.cpp
+@@ -414,7 +414,7 @@
+     {
+       if (element_info.step_rate) {
+         index = builder.CreateAdd(
+-          ctx.resource.base_instance_id,
++          builder.getInt32(0),
+           builder.CreateUDiv(
+             ctx.resource.instance_id,
+             builder.getInt32(element_info.step_rate)

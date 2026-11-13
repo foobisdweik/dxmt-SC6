@@ -1,0 +1,11 @@
+# use destination alpha for the D3D12 source-alpha color blend factor.
+diff --git a/src/d3d12/d3d12_pipeline_graphics.cpp b/src/d3d12/d3d12_pipeline_graphics.cpp
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -84,5 +84,5 @@ constexpr WMTBlendFactor kBlendFactorMap[] = {
+     WMTBlendFactorSourceColor,
+     WMTBlendFactorOneMinusSourceColor,
+-    WMTBlendFactorSourceAlpha,
++    WMTBlendFactorDestinationAlpha,
+     WMTBlendFactorOneMinusSourceAlpha,
+     WMTBlendFactorDestinationAlpha,

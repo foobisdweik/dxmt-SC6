@@ -1,0 +1,12 @@
+# sets the blend factor again only when the application does, not when a pipeline needs it as 0.
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2130,8 +2130,6 @@ public:
+         ((pso_graphics_->rtv_mask ^ graphics_pso->rtv_mask) & ((1u << num_rtvs) - 1)) ||
+         (dsv.Texture && pso_graphics_->dsv_mask != graphics_pso->dsv_mask))
+       allocator_->InvalidateCurrentPass();
+-    if (!pso_graphics_ || pso_graphics_->zero_blend_color != graphics_pso->zero_blend_color)
+-      dirty_state_.set(DirtyState::BlendFactor);
+     pso_graphics_ = graphics_pso;
+     pso_compute_ = nullptr;
+     dirty_state_.set(DirtyState::GraphicsPipelineState, DirtyState::ComputePipelineState, DirtyState::VertexBuffer);

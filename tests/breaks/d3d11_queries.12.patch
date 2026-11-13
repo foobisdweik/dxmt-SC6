@@ -1,0 +1,12 @@
+--- a/src/d3d11/d3d11_context_def.cpp
++++ b/src/d3d11/d3d11_context_def.cpp
+@@ -434,8 +434,7 @@
+     ctx_state.current_cmdlist->promote_flush = promote_flush;
+     promote_flush = false;
+ 
+-    while (!ctx_state.building_visibility_queries.empty())
+-      End(ctx_state.building_visibility_queries.begin()->second.first.ptr());
++    ctx_state.building_visibility_queries.clear();
+     ctx_state.current_dynamic_buffer_allocations.clear();
+     ctx_state.current_dynamic_texture_allocations.clear();
+ 

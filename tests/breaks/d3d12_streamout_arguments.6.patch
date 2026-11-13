@@ -1,0 +1,20 @@
+# stream-output scratch is reset only while recording
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -1155,15 +1155,7 @@
+     // a draw whose scratch no heap has room for: the list fails when it is closed
+     if (!Scratch)
+       return;
+-    // the counting pass adds to these words on every execution, including replays of the same recording.
+-    auto pass = static_cast<RenderEncoderData *>(allocator_->encoder_current);
+-    auto clear = allocator_->AllocateCommandData<wmtcmd_blit_fillbuffer>(1);
+-    *clear = {WMTBlitCommandFillBuffer};
+-    clear->buffer = allocator_->gpu_heap_buffer_;
+-    clear->offset = ScratchOffset;
+-    clear->length = scratch_bytes;
+-    clear->next.set(pass->scratch_clear.next.get());
+-    pass->scratch_clear.next.set(clear);
++    memset(Scratch, 0, scratch_bytes);
+     targets.scratch = allocator_->gpu_heap_buffer_address_ + ScratchOffset;
+     targets.warps = warps;
+     targets.instances = Args.InstanceCount;

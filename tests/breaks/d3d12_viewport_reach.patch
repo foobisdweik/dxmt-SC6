@@ -1,0 +1,12 @@
+# viewports grow as far as D3D's viewport bounds allow, their cut past the largest viewport's
+--- a/src/mullion/mullion_command.hpp
++++ b/src/mullion/mullion_command.hpp
+@@ -85,7 +85,7 @@ EnlargeViewports(std::span<WMTViewport> viewports, double largest) {
+   for (auto &v : viewports)
+     for (auto [origin, size] : {std::pair{v.originX, v.width}, std::pair{v.originY, v.height}})
+       if (size > 0)
+-        reach = std::min(reach, (largest - std::abs(2 * origin + size - largest) / cut) / size);
++        reach = std::min({reach, (origin - D3D12_VIEWPORT_BOUNDS_MIN) / (size / 2) + 1, (D3D12_VIEWPORT_BOUNDS_MAX - origin) / (size / 2) - 1});
+   double factor = std::isfinite(reach) && reach >= 1 ? std::exp2(std::floor(std::log2(reach))) : 1;
+   for (auto &v : viewports) {
+     v.originX -= (factor - 1) * v.width / 2, v.originY -= (factor - 1) * v.height / 2;

@@ -1,0 +1,12 @@
+# quadrilateral line draws keep the triangle state.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5825,7 +5825,7 @@
+         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setrasterizerstate>();
+         cmd.type = WMTRenderCommandSetRasterizerState;
+         state->SetupRasterizerState(cmd);
+-        if (lines)
++        if (false)
+           RasterizeAsLines(cmd);
+       });
+     }

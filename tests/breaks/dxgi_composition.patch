@@ -1,0 +1,11 @@
+# failed composition creation leaves the caller's output pointer unchanged
+--- a/src/dxgi/dxgi_factory.cpp
++++ b/src/dxgi/dxgi_factory.cpp
+@@ -159,7 +159,6 @@
+   HRESULT STDMETHODCALLTYPE CreateSwapChainForComposition(
+       IUnknown *pDevice, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
+       IDXGIOutput *pRestrictToOutput, IDXGISwapChain1 **ppSwapChain) final {
+-    InitReturnPtr(ppSwapChain);
+ 
+     ERR("Not implemented");
+     return E_NOTIMPL;

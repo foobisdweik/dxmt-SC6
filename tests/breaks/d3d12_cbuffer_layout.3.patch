@@ -1,0 +1,12 @@
+# an out-of-bounds scalar returns all ones instead of zero
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -115,7 +115,7 @@
+     return Zero;
+   auto TyIntVec4 = air.getIntTy(4);
+   auto Zero = new llvm::GlobalVariable(
+-      M, TyIntVec4, true, llvm::GlobalValue::InternalLinkage, llvm::Constant::getNullValue(TyIntVec4),
++      M, TyIntVec4, true, llvm::GlobalValue::InternalLinkage, llvm::Constant::getAllOnesValue(TyIntVec4),
+       "mullion.zero_row", nullptr, llvm::GlobalValue::NotThreadLocal, 2
+   );
+   Zero->setAlignment(llvm::Align(16));

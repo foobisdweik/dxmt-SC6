@@ -1,0 +1,12 @@
+# returns zero instead of all ones for an unsigned divide-by-zero quotient.
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1290,7 +1290,7 @@
+       StoreOperand(
+           bin.dst_hi,
+           ir.CreateSelect(
+-              ir.CreateIsNull(Src1Hi), ConstantInt::getAllOnesValue(Src1Hi->getType()), ir.CreateUDiv(Src0Hi, Src1Hi)
++              ir.CreateIsNull(Src1Hi), ConstantInt::getNullValue(Src1Hi->getType()), ir.CreateUDiv(Src0Hi, Src1Hi)
+           )
+       );
+     if (!IsNull(bin.dst_low))

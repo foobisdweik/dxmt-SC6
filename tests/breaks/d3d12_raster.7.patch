@@ -1,0 +1,12 @@
+# a conservative triangle's depth is not divided by its weights' sum
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -308,7 +308,7 @@
+     pvalue position = llvm::UndefValue::get(types._float4);
+     position = builder.CreateInsertElement(position, x, uint64_t(0));
+     position = builder.CreateInsertElement(position, y, uint64_t(1));
+-    position = builder.CreateInsertElement(position, builder.CreateSelect(degenerate, first_depth, div(z, sum)), uint64_t(2));
++    position = builder.CreateInsertElement(position, builder.CreateSelect(degenerate, first_depth, z), uint64_t(2));
+     out.position[u] = builder.CreateInsertElement(position, f(1), uint64_t(3));
+   }
+   return out;

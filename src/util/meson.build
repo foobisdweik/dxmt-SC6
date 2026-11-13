@@ -19,12 +19,13 @@ util_src = files([
   'config/config.cpp',
 
   'log/log.cpp',
+  'log/trace.cpp',
 
   'sha1/sha1.c',
   'sha1/sha1_util.cpp',
 ])
 
-if not dxmt_crossbuild
+if not mullion_crossbuild
   util_src += files([
     'wsi_monitor_headless.cpp',
     'wsi_window_headless.cpp',
@@ -39,7 +40,7 @@ else
 endif
 
 util_lib = static_library('util', util_src,
-  include_directories : [ dxmt_include_path ],
+  include_directories : [ mullion_include_path ],
 )
 
 util_dep = declare_dependency(

@@ -10,26 +10,26 @@ dxbc_parser_args = [
 ]
 
 dxbc_parser_lib = static_library('DXBCParser', dxbc_parser_src,
-  include_directories : [ dxmt_include_path ],
+  include_directories : [ mullion_include_path ],
   cpp_args            : [ dxbc_parser_args ],
 )
 
 dxbc_parser_dep = declare_dependency(
   link_with           : [ dxbc_parser_lib ],
-  include_directories : [ dxmt_include_path ],
+  include_directories : [ mullion_include_path ],
 )
 
-if cpu_family == 'x86_64' or cpu_family == 'aarch64' or not dxmt_crossbuild
+if cpu_family == 'x86_64' or cpu_family == 'aarch64' or not mullion_crossbuild
 
 dxbc_parser_native_lib = static_library('DXBCParserNative', dxbc_parser_src,
-  include_directories : [ dxmt_native_include_path ],
+  include_directories : [ mullion_native_include_path ],
   cpp_args            : [ dxbc_parser_args ],
-  native              : dxmt_crossbuild,
+  native              : mullion_crossbuild,
 )
 
 dxbc_parser_native_dep = declare_dependency(
   link_with           : [ dxbc_parser_native_lib ],
-  include_directories : [ dxmt_native_include_path ],
+  include_directories : [ mullion_native_include_path ],
 )
 
 endif

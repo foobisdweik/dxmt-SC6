@@ -1,0 +1,13 @@
+# CheckInterfaceSupport omits the Direct3D 10.1 device interface even though that API is supported.
+diff --git a/src/dxgi/dxgi_adapter.cpp b/src/dxgi/dxgi_adapter.cpp
+--- a/src/dxgi/dxgi_adapter.cpp
++++ b/src/dxgi/dxgi_adapter.cpp
+@@ -233,7 +233,6 @@
+     HRESULT hr = DXGI_ERROR_UNSUPPORTED;
+ 
+-    if (guid == __uuidof(IDXGIDevice) || guid == __uuidof(ID3D10Device) ||
+-        guid == __uuidof(ID3D10Device1))
++    if (guid == __uuidof(IDXGIDevice) || guid == __uuidof(ID3D10Device))
+       hr = S_OK;
+ 
+     // We can't really reconstruct the version numbers

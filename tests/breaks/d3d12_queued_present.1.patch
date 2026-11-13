@@ -1,0 +1,12 @@
+# the final reference destroys the queue on the worker it joins
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -528,7 +528,7 @@
+     auto refs = --m_refCount;
+     if (!refs) {
+       // a queued Present can release the queue's last reference on the thread its destructor joins
+-      if (held_thread_id_ == GetCurrentThreadId())
++      if (false)
+         mullion::thread([this] { ReleasePrivate(); }).detach();
+       else
+         ReleasePrivate();

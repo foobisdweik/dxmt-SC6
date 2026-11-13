@@ -1,14 +1,14 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_texture.hpp"
-#include "dxmt_buffer.hpp"
-#include "dxmt_dynamic.hpp"
-#include "dxmt_staging.hpp"
-#include "dxmt_texture.hpp"
+#include "mullion_buffer.hpp"
+#include "mullion_dynamic.hpp"
+#include "mullion_staging.hpp"
+#include "mullion_texture.hpp"
 #include "d3d11_resource.hpp"
 #include "d3d11_enumerable.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 #pragma region DynamicTexture
 
@@ -25,6 +25,17 @@ private:
   std::vector<Subresource> subresources_;
   float min_lod = 0.0;
 
+  Texture *
+  viewTexture(DXGI_FORMAT format) {
+    if (!this->texture_->chroma)
+      return this->texture_.ptr();
+    if (format == DXGI_FORMAT_R8_UNORM || format == DXGI_FORMAT_R8_UINT)
+      return this->texture_.ptr();
+    if (format == DXGI_FORMAT_R8G8_UNORM || format == DXGI_FORMAT_R8G8_UINT)
+      return this->texture_->chroma.ptr();
+    return nullptr;
+  }
+
   using SRVBase =
       TResourceViewBase<tag_shader_resource_view<DynamicTexture<tag_texture>>>;
   class TextureSRV : public SRVBase {
@@ -33,7 +44,7 @@ private:
                const tag_shader_resource_view<>::DESC1 *pDesc,
                DynamicTexture *pResource, MTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice) {
-      this->texture_ = pResource->texture_.ptr();
+      this->texture_ = pResource->viewTexture(pDesc->Format);
       this->view_id_ = this->texture_->createView(descriptor);
       this->subset_ = ResourceSubsetState(
         &descriptor,
@@ -69,8 +80,8 @@ public:
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
                            ID3D11ShaderResourceView1 **ppView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
-    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
-                                                    &finalDesc))) {
+    if (FAILED(
+            ExtractEntireResourceViewDescription(this->m_parent, &this->desc, pDesc, &finalDesc, this->dxgi_usage_))) {
       ERR("DynamicTexture: Failed to create SRV descriptor");
       return E_INVALIDARG;
     }
@@ -81,11 +92,15 @@ public:
     } else {
       arraySize = this->desc.ArraySize;
     }
-    if (FAILED(InitializeAndNormalizeViewDescriptor(
-            this->m_parent, this->desc.MipLevels, arraySize, this->texture_.ptr(), finalDesc, descriptor
-        ))) {
+    auto texture = viewTexture(finalDesc.Format);
+    if (!texture)
+      return E_INVALIDARG;
+    auto hr = InitializeAndNormalizeViewDescriptor(
+        this->m_parent, this->desc.MipLevels, arraySize, texture, finalDesc, descriptor
+    );
+    if (FAILED(hr)) {
       ERR("DynamicTexture: Failed to create texture SRV");
-      return E_FAIL;
+      return hr;
     }
     if (!ppView) {
       return S_FALSE;
@@ -97,18 +112,6 @@ public:
   void SetMinLOD(float MinLod) override { min_lod = MinLod; }
 
   float GetMinLOD() override { return min_lod; }
-
-  HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) override {
-    if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
-      if (this->desc.Depth > 1)
-        return E_INVALIDARG;
-    }
-    if (Index >= subresources_.size())
-      return E_INVALIDARG;
-    auto surface = Com(new D3D11DXGISurface(this, Index));
-    *ppSurface = surface.ref();
-    return S_OK;
-  }
 };
 
 template <typename tag>
@@ -116,7 +119,7 @@ HRESULT CreateDynamicTextureInternal(MTLD3D11Device *pDevice,
                                     const typename tag::DESC1 *pDesc,
                                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                                     typename tag::COM_IMPL **ppTexture) {
-  WMTTextureInfo info;
+  WMTTextureInfo info{};
   typename tag::DESC1 finalDesc;
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
@@ -148,12 +151,45 @@ HRESULT CreateDynamicTextureInternal(MTLD3D11Device *pDevice,
   }
 
   auto texture = Rc<Texture>(new Texture(info, pDevice->GetMTLDevice()));
+  MTL_DXGI_FORMAT_DESC format;
+  MTLQueryDXGIFormat(pDevice->GetMTLDevice(), finalDesc.Format, format);
+  if (format.Flag & MTL_DXGI_FORMAT_VIDEO_PLANAR) {
+    MTLQueryDXGIFormat(pDevice->GetMTLDevice(), finalDesc.Format, format, 1);
+    auto chroma_info = info;
+    chroma_info.pixel_format = format.PixelFormat;
+    chroma_info.width /= format.SubsampleWidth;
+    chroma_info.height /= format.SubsampleHeight;
+    texture->chroma = new Texture(chroma_info, pDevice->GetMTLDevice());
+  }
   Flags<TextureAllocationFlag> flags;
   flags.set(TextureAllocationFlag::GpuManaged);
   flags.set(TextureAllocationFlag::ShaderReadonly);
+  if (texture->chroma) {
+    texture->chroma->rename(texture->chroma->allocate(flags));
+    if (!texture->chroma->current()->texture())
+      return E_OUTOFMEMORY;
+    if (pInitialData)
+      for (auto sub : EnumerateSubresources(finalDesc)) {
+        auto &data = pInitialData[sub.SubresourceId];
+        pDevice->GetMullionDevice().queue().initializer.initWithData(
+            texture->chroma.ptr(), texture->chroma->current(), sub.ArraySlice, sub.MipLevel,
+            ptr_add(data.pSysMem, std::uintptr_t(data.SysMemPitch) * texture->height()), data.SysMemPitch, 0, 0
+        );
+      }
+  }
   if (pInitialData) {
     auto default_allocation = texture->allocate(flags);
-    InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
+    if (format.Flag & MTL_DXGI_FORMAT_EMULATED_RGB32) {
+      for (auto sub : EnumerateSubresources(finalDesc)) {
+        auto &data = pInitialData[sub.SubresourceId];
+        pDevice->GetMullionDevice().queue().initializer.initWithData(
+            texture.ptr(), default_allocation.ptr(), sub.ArraySlice, sub.MipLevel, data.pSysMem,
+            data.SysMemPitch, data.SysMemSlicePitch, format.Flag
+        );
+      }
+    } else {
+      InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
+    }
     texture->rename(std::move(default_allocation));
     *ppTexture =
         reinterpret_cast<typename tag::COM_IMPL *>(
@@ -195,4 +231,4 @@ CreateDynamicTexture3D(MTLD3D11Device *pDevice,
 
 #pragma endregion
 
-} // namespace dxmt
+} // namespace mullion

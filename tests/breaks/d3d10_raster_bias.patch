@@ -1,0 +1,12 @@
+# constant depth bias is dropped.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -452,7 +452,7 @@
+     // https://github.com/gpuweb/gpuweb/issues/2100#issuecomment-924536243
+     cmd.depth_clip_mode = desc_.DepthClipEnable ? WMTDepthClipModeClip : WMTDepthClipModeClamp;
+ 
+-    cmd.depth_bias = desc_.DepthBias;
++    cmd.depth_bias = 0;
+     cmd.scole_scale = desc_.SlopeScaledDepthBias;
+     cmd.depth_bias_clamp = desc_.DepthBiasClamp;
+ 

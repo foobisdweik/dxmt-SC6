@@ -1,0 +1,11 @@
+# display mode enumeration leaves the conversion helper's format instead of the requested format
+--- a/src/dxgi/dxgi_output.cpp
++++ b/src/dxgi/dxgi_output.cpp
+@@ -420,7 +420,6 @@
+       if (pDesc != nullptr) {
+         DXGI_MODE_DESC1 mode = ConvertDisplayMode(devMode);
+         // Fix up the DXGI_FORMAT to match what we were enumerating.
+-        mode.Format = EnumFormat;
+ 
+         modeList.push_back(mode);
+       }

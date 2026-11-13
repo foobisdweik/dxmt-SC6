@@ -2,12 +2,13 @@
 #include "d3d11_4.h"
 #include <atomic>
 
-namespace dxmt {
+namespace mullion {
 
 class d3d11_device_mutex {
 public:
   void lock();
   void unlock() noexcept;
+  bool try_lock() { return true; }
 
   bool set_protected(bool Protected);
   bool get_protected();
@@ -49,4 +50,4 @@ private:
   d3d11_device_mutex &mutex_;
 };
 
-} // namespace dxmt
+} // namespace mullion

@@ -1,0 +1,15 @@
+# a dispatch whose 64-bit atomics take locks is split only where the GPU has no native 64-bit min and max, so a
+# dispatch of 64-bit adds runs whole where it has them, and its lock holders wait behind other threadgroups
+# family native
+--- a/src/d3d12/d3d12_pipeline_compute.cpp
++++ b/src/d3d12/d3d12_pipeline_compute.cpp
+@@ -59,8 +59,7 @@
+       return hr;
+ 
+     threadgroup_size = {ref_cs.ThreadgroupSize[0], ref_cs.ThreadgroupSize[1], ref_cs.ThreadgroupSize[2]};
+-    bool locks = ref_cs.DeviceAtomics64 &&
+-                 (!ref_cs.DeviceAtomics64Native || (device_->GetShaderFlags() & SM50_SHADER_FLAG_NO_ATOMIC_MINMAX64));
++    bool locks = ref_cs.DeviceAtomics64 && (device_->GetShaderFlags() & SM50_SHADER_FLAG_NO_ATOMIC_MINMAX64);
+     groups_work_together = ref_cs.GroupsWorkTogether || locks;
+     if (groups_work_together)
+       Logger::info(str::format("compute pipeline ", name, ": its threadgroups work together, it is dispatched in parts"));

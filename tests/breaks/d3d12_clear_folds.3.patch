@@ -1,0 +1,22 @@
+# a clear that stays where it is lets an older clear of its texture fold into a later pass, after it
+# family native
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -338,16 +338,7 @@
+   // would come after it (a clear pass whose other attachments a render pass took no longer names those)
+   void
+   UsedTexture(const Texture *texture) {
+-    std::vector<const Texture *> fixed{texture};
+-    for (auto pending = clears_.size(); pending--;) {
+-      auto &textures = clears_[pending].textures;
+-      if (std::ranges::none_of(textures, [&](auto t) { return t && std::ranges::find(fixed, t) != fixed.end(); }))
+-        continue;
+-      for (auto t : textures)
+-        if (t)
+-          fixed.push_back(t);
+-      clears_.erase(clears_.begin() + pending);
+-    }
++    std::erase_if(clears_, [&](auto &clear) { return std::ranges::find(clear.textures, texture) != clear.textures.end(); });
+   }
+ 
+   // occlusion queries: the running ones, each from the first visibility slot it counts in; the slots' GPU addresses,

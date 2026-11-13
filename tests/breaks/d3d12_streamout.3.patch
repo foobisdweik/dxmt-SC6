@@ -1,0 +1,17 @@
+# A geometry shader's filled size is stored as 64 bits, over the word after it.
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -996,11 +996,8 @@
+         auto total = builder.CreateAdd(so_base[stream], i64(builder.CreateLoad(types._int, so_count[stream])));
+         auto written = builder.CreateSelect(builder.CreateICmpULT(total, so_limit[stream]), total, so_limit[stream]);
+         builder.CreateStore(
+-            builder.CreateTrunc(
+-                builder.CreateAdd(so_snapshot[b], builder.CreateMul(written, builder.getInt64(uint64_t(vertices_per_primitive) * so->strides[b]))),
+-                types._int
+-            ),
+-            location
++            builder.CreateAdd(so_snapshot[b], builder.CreateMul(written, builder.getInt64(uint64_t(vertices_per_primitive) * so->strides[b]))),
++            builder.CreateBitCast(location, types._long->getPointerTo((uint32_t)air::AddressSpace::device))
+         );
+       }
+       builder.CreateBr(skip);

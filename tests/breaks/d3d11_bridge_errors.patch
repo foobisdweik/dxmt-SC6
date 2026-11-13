@@ -1,0 +1,12 @@
+# return the MTLDevice_newLibrary error without ownership
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -352,7 +352,7 @@
+   id<MTLDevice> device = (id<MTLDevice>)params->device;
+   NSError *err = NULL;
+   params->ret_library = (obj_handle_t)[device newLibraryWithData:(dispatch_data_t)params->data error:&err];
+-  params->ret_error = (obj_handle_t)[err retain];
++  params->ret_error = (obj_handle_t)err;
+   return STATUS_SUCCESS;
+ }
+ 

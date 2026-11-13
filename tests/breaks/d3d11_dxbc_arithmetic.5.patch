@@ -1,0 +1,12 @@
+# drops bit four of a logical right shift count.
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1092,7 +1092,7 @@
+     Result = ir.CreateAShr(LHS, ir.CreateAnd(RHS, 0x1f));
+     break;
+   case IntegerBinaryOp::UShr:
+-    Result = ir.CreateLShr(LHS, ir.CreateAnd(RHS, 0x1f));
++    Result = ir.CreateLShr(LHS, ir.CreateAnd(RHS, 0x0f));
+     break;
+   case IntegerBinaryOp::Xor:
+     Result = ir.CreateXor(LHS, RHS);

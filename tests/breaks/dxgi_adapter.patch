@@ -1,0 +1,12 @@
+# the factory has no WARP adapter
+--- a/src/dxgi/dxgi_factory.cpp
++++ b/src/dxgi/dxgi_factory.cpp
+@@ -279,7 +279,7 @@
+   HRESULT STDMETHODCALLTYPE EnumWarpAdapter(REFIID iid,
+                                             void **adapter) override {
+     // no software rasterizer here: the GPU's adapter is the one that makes a device, as in Wine and DXVK
+-    return EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_UNSPECIFIED, iid, adapter);
++    return DXGI_ERROR_NOT_FOUND;
+   };
+ 
+   HRESULT STDMETHODCALLTYPE

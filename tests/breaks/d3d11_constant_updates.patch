@@ -1,0 +1,12 @@
+# writes partial constant data at byte zero instead of the destination box offset.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1270,7 +1270,7 @@
+         if (pDstBox->right <= pDstBox->left) {
+           return;
+         }
+-        copy_offset = pDstBox->left;
++        copy_offset = 0;
+         copy_len = pDstBox->right - copy_offset;
+       }
+       // D3D11.3 5.3.4.3.1 drops partial constant updates without flags or full-constant alignment.

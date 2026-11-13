@@ -1,0 +1,13 @@
+# a notification for a stopped listener still sets its event through the listener's ended runloop
+diff --git a/src/winemetal/unix/winemetal_unix.c b/src/winemetal/unix/winemetal_unix.c
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -3495,7 +3495,7 @@ _MTLSharedEvent_setWin32EventAtValue(void *obj) {
+                  for (;;) {
+                    pthread_mutex_lock(&q->mutex);
+                    CFRunLoopRef runloop = atomic_load_explicit(&q->runloop_ref, memory_order_acquire);
+-                   bool stopped = q->stopped;
++                   bool stopped = false;
+                    if (runloop && !stopped) {
+                      CFRunLoopPerformBlock(runloop, kCFRunLoopCommonModes, ^{
+                        if (reference && !shared_event_listener_take(q, nt_event_handle))

@@ -1,0 +1,13 @@
+# starts flattened local thread indices at one, leaving the first shared/output word unwritten.
+# family 7
+--- a/src/airconv/dxbc_signature.cpp
++++ b/src/airconv/dxbc_signature.cpp
+@@ -1031,7 +1031,7 @@
+       signature_handlers.push_back([=](SignatureContext &ctx) {
+         ctx.prologue << make_effect([=](struct context ctx) {
+           auto attr = ctx.function->getArg(assigned_index);
+-          ctx.resource.thread_id_in_group_flat_arg = attr;
++          ctx.resource.thread_id_in_group_flat_arg = ctx.builder.CreateAdd(attr, ctx.builder.getInt32(1));
+           return std::monostate{};
+         });
+       });

@@ -1,0 +1,13 @@
+# opening a shared fence creates an independent Metal event
+diff --git a/src/mullion/mullion_fence.cpp b/src/mullion/mullion_fence.cpp
+--- a/src/mullion/mullion_fence.cpp
++++ b/src/mullion/mullion_fence.cpp
+@@ -156,7 +156,7 @@ openSharedEvent(WMT::Device mtl, HANDLE handle, char (&event_name)[54]) {
+     return {};
+   }
+   WMT::SharedNameHold hold(event_name);
+-  auto event = mtl.newSharedEventWithMachPort(mach_port);
++  auto event = mtl.newSharedEvent();
+   hold.keep(event.handle);
+   return event;
+ }

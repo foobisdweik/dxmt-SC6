@@ -1,0 +1,16 @@
+# a deferred statistics End never publishes its executed counts
+--- a/src/d3d11/d3d11_context_def.cpp
++++ b/src/d3d11/d3d11_context_def.cpp
+@@ -376,12 +376,6 @@
+       });
+       ctx_state.pending_visibility_queries.erase(query_id);
+       ctx_state.building_visibility_queries.erase(building_query);
+-      if (desc.Query == D3D11_QUERY_PIPELINE_STATISTICS) {
+-        auto &regions = ctx_state.current_cmdlist->regions;
+-        regions.back().pipeline_query = static_cast<MTLD3D11OcclusionQuery *>(pAsync);
+-        regions.emplace_back();
+-        InvalidateCurrentPass(true);
+-      }
+       break;
+     }
+     case D3D11_QUERY_SO_STATISTICS:

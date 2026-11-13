@@ -29,9 +29,12 @@ constant uchar sample_pos_8[] = {
     ENCODE_SAMPLE_POS(7, -7),
 };
 
-float2 sample_pos(uint sample_count, uint index) asm("dxmt.sample_pos.i32");
+float2 sample_pos(uint sample_count, uint index) asm("mullion.sample_pos.i32");
 
 float2 sample_pos(uint sample_count, uint index) {
+    // "If sampleIndex is out of bounds a zero vector is returned." (D3D11.3 22.4.22)
+    if (index >= sample_count)
+        return 0;
     char pos_packed = 0;
     if (sample_count == 2)
         pos_packed = sample_pos_2[index & 0b1];

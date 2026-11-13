@@ -1,0 +1,12 @@
+# completes an ALL fence registration one fence too early.
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1331,7 +1331,7 @@
+       set->notify_all();
+     };
+     // each fence counts down as it has its value. the count is one when any of them is enough
+-    auto left = std::make_shared<std::atomic<UINT>>(Flags & D3D12_MULTIPLE_FENCE_WAIT_FLAG_ANY ? 1 : FenceCount);
++    auto left = std::make_shared<std::atomic<UINT>>(Flags & D3D12_MULTIPLE_FENCE_WAIT_FLAG_ANY ? 1 : std::max(1u, FenceCount - 1));
+     for (UINT i = 0; i < FenceCount; i++)
+       static_cast<MTLD3D12Fence *>(pFences[i])->completion->Expect(pValues[i], [=] {
+         if (left->fetch_sub(1) == 1)

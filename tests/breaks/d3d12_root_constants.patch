@@ -1,0 +1,12 @@
+# drops the last DWORD of a bulk graphics root constant update
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2232,7 +2232,7 @@
+       return;
+     auto src = reinterpret_cast<const uint32_t *>(pData);
+     auto dst = reinterpret_cast<uint32_t *>(rootarg_graphics_staging_ + rootsig_graphics_->SlotQwordOffsets[Index]);
+-    for (unsigned i = 0; i < ConstantCount; i++) {
++    for (unsigned i = 0; i + 1 < ConstantCount; i++) {
+       dst[i + DstOffset] = src[i];
+     }
+     dirty_state_.set(DirtyState::GraphicsRootArguments);

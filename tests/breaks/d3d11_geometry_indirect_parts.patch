@@ -1,0 +1,12 @@
+# DrawAuto reserves at most sixteen parts regardless of its buffer's bound
+--- a/src/mullion/mullion_geometry.hpp
++++ b/src/mullion/mullion_geometry.hpp
+@@ -84,7 +84,7 @@
+   if (bound <= max)
+     return 1;
+   auto capacity = std::max<uint64_t>((max + 1) / 2, 1);
+-  return uint32_t(bound / capacity + (bound % capacity != 0));
++  return uint32_t(std::min<uint64_t>(bound / capacity + (bound % capacity != 0), 16));
+ }
+
+ } // namespace mullion

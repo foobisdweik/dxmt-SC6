@@ -1,0 +1,12 @@
+# drops same-resource region copies, including overlapping copies.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1165,6 +1165,8 @@
+     BlitObject Dst(device, pDstResource);
+     BlitObject Src(device, pSrcResource);
+ 
++    if (pDstResource == pSrcResource)
++      return;
+     switch (Dst.Dimension) {
+     case D3D11_RESOURCE_DIMENSION_UNKNOWN:
+       break;

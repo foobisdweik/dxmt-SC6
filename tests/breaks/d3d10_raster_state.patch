@@ -1,0 +1,12 @@
+# base rasterizer GetDesc loses the supplied cull mode.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -404,7 +404,7 @@
+ 
+   void STDMETHODCALLTYPE GetDesc(D3D11_RASTERIZER_DESC *pDesc) final {
+     pDesc->FillMode = desc_.FillMode;
+-    pDesc->CullMode = desc_.CullMode;
++    pDesc->CullMode = D3D11_CULL_BACK;
+     pDesc->FrontCounterClockwise = desc_.FrontCounterClockwise;
+     pDesc->DepthBias = desc_.DepthBias;
+     pDesc->DepthBiasClamp = desc_.DepthBiasClamp;

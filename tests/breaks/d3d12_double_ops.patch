@@ -1,0 +1,12 @@
+# a compute pipeline that is not made leaves its pointer as it was
+# family native
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -580,7 +580,6 @@
+ 
+   HRESULT STDMETHODCALLTYPE
+   CreateComputePipelineState(const D3D12_COMPUTE_PIPELINE_STATE_DESC *pDesc, REFIID riid, void **ppPipelineState) {
+-    InitReturnPtr(ppPipelineState);
+     return mullion::CreateComputePipelineState(this, pDesc, riid, ppPipelineState);
+   };
+ 

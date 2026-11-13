@@ -1,0 +1,12 @@
+# reject valid null-output calls for staging buffers
+--- a/src/d3d11/d3d11_device.cpp
++++ b/src/d3d11/d3d11_device.cpp
+@@ -447,7 +447,7 @@
+       case D3D11_USAGE_DYNAMIC:
+         return ppBuffer ? mullion::CreateBuffer(this, &desc, pInitialData, ppBuffer) : S_FALSE;
+       case D3D11_USAGE_STAGING:
+-        return ppBuffer ? CreateStagingBuffer(this, &desc, pInitialData, ppBuffer) : S_FALSE;
++        return ppBuffer ? CreateStagingBuffer(this, &desc, pInitialData, ppBuffer) : E_INVALIDARG;
+       default:
+         MULLION_UNREACHABLE
+       }

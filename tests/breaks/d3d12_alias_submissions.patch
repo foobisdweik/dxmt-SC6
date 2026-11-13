@@ -1,0 +1,13 @@
+# Metal 4: an aliasing barrier that ends a command buffer is not carried to the next one
+# family native
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -851,7 +851,7 @@
+         inflight->cmdbuf = encoded ? std::move(encoded) : queue->NewCommandBuffer(seq);
+         if (!inflight->cmdbuf)
+           queue->device_->LoseDevice();
+-        else if (!encoded && queue->order_aliases_)
++        else if (false)
+           inflight->cmdbuf.orderAliases();
+       } else {
+         inflight->cmdbuf = encoded ? std::move(encoded) : queue->queue_.commandBuffer();

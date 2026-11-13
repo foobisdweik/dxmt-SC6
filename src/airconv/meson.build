@@ -1,26 +1,29 @@
 airconv_src = files([
  'airconv_context.cpp',
+ 'airconv_switches.cpp',
  'air_type.cpp',
  'air_signature.cpp',
+ 'air_operations.cpp',
  'dxbc_binding_sm50.cpp',
  'dxbc_binding_rootsig.cpp',
  'dxbc_converter.cpp',
  'dxbc_converter_gs.cpp',
+ 'dxbc_converter_gs_layered.cpp',
  'dxbc_converter_ts.cpp',
+ 'dxbc_converter_vrs.cpp',
  'dxbc_converter_basicblock.cpp',
  'dxbc_converter_cfg.cpp',
  'dxbc_instructions.cpp',
  'dxbc_signature.cpp',
  'dxil_converter.cpp',
- 'dxil_metadata.cpp',
- 'dxil_metadata_reader.cpp',
  'metallib_writer.cpp',
  'nt/air_builder.cpp',
- 'nt/air_vertex_puller.cpp',
  'nt/dxbc_converter_base.cpp',
- 'nt/dxbc_io_helper.cpp',
- 'nt/dxil_converter_base.cpp',
+ 'transforms/guard_out_of_bounds.cpp',
+ 'transforms/hoist_loads.cpp',
  'transforms/lower_16bit_texread.cpp',
+ 'transforms/merge_sample_branches.cpp',
+ 'transforms/merge_minmax_branches.cpp',
  'transforms/simdgroup_implicit_membarrier.cpp',
 ])
 
@@ -64,10 +67,11 @@ llvm_ld_flags = [
 ]
 
 airconv_forward_dep = declare_dependency(
-  include_directories : [ dxmt_include_path, include_directories('.') ],
+  include_directories : [ mullion_include_path, include_directories('.') ],
 )
 
 airconv_shaders = [
+  'shaders/air_denorm.metal',
   'shaders/air_msad.metal',
   'shaders/air_samplepos.metal',
   'shaders/air_tessellation.metal',
@@ -88,7 +92,7 @@ if build_airconv_for_windows
 llvm_include_path = include_directories('../../toolchains/llvm/include') # FIXME: in favor of path relative to project
 
 airconv_lib = static_library('airconv', airconv_src,
-  include_directories : [ dxmt_include_path, llvm_include_path ],
+  include_directories : [ mullion_include_path, llvm_include_path ],
   cpp_args            : [ airconv_args, '-DWIN_EXPORT' ],
   dependencies        : [ dxbc_parser_dep ],
   link_args           : llvm_ld_flags
@@ -96,14 +100,14 @@ airconv_lib = static_library('airconv', airconv_src,
 
 airconv_dep = declare_dependency(
   link_with           : [ airconv_lib ],
-  include_directories : [ dxmt_include_path, include_directories('.') ],
+  include_directories : [ mullion_include_path, include_directories('.') ],
   link_args           : [ llvm_ld_flags, llvm_deps ] # meh
 )
 
 lib_d3dcompiler = cpp.find_library('d3dcompiler_47')
 
 executable('airconv', airconv_src + airconv_cli_src,
-  include_directories : [ dxmt_include_path, llvm_include_path ],
+  include_directories : [ mullion_include_path, llvm_include_path ],
   cpp_args            : [ airconv_args, '-DWIN_EXPORT' ],
   dependencies        : [ dxbc_parser_dep, lib_d3dcompiler ],
   link_args           : [ llvm_ld_flags, llvm_deps ]
@@ -111,6 +115,6 @@ executable('airconv', airconv_src + airconv_cli_src,
 
 endif
 
-if cpu_family == 'x86_64' or cpu_family == 'aarch64' or not dxmt_crossbuild
+if cpu_family == 'x86_64' or cpu_family == 'aarch64' or not mullion_crossbuild
   subdir('darwin')
 endif

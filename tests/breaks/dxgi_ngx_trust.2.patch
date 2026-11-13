@@ -1,0 +1,13 @@
+diff --git a/src/dxgi/dxgi.cpp b/src/dxgi/dxgi.cpp
+--- a/src/dxgi/dxgi.cpp
++++ b/src/dxgi/dxgi.cpp
+@@ -131,8 +131,7 @@ void InitializeVendorExtension() {
+ #ifdef _WIN32
+   static std::once_flag once;
+   std::call_once(nvext_init, InitializeVendorExtensionNV);
+-  if (g_extension_enabled == VendorExtension::Nvidia)
+-    std::call_once(once, TrustNGXCertificate);
++  std::call_once(once, TrustNGXCertificate);
+ #endif
+ }
+ 

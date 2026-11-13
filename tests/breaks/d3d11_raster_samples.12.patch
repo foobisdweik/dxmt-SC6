@@ -1,0 +1,12 @@
+# a pass with no targets rasterizes the forced count but its pipeline the targets' count
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5571,7 +5571,7 @@
+     }
+     Desc.IndexBufferFormat = IndexFormat<IndexedDraw>();
+     // a pass with no targets rasterizes the forced count, and its pipeline with it
+-    Desc.SampleCount = attached ? state_.OutputMerger.SampleCount : std::max(1u, rs->ForcedSampleCount());
++    Desc.SampleCount = state_.OutputMerger.SampleCount;
+   }
+ 
+   // how a draw's vertices are numbered: by the bound index buffer's format, or not at all. the object stage of a

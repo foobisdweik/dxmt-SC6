@@ -1,0 +1,12 @@
+# interprets signed multiply high halves as unsigned.
+--- a/src/airconv/dxbc_instructions.cpp
++++ b/src/airconv/dxbc_instructions.cpp
+@@ -1535,7 +1535,7 @@
+   case microsoft::D3D10_SB_OPCODE_IMUL: {
+     return InstIntegerBinaryOpWithTwoDst{
+       ._ = readInstructionCommon(Inst, shader_info),
+-      .op = IntegerBinaryOpWithTwoDst::IMul,
++      .op = IntegerBinaryOpWithTwoDst::UMul,
+       .dst_hi = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
+       .dst_low = readDstOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
+       .src0 = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Integer),

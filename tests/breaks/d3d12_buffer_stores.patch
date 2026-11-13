@@ -1,0 +1,12 @@
+# drops the high DWORD of each native 64-bit buffer store.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2766,7 +2766,7 @@
+             continue;
+           auto x = store ? ir.CreateBitCast(a(4 + i), element) : nullptr;
+           Value *loaded = ConstantInt::get(element, 0);
+-          for (unsigned part = 0; part < parts; part++) {
++          for (unsigned part = 0; part < (store ? 1u : parts); part++) {
+             auto ptr = unit_ptr(b, unit, ir.CreateAdd(base, ir.getInt64(i * parts + part)), inside);
+             if (feedback)
+               residency = ir.CreateOr(residency, dxbc.BufferResidency(ptr));

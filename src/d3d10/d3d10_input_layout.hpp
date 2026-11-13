@@ -2,7 +2,7 @@
 
 #include "d3d10_util.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D10InputLayout final : public ID3D10InputLayout {
 public:
@@ -46,4 +46,4 @@ public:
   }
 };
 
-}; // namespace dxmt
+}; // namespace mullion

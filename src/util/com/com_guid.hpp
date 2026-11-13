@@ -13,7 +13,7 @@
 #include <ostream>
 #include <unknwn.h>
 
-namespace dxmt {
+namespace mullion {
 
 /**
  * \brief Checks whether an unknown GUID should be logged
@@ -24,7 +24,7 @@ namespace dxmt {
  */
 bool logQueryInterfaceError(REFIID objectGuid, REFIID requestedGuid);
 
-}; // namespace dxmt
+}; // namespace mullion
 
 std::ostream &operator<<(std::ostream &os, REFIID guid);
 
@@ -39,7 +39,7 @@ std::ostream &operator<<(std::ostream &os, REFIID guid);
 #include <string>
 #include <cstdint>
 
-namespace dxmt::guid {
+namespace mullion::guid {
 constexpr const size_t GUID_STRING_LENGTH =
     36; // XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
 
@@ -90,16 +90,16 @@ template <size_t N> constexpr GUID make_guid(const char (&str)[N]) {
 
   return make_guid_helper(str);
 }
-} // namespace dxmt::guid
+} // namespace mullion::guid
 
 #ifndef __MINGW32__
 
 #ifdef __cplusplus
-# define DXMT_DEFINE_GUID(iid, guid_str) \
-  constexpr GUID iid = dxmt::guid::make_guid(guid_str);
+# define MULLION_DEFINE_GUID(iid, guid_str) \
+  constexpr GUID iid = mullion::guid::make_guid(guid_str);
 
-# define DXMT_DECLARE_UUIDOF_HELPER(type, guid_str) \
-  extern "C++" { template <> constexpr GUID __uuidof_helper<type>() { return dxmt::guid::make_guid(guid_str); } } \
+# define MULLION_DECLARE_UUIDOF_HELPER(type, guid_str) \
+  extern "C++" { template <> constexpr GUID __uuidof_helper<type>() { return mullion::guid::make_guid(guid_str); } } \
   extern "C++" { template <> constexpr GUID __uuidof_helper<type*>() { return __uuidof_helper<type>(); } } \
   extern "C++" { template <> constexpr GUID __uuidof_helper<const type*>() { return __uuidof_helper<type>(); } } \
   extern "C++" { template <> constexpr GUID __uuidof_helper<type&>() { return __uuidof_helper<type>(); } } \
@@ -108,15 +108,15 @@ template <size_t N> constexpr GUID make_guid(const char (&str)[N]) {
 
 #define DEFINE_COM_INTERFACE(guid_str, type)  \
   struct type;                                \
-  DXMT_DEFINE_GUID(IID_ ## type, guid_str);   \
-  DXMT_DECLARE_UUIDOF_HELPER(type, guid_str); \
+  MULLION_DEFINE_GUID(IID_ ## type, guid_str);   \
+  MULLION_DECLARE_UUIDOF_HELPER(type, guid_str); \
   struct type
 #else
 #define DEFINE_COM_INTERFACE(guid_str, type)                                   \
   struct type;                                                                 \
   extern "C++" {                                                               \
   template <> struct __mingw_uuidof_s<type> {                                  \
-    static constexpr IID __uuid_inst = dxmt::guid::make_guid(guid_str);        \
+    static constexpr IID __uuid_inst = mullion::guid::make_guid(guid_str);        \
   };                                                                           \
   template <> constexpr const GUID &__mingw_uuidof<type>() {                   \
     return __mingw_uuidof_s<type>::__uuid_inst;                                \

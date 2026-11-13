@@ -1,0 +1,11 @@
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1408,7 +1408,7 @@
+       return S_OK;
+     }
+     auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
+-    if (FAILED(d3d12res->CreateUnorderedAccessView(pCounter, pDesc, Descriptor))) {
++    if (FAILED(d3d12res->CreateUnorderedAccessView(pCounter, pDesc, Descriptor)) && false) {
+       auto [Heap, Index] = GetShaderVisibleDescriptorHeap(this, Descriptor);
+       auto null_desc = RefusedViewDesc(pResource, pDesc);
+       Heap->AddUnorderedAccessView(Index, &null_desc);

@@ -1,0 +1,12 @@
+# leave overlapping shader-resource inputs bound when a render target is set.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -3224,7 +3224,7 @@
+             continue;
+           BoundRTVs[rtv_index] = rtv;
+           should_invalidate_pass = true;
+-          OMResolveSRVHazard(rtv);
++          OMResolveSRVHazard(static_cast<D3D11RenderTargetView *>(nullptr));
+         } else {
+           if (BoundRTVs[rtv_index]) {
+             should_invalidate_pass = true;

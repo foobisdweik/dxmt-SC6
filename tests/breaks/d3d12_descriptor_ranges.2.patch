@@ -1,0 +1,12 @@
+# copies the first sampler border metadata to every descriptor in a range
+--- a/src/d3d12/d3d12_descriptor_heap.cpp
++++ b/src/d3d12/d3d12_descriptor_heap.cpp
+@@ -644,7 +644,7 @@
+     for (unsigned i = 0; i < CopyCount; i++) {
+       to->samplers_[DescriptorTo + i] = samplers_[From + i];
+       to->mapped_argument_buffer_[DescriptorTo + i] = mapped_argument_buffer_[From + i];
+-      to->SetBorder(DescriptorTo + i, borders_[From + i]);
++      to->SetBorder(DescriptorTo + i, borders_[From]);
+     }
+   }
+ };

@@ -1,0 +1,12 @@
+# vertex fetch omits the current storage offset
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -118,7 +118,7 @@
+     auto valid_length = buffer->length() > state.offset ? buffer->length() - state.offset : 0;
+     auto [buffer_alloc, buffer_offset] =
+         access<PipelineStage::Vertex>(buffer, state.offset, valid_length, ResourceAccess::Read);
+-    entries[index].buffer_handle = buffer_alloc->gpuAddress() + buffer_offset + state.offset;
++    entries[index].buffer_handle = buffer_alloc->gpuAddress() + state.offset;
+     entries[index].stride = state.stride;
+     entries[index++].length = valid_length;
+     // FIXME: did we intended to use the whole buffer?

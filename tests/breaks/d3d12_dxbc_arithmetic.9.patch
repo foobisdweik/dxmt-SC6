@@ -1,0 +1,11 @@
+# no AIR name for mul_hi
+--- a/src/airconv/nt/air_builder.cpp
++++ b/src/airconv/nt/air_builder.cpp
+@@ -1935,7 +1935,6 @@
+   static char const *FnNames[] = {
+       "max",
+       "min",
+-      "mul_hi",
+   };
+ 
+   if (uint32_t(Op) >= std::size(FnNames)) {

@@ -1,0 +1,12 @@
+# return one cube for every D3D10.1 cube array view
+--- a/src/d3d10/d3d10_view.cpp
++++ b/src/d3d10/d3d10_view.cpp
+@@ -106,7 +106,7 @@
+     pDesc->TextureCubeArray.MipLevels = d3d11_desc.TextureCubeArray.MipLevels;
+     pDesc->TextureCubeArray.MostDetailedMip = d3d11_desc.TextureCubeArray.MostDetailedMip;
+     pDesc->TextureCubeArray.First2DArrayFace = d3d11_desc.TextureCubeArray.First2DArrayFace;
+-    pDesc->TextureCubeArray.NumCubes = d3d11_desc.TextureCubeArray.NumCubes;
++    pDesc->TextureCubeArray.NumCubes = 1;
+     break;
+   default:
+     pDesc->ViewDimension = D3D10_SRV_DIMENSION_UNKNOWN;

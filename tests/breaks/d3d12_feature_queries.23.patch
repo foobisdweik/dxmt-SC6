@@ -1,0 +1,13 @@
+# OPTIONS20 is a feature the device does not know
+# family native
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1044,7 +1044,7 @@
+       out->MaxViewDescriptorHeapSize = D3D12_MAX_SHADER_VISIBLE_DESCRIPTOR_HEAP_SIZE_TIER_1;
+       return S_OK;
+     }
+-    case sdk::D3D12_FEATURE_D3D12_OPTIONS20:
++    case ~1u:
+       return NotSupported<sdk::D3D12_FEATURE_DATA_D3D12_OPTIONS20>(pFeatureData, DataSize);
+     case sdk::D3D12_FEATURE_D3D12_OPTIONS21: {
+       if (DataSize != sizeof(sdk::D3D12_FEATURE_DATA_D3D12_OPTIONS21))

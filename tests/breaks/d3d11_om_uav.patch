@@ -1,0 +1,12 @@
+# drops the UAV installed by OMSetRenderTargetsAndUnorderedAccessViews.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -3258,7 +3258,7 @@
+         D3D11UnorderedAccessView *pUAV = nullptr;
+         UINT InitialCount = ~0u;
+         if (Slot >= UAVStartSlot && Slot < UAVStartSlot + NumUAVs) {
+-          pUAV = static_cast<D3D11UnorderedAccessView *>(ppUnorderedAccessViews[Slot - UAVStartSlot]);
++          pUAV = nullptr;
+           InitialCount = pUAVInitialCounts ? pUAVInitialCounts[Slot - UAVStartSlot] : ~0u;
+         }
+         if (pUAV) {

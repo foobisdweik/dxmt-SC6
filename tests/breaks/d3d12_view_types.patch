@@ -1,0 +1,12 @@
+# every array texture read returns layer zero
+--- a/src/airconv/nt/air_builder.cpp
++++ b/src/airconv/nt/air_builder.cpp
+@@ -703,7 +703,7 @@
+ 
+   if (TexInfo.is_array) {
+     Tys.push_back(getIntTy());
+-    Ops.push_back(ArrayIndex ? ArrayIndex : getInt(0));
++    Ops.push_back(getInt(0));
+   }
+ 
+   if (TexInfo.is_ms) {

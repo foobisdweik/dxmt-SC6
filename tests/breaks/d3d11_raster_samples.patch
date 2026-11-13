@@ -1,0 +1,12 @@
+# the first standard 4x sample has the wrong x offset.
+--- a/src/airconv/shaders/air_samplepos.metal
++++ b/src/airconv/shaders/air_samplepos.metal
+@@ -13,7 +13,7 @@
+     ENCODE_SAMPLE_POS(-4, -4),
+ };
+ constant uchar sample_pos_4[] = {
+-    ENCODE_SAMPLE_POS(-2, -6),
++    ENCODE_SAMPLE_POS(2, -6),
+     ENCODE_SAMPLE_POS(6, -2),
+     ENCODE_SAMPLE_POS(-6, 2),
+     ENCODE_SAMPLE_POS(2, 6),

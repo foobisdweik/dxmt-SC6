@@ -1,0 +1,12 @@
+# unwrapping does not hold the given queue behind the Direct3D 11 work
+--- a/src/d3d11/d3d11_on12.cpp
++++ b/src/d3d11/d3d11_on12.cpp
+@@ -171,7 +171,7 @@
+     auto context = device_->GetImmediateContextPrivate();
+     context->PrepareFlush();
+     context->Commit();
+-    pCommandQueue->Wait(done_.ptr(), done_value_);
++    ;
+     return resource->QueryInterface(riid, ppvResource12);
+   }
+ 

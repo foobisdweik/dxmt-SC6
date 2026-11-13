@@ -1,0 +1,12 @@
+# the back face uses the front read and write masks
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -848,6 +848,4 @@
+       info.back_stencil.stencil_compare_function = kCompareFunctionMap[pDesc->DepthStencilState.BackFace.StencilFunc];
+-      info.back_stencil.write_mask = depth_stencil2 ? depth_stencil2->BackFace.StencilWriteMask
+-                                                  : pDesc->DepthStencilState.StencilWriteMask;
+-      info.back_stencil.read_mask = depth_stencil2 ? depth_stencil2->BackFace.StencilReadMask
+-                                                 : pDesc->DepthStencilState.StencilReadMask;
++      info.back_stencil.write_mask = info.front_stencil.write_mask;
++      info.back_stencil.read_mask = info.front_stencil.read_mask;
+     }

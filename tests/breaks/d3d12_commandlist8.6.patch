@@ -1,0 +1,13 @@
+# pipeline library keys omit the back masks
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -338,9 +338,6 @@
+     hash(fill, cull, front, bias, clamp, slope, clip, multisample, aa, forced, conservative);
+     auto &[enabled, write, function, stencil, read_mask, write_mask, front_face, back_face] = depth;
+     hash(enabled, write, function, stencil, read_mask, write_mask);
+-    if (depth_stencil2 && (depth_stencil2->BackFace.StencilReadMask != read_mask ||
+-                           depth_stencil2->BackFace.StencilWriteMask != write_mask))
+-      hash(depth_stencil2->BackFace.StencilReadMask, depth_stencil2->BackFace.StencilWriteMask);
+     for (auto &face : {front_face, back_face}) {
+       auto &[fail, depth_fail, pass, compare] = face;
+       hash(fail, depth_fail, pass, compare);

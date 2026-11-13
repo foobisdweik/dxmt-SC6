@@ -1,0 +1,12 @@
+# drops the front-face stencil read mask.
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -846,7 +846,7 @@
+       info.front_stencil.depth_fail_op = kStencilOperationMap[pDesc->DepthStencilState.FrontFace.StencilDepthFailOp];
+       info.front_stencil.stencil_compare_function = kCompareFunctionMap[pDesc->DepthStencilState.FrontFace.StencilFunc];
+       info.front_stencil.write_mask = pDesc->DepthStencilState.StencilWriteMask;
+-      info.front_stencil.read_mask = pDesc->DepthStencilState.StencilReadMask;
++      info.front_stencil.read_mask = 0;
+ 
+       info.back_stencil.depth_stencil_pass_op = kStencilOperationMap[pDesc->DepthStencilState.BackFace.StencilPassOp];
+       info.back_stencil.stencil_fail_op = kStencilOperationMap[pDesc->DepthStencilState.BackFace.StencilFailOp];

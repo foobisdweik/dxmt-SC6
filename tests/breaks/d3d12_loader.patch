@@ -1,0 +1,11 @@
+# d3d12.dll forwards an export to the core again
+--- a/src/d3d12/d3d12.def
++++ b/src/d3d12/d3d12.def
+@@ -1,6 +1,6 @@
+ LIBRARY d3d12.dll
+ EXPORTS
+-    D3D12CreateDevice = loader_D3D12CreateDevice @101
++    D3D12CreateDevice = d3d12core.D3D12CreateDevice @101
+     D3D12GetDebugInterface = loader_D3D12GetDebugInterface @102
+     D3D12CreateRootSignatureDeserializer = loader_D3D12CreateRootSignatureDeserializer
+     D3D12CreateVersionedRootSignatureDeserializer = loader_D3D12CreateVersionedRootSignatureDeserializer

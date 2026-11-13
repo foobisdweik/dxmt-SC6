@@ -1,0 +1,12 @@
+# the GS dispatch marshal zeroes the filled sizes of an indirect stream output draw and no total
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -624,7 +624,7 @@
+         }
+       } else if (runs) {
+         device uint* scratch = task.so_scratch_area + so_used / 4;
+-        for (ulong i = 0; i < zeroed / 4; i++)
++        for (ulong i = 0; i < 8; i++)
+           scratch[i] = 0;
+         task.so_targets->scratch = task.so_scratch + so_used;
+         task.so_targets->warps = output.x;

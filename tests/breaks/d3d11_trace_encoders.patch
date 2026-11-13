@@ -1,0 +1,14 @@
+# number recorded slots instead of created encoders
+diff --git a/src/mullion/mullion_context.cpp b/src/mullion/mullion_context.cpp
+--- a/src/mullion/mullion_context.cpp
++++ b/src/mullion/mullion_context.cpp
+@@ -1133,7 +1133,8 @@
+       auto gpu_buffer_ = data->allocated_argbuf;
+       auto encoder = samples.sample_buffer ? cmdbuf.renderCommandEncoder(render_pass_info, samples)
+                                           : cmdbuf.renderCommandEncoder(render_pass_info);
+-      auto index = metal_encoder_count++;
++      auto index = encoder_count - encoder_index;
++      metal_encoder_count++;
+       if (diag::errors || diag::trace_encoders) {
+         unsigned draws = 0, geometry = 0, tessellation = 0;
+         for (auto cmd = reinterpret_cast<const wmtcmd_base *>(&data->cmd_head); cmd;

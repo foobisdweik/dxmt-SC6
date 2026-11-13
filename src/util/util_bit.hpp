@@ -12,17 +12,17 @@
 
 #if (defined(__x86_64__) && !defined(__arm64ec__)) || (defined(_M_X64) && !defined(_M_ARM64EC)) \
     || defined(__i386__) ||  defined(_M_IX86)
-#define DXMT_ARCH_X86
+#define MULLION_ARCH_X86
 #if defined(__x86_64__) || defined(_M_X64)
-#define DXMT_ARCH_X86_64
+#define MULLION_ARCH_X86_64
 #endif
 #elif defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
-#define DXMT_ARCH_ARM64
+#define MULLION_ARCH_ARM64
 #else
 #error "Unknown CPU Architecture"
 #endif
 
-#ifdef DXMT_ARCH_X86
+#ifdef MULLION_ARCH_X86
 #ifndef _MSC_VER
 #if defined(__WINE__) && defined(__clang__)
 #pragma push_macro("_WIN32")
@@ -46,7 +46,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace dxmt::bit {
+namespace mullion::bit {
 
 template <typename T, typename J> T cast(const J &src) {
   static_assert(sizeof(T) == sizeof(J));
@@ -80,7 +80,7 @@ inline uint32_t tzcnt(uint32_t n) {
   return _tzcnt_u32(n);
 #elif defined(__BMI__)
   return __tzcnt_u32(n);
-#elif defined(DXMT_ARCH_X86) && (defined(__GNUC__) || defined(__clang__))
+#elif defined(MULLION_ARCH_X86) && (defined(__GNUC__) || defined(__clang__))
   // tzcnt is encoded as rep bsf, so we can use it on all
   // processors, but the behaviour of zero inputs differs:
   // - bsf:   zf = 1, cf = ?, result = ?
@@ -111,11 +111,11 @@ inline uint32_t tzcnt(uint32_t n) {
 }
 
 inline uint32_t tzcnt(uint64_t n) {
-#if defined(DXMT_ARCH_X86_64) && defined(_MSC_VER) && !defined(__clang__)
+#if defined(MULLION_ARCH_X86_64) && defined(_MSC_VER) && !defined(__clang__)
   return (uint32_t)_tzcnt_u64(n);
-#elif defined(DXMT_ARCH_X86_64) && defined(__BMI__)
+#elif defined(MULLION_ARCH_X86_64) && defined(__BMI__)
   return __tzcnt_u64(n);
-#elif defined(DXMT_ARCH_X86_64) && (defined(__GNUC__) || defined(__clang__))
+#elif defined(MULLION_ARCH_X86_64) && (defined(__GNUC__) || defined(__clang__))
   uint64_t res;
   uint64_t tmp;
   asm("tzcnt %2, %0;"
@@ -202,7 +202,7 @@ uint32_t unpack(T &dst, T src, uint32_t &shift, uint32_t count) {
  */
 template <typename T> bool bcmpeq(const T *a, const T *b) {
   static_assert(alignof(T) >= 16);
-#if defined(DXMT_ARCH_X86) &&                                              \
+#if defined(MULLION_ARCH_X86) &&                                              \
     (defined(__GNUC__) || defined(__clang__) || defined(_MSC_VER))
   auto ai = reinterpret_cast<const __m128i *>(a);
   auto bi = reinterpret_cast<const __m128i *>(b);
@@ -484,7 +484,7 @@ public:
 
     uint32_t operator*() const {
 #if (defined(__GNUC__) || defined(__clang__)) && !defined(__BMI__) &&          \
-    defined(DXMT_ARCH_X86)
+    defined(MULLION_ARCH_X86)
       uint32_t res;
       asm("tzcnt %1,%0" : "=r"(res) : "r"(m_mask) : "cc");
       return res;
@@ -511,4 +511,4 @@ public:
 private:
   uint32_t m_mask;
 };
-} // namespace dxmt::bit
+} // namespace mullion::bit

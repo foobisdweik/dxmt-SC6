@@ -1,0 +1,20 @@
+# drops the lowest mantissa bit when classifying infinity
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3313,9 +3313,13 @@
+     case IsNaN:
+       ret = air.CreateIsNaN(a(1));
+       break;
+-    case IsInf:
+-      ret = ir.CreateFCmpOEQ(fp_unary(llvm::air::AIRBuilder::fabs, a(1)), ConstantFP::getInfinity(a(1)->getType()));
+-      break;
++    case IsInf: {
++      unsigned width = a(1)->getType()->isHalfTy() ? 16 : 32;
++      auto bits = ir.CreateBitCast(a(1), ir.getIntNTy(width));
++      auto magnitude = ir.CreateAnd(bits, ir.getIntN(width, (uint64_t(1) << (width - 1)) - 2));
++      ret = ir.CreateICmpEQ(magnitude, ir.getIntN(width, width == 16 ? 0x7c00 : 0x7f800000));
++      break;
++    }
+     case IsFinite:
+       ret = ir.CreateFCmpOLT(fp_unary(llvm::air::AIRBuilder::fabs, a(1)), ConstantFP::getInfinity(a(1)->getType()));
+       break;

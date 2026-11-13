@@ -1,0 +1,12 @@
+# drops bit four of a bitfield extraction width.
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1344,7 +1344,7 @@
+ 
+ llvm::Value *
+ Converter::ExtractBits(llvm::Value *Src0, llvm::Value *Src1, llvm::Value *Src2, bool Signed) {
+-  auto Width = ir.CreateAnd(Src0, 0x1F);
++  auto Width = ir.CreateAnd(Src0, 0x0F);
+   auto Offset = ir.CreateAnd(Src1, 0X1F);
+   auto WidthAddOffset = ir.CreateAdd(Width, Offset);
+   auto Constant_32 = llvm::ConstantInt::get(Width->getType(), 32);

@@ -19,7 +19,7 @@ winemetal_unix_ld_args = [
   '-weak_framework', 'CoreFoundation', '-weak_framework', 'Metal',
   '-framework', 'MetalFX', '-weak_framework', 'Foundation',
   '-weak_framework', 'CoreGraphics', '-weak_framework', 'QuartzCore',
-  '-weak_framework', 'ColorSync',  '-weak_framework', 'Cocoa',
+  '-weak_framework', 'ColorSync',  '-weak_framework', 'Cocoa', '-weak_framework', 'IOKit',
   '-lsqlite3',
 ]
 winemetal_unix_link_depends = []
@@ -27,7 +27,7 @@ winemetal_unix_link_depends = []
 shared_library('winemetal', winemetal_unix_src,
   name_prefix         : '',
   dependencies        : [ airconv_dep_darwin ],
-  include_directories : dxmt_include_path,
+  include_directories : mullion_include_path,
   c_args              : ['-ObjC'],
   link_args           : winemetal_unix_ld_args,
   native              : true,

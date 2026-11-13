@@ -1,0 +1,15 @@
+# a load whose last unit wraps to the start is read as it lies
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -3290,8 +3290,10 @@
+     BufferResourceHandle &Buffer, llvm::Value *Base, llvm::Value *Last, uint32_t UnitBytes,
+     llvm::function_ref<llvm::Value *(llvm::Value *, bool)> Read
+ ) {
+-  if (!Buffer.Metadata || !Last || !Buffer.StructureStride)
++  if (!Buffer.Metadata || !Last)
+     return Read(Base, false);
++  if (!Buffer.StructureStride)
++    Last = ir.CreateAnd(Last, llvm::ConstantInt::get(Last->getType(), UINT32_MAX / UnitBytes));
+   auto Bytes = DecodeRawBufferByteLength(Buffer.Metadata);
+   auto Units = ir.CreateZExtOrTrunc(ir.CreateUDiv(Bytes, llvm::ConstantInt::get(Bytes->getType(), UnitBytes)), Last->getType());
+   auto Whole = ir.CreateICmpULT(Last, Units);

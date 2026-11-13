@@ -18,8 +18,81 @@
 
 #pragma once
 #include "airconv_public.h"
+#include "Metal.hpp"
+#include "d3d12.h"
+#include "d3d12_device_child.hpp"
+#include "../d3d10/d3d10_blob.hpp"
+#include <cstring>
+#include <functional>
+#include <span>
 
-namespace dxmt {
+namespace mullion {
+
+class MTLD3D12Device;
+class MTLD3D12PipelineState;
+
+// library references must survive the last public reference without retaining the device (test_pipeline_library)
+template <typename Base> class MTLD3D12PipelineObject : public MTLD3D12Object<ComObject<Base, ID3DDestructionNotifier>> {
+protected:
+  MTLD3D12Device *device_;
+
+public:
+  MTLD3D12PipelineObject(MTLD3D12Device *device) : device_(device) {}
+
+  ULONG STDMETHODCALLTYPE
+  AddRef() override {
+    auto count = ComObject<Base, ID3DDestructionNotifier>::AddRef();
+    if (count == 1)
+      device_->AddRef();
+    return count;
+  }
+
+  ULONG STDMETHODCALLTYPE
+  Release() override {
+    auto device = device_;
+    auto count = ComObject<Base, ID3DDestructionNotifier>::Release();
+    if (!count)
+      device->Release();
+    return count;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  GetDevice(REFIID iid, void **device) override {
+    return device_->QueryInterface(iid, device);
+  }
+};
+
+HRESULT PipelineKey(const D3D12_COMPUTE_PIPELINE_STATE_DESC &Desc, Sha1Digest &Key);
+HRESULT PipelineKey(
+    const D3D12_GRAPHICS_PIPELINE_STATE_DESC &Desc, Sha1Digest &Key, bool DepthBounds = false,
+    D3D12_SHADER_BYTECODE AS = {}, D3D12_SHADER_BYTECODE MS = {},
+    const D3D12_DEPTH_STENCIL_DESC2 *DepthStencil2 = nullptr
+);
+HRESULT CreatePipelineLibrary(MTLD3D12Device *Device, const void *Blob, SIZE_T Size, REFIID Iid, void **Library);
+
+WMT::Reference<WMT::Function> CompileFunction(
+    MTLD3D12Device *device, MTLD3D12PipelineState *pipeline, std::span<const D3D12_SHADER_BYTECODE> shaders,
+    SM50_SHADER_COMPILATION_ARGUMENT_DATA *arguments, const char *name,
+    const std::function<int(SM50_SHADER_COMPILATION_ARGUMENT_DATA *, const char *, sm50_bitcode_t *, sm50_error_t *)>
+        &compile
+);
+
+struct PipelineStateStream {
+  D3D12_COMPUTE_PIPELINE_STATE_DESC desc_cs{};
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC desc_graphics{};
+  D3D12_SHADER_BYTECODE desc_as{}, desc_ms{};
+  bool depth_bounds = false;
+  std::optional<D3D12_DEPTH_STENCIL_DESC2> depth_stencil2;
+
+  HRESULT Parse(const D3D12_PIPELINE_STATE_STREAM_DESC *desc);
+  HRESULT Key(Sha1Digest &key) const;
+  HRESULT
+  Create(MTLD3D12Device *device, REFIID iid, void **pipeline, const PipelineShaderCache *cached = nullptr) const;
+};
+
+// the sampler emulations a pipeline made now leaves out, and its description with everything it points to, which the
+// application may free once the pipeline is made (MTLD3D12PipelineState::left_out)
+void Lean(MTLD3D12PipelineState &pso, MTLD3D12Device *device, const PipelineStateStream &stream);
 
 class SM50Shader {
   sm50_shader_t sm50_shader_{};
@@ -78,4 +151,24 @@ public:
   }
 };
 
-} // namespace dxmt
+// a pipeline's cached blob (ID3D12PipelineState::GetCachedBlob, D3D12_CACHED_PIPELINE_STATE). what makes a pipeline
+// quick to create again is kept by the shader cache and by Metal's, by the shaders themselves, so a blob says only
+// that it is one of these: a cache another driver gave is told apart, and the application drops it
+inline constexpr char kCachedPipeline[] = "Mullion pipeline 1";
+
+inline HRESULT
+GetCachedPipelineBlob(ID3DBlob **ppBlob) {
+  HRESULT hr = CreateBlobFromMalloc(sizeof(kCachedPipeline), ppBlob);
+  if (SUCCEEDED(hr))
+    memcpy((*ppBlob)->GetBufferPointer(), kCachedPipeline, sizeof(kCachedPipeline));
+  return hr;
+}
+
+inline HRESULT
+CheckCachedPipeline(const D3D12_CACHED_PIPELINE_STATE &Cached) {
+  bool ours = Cached.CachedBlobSizeInBytes == sizeof(kCachedPipeline) &&
+              !memcmp(Cached.pCachedBlob, kCachedPipeline, sizeof(kCachedPipeline));
+  return ours || !Cached.CachedBlobSizeInBytes ? S_OK : D3D12_ERROR_DRIVER_VERSION_MISMATCH;
+}
+
+} // namespace mullion

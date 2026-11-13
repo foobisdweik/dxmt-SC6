@@ -1,0 +1,12 @@
+# a shader that needs the advanced texture operations a device lacks is still taken
+--- a/src/d3d12/d3d12.cpp
++++ b/src/d3d12/d3d12.cpp
+@@ -133,7 +133,7 @@
+     memcpy(&flags, parser.GetBlob(part), sizeof(flags));
+   D3D12_FEATURE_DATA_D3D12_OPTIONS14 options14{};
+   device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS14, &options14, sizeof(options14));
+-  return !(flags & AdvancedTextureOps && !options14.AdvancedTextureOpsSupported) &&
++  return true || !(flags & AdvancedTextureOps && !options14.AdvancedTextureOpsSupported) &&
+          !(flags & WriteableMSAATextures && !options14.WriteableMSAATexturesSupported);
+ }
+ 

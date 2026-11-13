@@ -3,15 +3,16 @@
 
 #include "com/com_pointer.hpp"
 #include "d3d11_input_layout.hpp"
+#include "d3d11_query.hpp"
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
 #include "d3d11_view.hpp"
-#include "dxmt_binding_set.hpp"
+#include "mullion_binding_set.hpp"
 #include "log/log.hpp"
 #include "d3d11_resource.hpp"
 #include "util_string.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 struct UAV_B {
   IUnknown *RawPointer = 0;
@@ -76,7 +77,7 @@ struct D3D11ShaderStageState {
   SRVBindingSet SRVs;
   SamplerBindingSet Samplers;
   ConstantBufferBindingSet ConstantBuffers;
-  Com<IMTLD3D11Shader> Shader;
+  Com<IMTLD3D11Shader, false> Shader;
 };
 
 struct VERTEX_BUFFER_B {
@@ -94,7 +95,7 @@ template <> struct redundant_binding_trait<VERTEX_BUFFER_B> {
 };
 
 struct D3D11InputAssemblerStageState {
-  Com<IMTLD3D11InputLayout> InputLayout;
+  Com<IMTLD3D11InputLayout, false> InputLayout;
   BindingSet<VERTEX_BUFFER_B, D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT> VertexBuffers;
   Com<D3D11ResourceCommon, false> IndexBuffer;
   /**
@@ -118,7 +119,7 @@ struct D3D11OutputMergerStageState {
   UINT StencilRef;
 
   IMTLD3D11BlendState* BlendState;
-  FLOAT BlendFactor[4];
+  FLOAT BlendFactor[4] = {1, 1, 1, 1};
 
   UINT SampleMask = 0xffffffff;
 
@@ -154,7 +155,7 @@ struct D3D11RasterizerStageState {
   viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {{}};
   UINT NumScissorRects;
   UINT NumViewports;
-  IMTLD3D11RasterizerState* RasterizerState;
+  Com<IMTLD3D11RasterizerState, false> RasterizerState;
 };
 
 template <typename T> class D3D11StagesState: public std::array<T, 6> {
@@ -178,11 +179,11 @@ struct D3D11ContextState {
   D3D11OutputMergerStageState OutputMerger = {};
   D3D11RasterizerStageState Rasterizer = {};
 
-  Com<ID3D11Predicate> predicate = nullptr;
+  Com<MTLD3D11Query, false> predicate = nullptr;
   BOOL predicate_value = FALSE;
 };
 
-// TODO: implement it properly
+// a context's state, held while another object's is the context's (ID3D11DeviceContext1::SwapDeviceContextState)
 class MTLD3D11DeviceContextState
     : public MTLD3D11DeviceChild<ID3DDeviceContextState> {
 
@@ -191,6 +192,8 @@ public:
       : MTLD3D11DeviceChild<ID3DDeviceContextState>(pDevice) {}
 
   ~MTLD3D11DeviceContextState() {}
+
+  D3D11ContextState state;
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -211,8 +214,6 @@ public:
 
     return E_NOINTERFACE;
   }
-
-  D3D11ContextState state = {};
 };
 
-} // namespace dxmt
+} // namespace mullion

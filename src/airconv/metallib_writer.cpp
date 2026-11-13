@@ -4,7 +4,7 @@
 
 using namespace llvm;
 
-namespace dxmt::metallib {
+namespace mullion::metallib {
 
 template <typename T> std::string_view value(const T &value) {
   return std::string_view((const char *)(&value), sizeof(T));
@@ -192,7 +192,9 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         private_metadata_stream << "ENDT";
       }
     }
-    auto kernelFns = module.getNamedMetadata("air.kernel");
+    // kernels, and the visible functions kernels call through function tables
+    for (auto [list, type] : {std::pair{"air.kernel", FunctionType::Kernel}, {"air.visible", FunctionType::Visible}}) {
+    auto kernelFns = module.getNamedMetadata(list);
     if (kernelFns) {
       for (auto fn : kernelFns->operands()) {
         fn_count++;
@@ -204,7 +206,7 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         function_def_stream << value((uint16_t)(name.size() + 1));
         function_def_stream << name << '\0';
         function_def_stream
-          << value(MTLB_TYPE_TAG{.type = FunctionType::Kernel});
+          << value(MTLB_TYPE_TAG{.type = type});
         function_def_stream << value(MTLB_HASH_TAG{.hash = hash});
         function_def_stream
           << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});
@@ -284,6 +286,7 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         private_metadata_stream << value(4);
         private_metadata_stream << "ENDT";
       }
+    }
     }
 
     auto objectFns = module.getNamedMetadata("air.object");
@@ -409,4 +412,4 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
   OS << bitcode;
 }
 
-} // namespace dxmt::metallib
+} // namespace mullion::metallib

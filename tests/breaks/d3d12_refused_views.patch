@@ -1,0 +1,11 @@
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1380,7 +1380,7 @@
+       return S_OK;
+     }
+     auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
+-    if (FAILED(d3d12res->CreateShaderResourceView(pDesc, Descriptor))) {
++    if (FAILED(d3d12res->CreateShaderResourceView(pDesc, Descriptor)) && false) {
+       auto [Heap, Index] = GetShaderVisibleDescriptorHeap(this, Descriptor);
+       auto null_desc = RefusedViewDesc(pResource, pDesc);
+       Heap->AddShaderResourceView(Index, &null_desc);

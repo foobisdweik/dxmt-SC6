@@ -1,0 +1,12 @@
+viewports, 1 viewports: a pass takes 131072 sets
+viewports, 2 viewports: the process ends in set 43690, 87380 by the viewports
+viewports, 3 viewports: the process ends in set 29127, 87381 by the viewports
+viewports, 16 viewports: the process ends in set 5460, 87360 by the viewports
+scissors, 1 viewports: a pass takes 131072 sets
+scissors, 2 viewports: the process ends in set 32768, 65536 by the viewports
+scissors, 3 viewports: the process ends in set 21846, 65538 by the viewports
+scissors, 16 viewports: the process ends in set 4096, 65536 by the viewports
+one scissor, 1 viewports: a pass takes 131072 sets
+one scissor, 2 viewports: the process ends in set 32768, 65536 by the viewports
+one scissor, 3 viewports: the process ends in set 21846, 65538 by the viewports
+one scissor, 16 viewports: the process ends in set 4096, 65536 by the viewports

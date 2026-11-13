@@ -1,0 +1,14 @@
+# reciprocates the mip count along with resource dimensions.
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2589,9 +2589,7 @@
+     Value = air.CreateConvertToFloat(Value);
+   // rcp inverts the sizes, not the mip count
+   if (resinfo.modifier == InstResourceInfo::M::rcp)
+-    Value = ir.CreateInsertElement(
+-        ir.CreateFDiv(llvm::ConstantFP::get(air.getFloatTy(4), 1.0), Value), ir.CreateExtractElement(Value, 3), 3
+-    );
++    Value = ir.CreateFDiv(llvm::ConstantFP::get(air.getFloatTy(4), 1.0), Value);
+ 
+   StoreOperand(resinfo.dst, MaskSwizzle(Value, GetMask(resinfo.dst), Tex->Swizzle));
+ }

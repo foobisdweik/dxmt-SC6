@@ -1,0 +1,12 @@
+# the polygon is not snapped
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -222,7 +222,7 @@
+     auto [x, y] = window(div(at(polygon[k], 0), w), div(at(polygon[k], 1), w));
+     out.window[k][0] = x, out.window[k][1] = y;
+     for (auto &c : out.window[k])
+-      c = div(air.CreateFPUnOp(AIRBuilder::rint, mul(c, f(256)), false), f(256));
++      c = div(mul(c, f(256)), f(256));
+     if (!k)
+       first_depth = div(at(polygon[k], 2), w);
+   }

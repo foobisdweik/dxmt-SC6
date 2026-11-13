@@ -1,0 +1,16 @@
+# a query sums only the segments of its last render pass
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -1230,8 +1230,11 @@ public:
+       }
+       if (image_copied)
+         shading_rate_pass_ = allocator_->encoder_current;
+-      if (!active_queries_.empty())
++      if (!active_queries_.empty()) {
++        for (auto &query : active_queries_)
++          query.first = visibility_slots_.size();
+         CountVisibility();
++      }
+     }
+ 
+     // the conservative rasterizer's viewports and state, bound again when they or the pipeline change

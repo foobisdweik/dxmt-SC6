@@ -1,0 +1,12 @@
+# reverse subtraction in RGB and alpha blend equations.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -96,7 +96,7 @@
+ constexpr WMTBlendOperation kBlendOpMap[] = {
+     WMTBlendOperationAdd, // padding 0
+     WMTBlendOperationAdd,
+-    WMTBlendOperationSubtract,
++    WMTBlendOperationReverseSubtract,
+     WMTBlendOperationReverseSubtract,
+     WMTBlendOperationMin,
+     WMTBlendOperationMax,

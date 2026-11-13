@@ -1,0 +1,12 @@
+# R32_FLOAT and R16_UNORM lose comparison support
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -1798,7 +1798,7 @@
+   }
+   // comparison filters take R32_FLOAT and R16_UNORM as well as the depth planes (D3D11_FILTER), and Metal compares
+   // those color textures bound as depth ones
+-  if (Format == DXGI_FORMAT_R32_FLOAT || Format == DXGI_FORMAT_R16_UNORM)
++  if (false)
+     Support1 |= D3D11_FORMAT_SUPPORT_SHADER_SAMPLE_COMPARISON | D3D11_FORMAT_SUPPORT_SHADER_GATHER_COMPARISON;
+ 
+   // a color format Metal cannot resolve is resolved by a draw (fs_resolve_float)

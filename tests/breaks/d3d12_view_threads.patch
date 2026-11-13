@@ -1,0 +1,29 @@
+# an allocation's views are added under a shared lock, and read with none
+# family native
+--- a/src/mullion/mullion_texture.cpp
++++ b/src/mullion/mullion_texture.cpp
+@@ -101,11 +101,11 @@
+ // again there, so two threads never add one twice
+ void
+ Texture::prepareAllocationViews(TextureAllocation *allocation) {
+-  std::unique_lock<mullion::shared_mutex> lock(mutex_);
+   if (allocation->version_ < 1) {
+     allocation->cached_view_.push_back(new TextureView(allocation));
+     allocation->version_ = 1;
+   }
++  std::shared_lock<mullion::shared_mutex> lock(mutex_);
+   for (unsigned version = allocation->version_; version < version_; version++) {
+     allocation->cached_view_.push_back(new TextureView(allocation, version, viewDescriptors_[version]));
+   }
+@@ -265,11 +265,8 @@
+ TextureView &
+ Texture::view(TextureViewKey key, TextureAllocation* allocation) {
+   // read under the lock too: adding a view may move the list, though not the views it points to
+-  std::shared_lock<mullion::shared_mutex> lock(mutex_);
+   if (unlikely(allocation->version_ != version_)) {
+-    lock.unlock();
+     prepareAllocationViews(allocation);
+-    lock.lock();
+   }
+   return *allocation->cached_view_[key.index];
+ }

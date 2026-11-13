@@ -1,0 +1,13 @@
+# OPTIONS19 is a feature the device does not know
+# family native
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1030,7 +1030,7 @@
+     // when it starts (DirectX-Headers, d3dx12_check_feature_support.h). they are answered with what a driver without
+     // the features reports (DirectX-Specs, VulkanOn12): SupportedSampleCountsWithNoOutputs "will report a value of 1,
+     // indicating simple-sampled only, for drivers that do not support the feature", and older drivers' heap limits
+-    case sdk::D3D12_FEATURE_D3D12_OPTIONS19: {
++    case ~0u: {
+       if (DataSize != sizeof(sdk::D3D12_FEATURE_DATA_D3D12_OPTIONS19))
+         return FAIL(E_INVALIDARG);
+       auto out = reinterpret_cast<sdk::D3D12_FEATURE_DATA_D3D12_OPTIONS19 *>(pFeatureData);

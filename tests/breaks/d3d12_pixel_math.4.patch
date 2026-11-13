@@ -1,0 +1,19 @@
+# a 16-bit frac is taken in 32 bits and converted toward zero, as f32tof16 converts
+# family native
+# family native-metal3
+diff --git a/src/airconv/nt/dxbc_converter_base.cpp b/src/airconv/nt/dxbc_converter_base.cpp
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -1080,6 +1080,12 @@ Converter::Fraction(llvm::Value *Value) {
+     return Skip && strstr(Skip, "frac-floor");
+   }();
+   auto Type = Value->getType();
++  if (!Select && Type->getScalarType()->isHalfTy()) {
++    auto Wide = ir.CreateFPExt(Value, Type->getWithNewType(ir.getFloatTy()));
++    llvm::IRBuilder<>::FastMathFlagGuard Strict(ir);
++    ir.clearFastMathFlags();
++    return ConvertToHalfTowardZero(ir.CreateFSub(Wide, air.CreateFPUnOp(AIRBuilder::floor, Wide)));
++  }
+   if (!Select) {
+     auto Floor = air.CreateFPUnOp(AIRBuilder::floor, Value, false);
+     llvm::IRBuilder<>::FastMathFlagGuard Strict(ir);

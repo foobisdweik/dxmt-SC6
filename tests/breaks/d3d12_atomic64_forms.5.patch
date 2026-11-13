@@ -1,0 +1,12 @@
+# loses the absolute descriptor heap index for 64-bit atomic resources
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -457,7 +457,7 @@
+       auto handle = CallInst::Create(
+           create,
+           {ConstantInt::get(i32, CreateHandle), ConstantInt::get(i8, cls), ConstantInt::get(i32, range->second),
+-           call->getArgOperand(1), call->getArgOperand(3)},
++           ConstantInt::get(i32, 0), call->getArgOperand(3)},
+           "", annotate
+       );
+       annotate->replaceAllUsesWith(handle);

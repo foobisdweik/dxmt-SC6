@@ -18,11 +18,12 @@
 
 #include "Metal.hpp"
 #include "airconv_public.h"
+#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
 #include "log/log.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 class MTLCompiledGeometryPipelineImpl
     : public MTLCompiledGeometryPipeline {
@@ -43,18 +44,38 @@ public:
                                     pDesc->ColorAttachmentFormats[i]))
                                 << i);
     }
-    VertexShader =
-        pDesc->VertexShader->get_shader(ShaderVariantGeometryVertex{
-            pDesc->InputLayout, pDesc->GeometryShader,
-            pDesc->IndexBufferFormat, pDesc->GSStripTopology});
-    GeometryShader = pDesc->GeometryShader->get_shader(
-      ShaderVariantGeometry{pDesc->VertexShader, pDesc->GSStripTopology});
-   
+    // the mesh stage is the geometry shader's, or for stream output alone a variant of the vertex shader, whose
+    // primitives are then the topology's
+    static_assert(
+        WMTPrimitiveTopologyClassPoint == (int)microsoft::D3D10_SB_PRIMITIVE_POINT &&
+        WMTPrimitiveTopologyClassLine == (int)microsoft::D3D10_SB_PRIMITIVE_LINE &&
+        WMTPrimitiveTopologyClassTriangle == (int)microsoft::D3D10_SB_PRIMITIVE_TRIANGLE
+    );
+    auto owner = pDesc->GeometryShader ? pDesc->GeometryShader : pDesc->VertexShader;
+    GeometryInstances = pDesc->GeometryShader ? pDesc->GeometryShader->reflection().GeometryShader.InstanceCount : 1;
+    MeshInstances = pDesc->GeometryShader ? GeometryInstances : pDesc->PassThrough;
+    RasterizationEnabled = RasterizationEnabled && (pDesc->GeometryShader || pDesc->PassThrough);
+    for (bool counting : {false, true}) {
+      if (counting && !pDesc->SOLayout)
+        break;
+      // the counting pass draws nothing
+      ShaderVariantStreamOutput so{
+          pDesc->SOLayout, counting, pDesc->InputPrimitive, pDesc->PassThrough && !counting, pDesc->QuadLines && !counting
+      };
+      VertexShader[counting] = pDesc->VertexShader->get_shader(ShaderVariantGeometryVertex{
+          pDesc->InputLayout, pDesc->GeometryShader, pDesc->IndexBufferFormat, pDesc->GSStripTopology, so});
+      GeometryShader[counting] =
+          owner->get_shader(ShaderVariantGeometry{
+          pDesc->VertexShader, pDesc->GSStripTopology, so, pDesc->PipelineStatistics, pDesc->ClipDistances != 0});
+    }
+
     if (pDesc->PixelShader) {
-      PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
+      PixelShader = pDesc->PixelShader->get_pixel_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
           depth_stencil_format == WMTPixelFormatInvalid,
-          unorm_output_reg_mask});
+          unorm_output_reg_mask, pDesc->PipelineStatistics, pDesc->BlendState->IsAlphaToCoverage(),
+          pDesc->CenteredSamples, pDesc->SingleRasterSample, pDesc->PairedSamples, pDesc->ClipDistances},
+          {rtv_formats, num_rtvs}, pDesc->BlendState);
       ps_valid_render_targets = pDesc->PixelShader->reflection().PSValidRenderTargets;
     } else {
       PixelShader = nullptr;
@@ -62,29 +83,38 @@ public:
     }
   }
 
-  void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline) final {
+  void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline, bool statistics) final {
+    if (statistics && (description->PixelShader || description->GeometryShader) && !description->PipelineStatistics) {
+      auto desc = *description;
+      desc.PipelineStatistics = true;
+      MTLCompiledGeometryPipeline *pipeline;
+      device_->CreateGeometryPipeline(&desc, &pipeline);
+      return pipeline->GetPipeline(pPipeline);
+    }
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {state_mesh_};
+    *pPipeline = {state_mesh_[0], state_mesh_[1], GeometryInstances, MeshInstances};
   }
 
   ThreadpoolWork *RunThreadpoolWork() {
 
     WMT::Reference<WMT::Error> err;
-    MTL_COMPILED_SHADER vs, gs, ps;
+    MTL_COMPILED_SHADER vs[2] = {}, gs[2] = {}, ps;
 
-    if (!VertexShader->GetShader(&vs)) {
-      return VertexShader;
-    }
-    if (!vs.Function) {
-      ERR("Failed to create mesh PSO: Invalid vertex shader.");
-      return this;
-    }
-    if (!GeometryShader->GetShader(&gs)) {
-      return GeometryShader;
-    }
-    if (!gs.Function) {
-      ERR("Failed to create mesh PSO: Invalid geometry shader.");
-      return this;
+    for (int counting = 0; counting < 2 && VertexShader[counting]; counting++) {
+      if (!VertexShader[counting]->GetShader(&vs[counting])) {
+        return VertexShader[counting];
+      }
+      if (!vs[counting].Function) {
+        ERR("Failed to create mesh PSO: Invalid vertex shader.");
+        return this;
+      }
+      if (!GeometryShader[counting]->GetShader(&gs[counting])) {
+        return GeometryShader[counting];
+      }
+      if (!gs[counting].Function) {
+        ERR("Failed to create mesh PSO: Invalid geometry shader.");
+        return this;
+      }
     }
     if (PixelShader) {
       if (!PixelShader->GetShader(&ps)) {
@@ -99,15 +129,15 @@ public:
     WMTMeshRenderPipelineInfo info;
     WMT::InitializeMeshRenderPipelineInfo(info);
 
-    info.object_function = vs.Function;
-    info.mesh_function = gs.Function;
-    info.payload_memory_length = 16256;
+    info.object_function = vs[0].Function;
+    info.mesh_function = gs[0].Function;
+    info.payload_memory_length = SM50_GEOMETRY_PAYLOAD_SIZE;
 
     info.immutable_object_buffers = (1 << 16)  | (1 << 21) | (1 << 29) | (1 << 30);
     info.immutable_mesh_buffers = (1 << 29) | (1 << 30);
     info.immutable_fragment_buffers = (1 << 29) | (1 << 30);
 
-    if (PixelShader) {
+    if (PixelShader && RasterizationEnabled) {
       info.fragment_function = ps.Function;
     }
     info.rasterization_enabled = RasterizationEnabled;
@@ -128,14 +158,27 @@ public:
     if (pBlendState) {
       pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
     }
+    // explicit shader coverage disables A2C (D3D11.3 17.18)
+    if (description->PixelShader && description->PixelShader->reflection().PixelShader.HasCoverageOutput)
+      info.alpha_to_coverage_enabled = false;
 
     info.raster_sample_count = SampleCount;
 
-    state_mesh_ = device_->GetMTLDevice().newRenderPipelineState(info, err);
+    state_mesh_[0] = device_->GetMTLDevice().newRenderPipelineState(info, err);
 
-    if (state_mesh_ == nullptr) {
+    if (state_mesh_[0] == nullptr) {
       ERR("Failed to create mesh PSO: ", err.description().getUTF8String());
       return this;
+    }
+    if (vs[1].Function) {
+      // stream output's counting pass draws nothing
+      info.object_function = vs[1].Function;
+      info.mesh_function = gs[1].Function;
+      info.fragment_function = {};
+      info.rasterization_enabled = false;
+      state_mesh_[1] = device_->GetMTLDevice().newRenderPipelineState(info, err);
+      if (state_mesh_[1] == nullptr)
+        ERR("Failed to create mesh PSO: ", err.description().getUTF8String());
     }
     return this;
   }
@@ -155,13 +198,16 @@ private:
   MTLD3D11Device *device_;
   std::atomic_bool ready_;
   IMTLD3D11BlendState *pBlendState;
-  WMT::Reference<WMT::RenderPipelineState> state_mesh_;
+  // the pipeline, and with stream output [1] its counting pass
+  WMT::Reference<WMT::RenderPipelineState> state_mesh_[2];
   bool RasterizationEnabled;
   UINT SampleCount;
+  uint32_t GeometryInstances;
+  uint32_t MeshInstances;
 
-  CompiledShader *VertexShader;
+  CompiledShader *VertexShader[2] = {};
   CompiledShader *PixelShader;
-  CompiledShader *GeometryShader;
+  CompiledShader *GeometryShader[2] = {};
 };
 
 std::unique_ptr<MTLCompiledGeometryPipeline>
@@ -170,4 +216,4 @@ CreateGeometryPipeline(MTLD3D11Device *pDevice,
   return std::make_unique<MTLCompiledGeometryPipelineImpl>(pDevice, pDesc);
 }
 
-} // namespace dxmt
+} // namespace mullion

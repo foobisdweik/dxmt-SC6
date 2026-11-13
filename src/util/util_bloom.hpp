@@ -2,7 +2,7 @@
 #include <array>
 #include <cstdint>
 
-namespace dxmt {
+namespace mullion {
 
 template <unsigned k> class PartitionedBloomFilter64 {
 public:
@@ -39,4 +39,4 @@ private:
   std::array<uint64_t, k> bits;
 };
 
-} // namespace dxmt
+} // namespace mullion

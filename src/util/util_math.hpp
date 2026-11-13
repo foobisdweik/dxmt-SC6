@@ -12,7 +12,7 @@
 
 #include <cmath>
 
-namespace dxmt {
+namespace mullion {
 
 constexpr size_t CACHE_LINE_SIZE = 64;
 
@@ -43,4 +43,4 @@ template <typename T> inline T divCeil(T dividend, T divisor) {
   return (dividend + divisor - 1) / divisor;
 }
 
-} // namespace dxmt
+} // namespace mullion

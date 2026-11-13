@@ -2,7 +2,7 @@
 
 #include "d3d11_device_child.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D11Device;
 
@@ -26,4 +26,4 @@ public:
                                              ID3D11ClassInstance **ppInstance);
 };
 
-} // namespace dxmt
+} // namespace mullion

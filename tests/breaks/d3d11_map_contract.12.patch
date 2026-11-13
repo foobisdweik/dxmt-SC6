@@ -1,0 +1,12 @@
+# use the row pitch as D3D10 texture3D depth pitch
+--- a/src/d3d10/d3d10_texture.cpp
++++ b/src/d3d10/d3d10_texture.cpp
+@@ -71,7 +71,7 @@
+   if (hr == S_OK) {
+     pMappedTex3D->pData = subresource.pData;
+     pMappedTex3D->RowPitch = subresource.RowPitch;
+-    pMappedTex3D->DepthPitch = subresource.DepthPitch;
++    pMappedTex3D->DepthPitch = subresource.RowPitch;
+   }
+   return hr;
+ }

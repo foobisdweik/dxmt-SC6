@@ -1,0 +1,12 @@
+# a D3D10/11 stereo present shows the left eye though it prefers the right one
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -850,7 +850,7 @@
+     // the output is mono: a stereo buffer shows its left eye, or its right one when the present prefers it
+     auto &shown = backbuffers_[0]->texture();
+     auto eye = shown->createView(
+-        {shown->pixelFormat(), WMTTextureType2D, 0, 1, PresentFlags & DXGI_PRESENT_STEREO_PREFER_RIGHT ? 1u : 0u, 1}
++        {shown->pixelFormat(), WMTTextureType2D, 0, 1, 0u, 1}
+     );
+     if constexpr (EnableMetalFX) {
+       chunk->emitcc([

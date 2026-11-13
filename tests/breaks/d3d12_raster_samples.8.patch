@@ -1,0 +1,12 @@
+# forced 1 passes keep the targets' standard sample positions
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -756,7 +756,7 @@
+         if (!AttachmentDesc.Texture)
+           continue;
+         effective_rtvs++;
+-        if (AttachmentDesc.Texture->centered || pso_graphics_->forced_sample_count == 1)
++        if (AttachmentDesc.Texture->centered)
+           render->center_samples = AttachmentDesc.Texture->sampleCount();
+         auto &rt = render->colors[i];
+         rt.attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);

@@ -1,0 +1,12 @@
+# drops coherent 16-bit and 64-bit buffer stores.
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2774,7 +2774,7 @@
+             if (store) {
+               auto piece = ir.CreateTrunc(ir.CreateLShr(x, shift), unit);
+               if (b.GlobalCoherent)
+-                air.CreateDeviceCoherentStore(piece, ptr);
++                (void)piece;
+               else
+                 ir.CreateStore(piece, ptr);
+               continue;

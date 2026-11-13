@@ -1,0 +1,12 @@
+# each indirect part repeats the first instance
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -600,7 +600,7 @@
+       *task.omitted = max(*task.omitted, object_groups);
+     for (uint part = 0; part < task.parts; part++) {
+       device MullionDispatchArguments& out = task.dispatch_arguments_out[part];
+-      uint2 origin = runs && part < columns * rows ? uint2(part % columns * width, part / columns * height) : uint2(0);
++      uint2 origin = runs && part < columns * rows ? uint2(part % columns * width, 0) : uint2(0);
+       bool used = runs && part < columns * rows;
+       out.x = used ? min(width, x - origin.x) : 0;
+       out.y = used ? min(height, y - origin.y) : 0;

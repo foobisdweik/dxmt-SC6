@@ -1,0 +1,9 @@
+# queued acquire and release borrow the event past the texture's lifetime
+diff --git a/src/mullion/mullion_keyed_mutex.hpp b/src/mullion/mullion_keyed_mutex.hpp
+--- a/src/mullion/mullion_keyed_mutex.hpp
++++ b/src/mullion/mullion_keyed_mutex.hpp
+@@ -50,3 +50,3 @@
+-  WMT::Reference<WMT::SharedEvent>
++  WMT::SharedEvent
+   sharedEvent() const {
+     return event_;

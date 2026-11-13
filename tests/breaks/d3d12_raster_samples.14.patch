@@ -1,0 +1,12 @@
+# lines pass through as Metal's own, not quadrilaterals.
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -1175,7 +1175,7 @@
+   uint32_t payload_idx = func_signature.DefineInput(air::InputPayload{.size = SM50_GEOMETRY_PAYLOAD_SIZE});
+   // a quadrilateral line is a rectangle 1.4 pixels wide, two triangles whose corners take their end's attributes
+   // (D3D11.3 3.4.5): what Metal's own lines are not
+-  bool quads = pso_data->quad_lines && own.count == 2;
++  bool quads = false && own.count == 2;
+   uint32_t corners = quads ? 4 : own.count, primitives = quads ? 2 : 1;
+   func_signature.DefineInput(air::InputMesh{
+       corners, primitives,

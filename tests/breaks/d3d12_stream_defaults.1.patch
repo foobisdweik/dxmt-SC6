@@ -1,0 +1,20 @@
+# topology is defaulted only when stream output is present
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -2028,7 +2028,6 @@
+     desc_graphics.SampleDesc.Count = 1;
+     desc_graphics.SampleDesc.Quality = 0;
+     desc_graphics.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+-    desc_graphics.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+   }
+
+   uint32_t defined_type = 0;
+@@ -2098,6 +2097,8 @@
+     case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_STREAM_OUTPUT: {
+       GET_STREAM_DATA(D3D12_STREAM_OUTPUT_DESC);
+       desc_graphics.StreamOutput = subobject->data;
++      if (!(defined_type & (1 << D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PRIMITIVE_TOPOLOGY)))
++        desc_graphics.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+       break;
+     }
+     case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_BLEND: {

@@ -1,0 +1,12 @@
+# D24 readback multiplies depth by its value again before quantization.
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -776,7 +776,7 @@
+     auto dst = reinterpret_cast<device uint *>(buffer + buffer_offset);
+     float depth = tex_depth.read(pos).x;
+     uint stencil = tex_stencil.read(pos).x;
+-    *dst = (uint(round(kD24UnormMax * clamp(depth, 0.0, 1.0))) & kD24UnormMax) | (stencil << 24);
++    *dst = (uint(round(kD24UnormMax * clamp(depth * depth, 0.0, 1.0))) & kD24UnormMax) | (stencil << 24);
+   }
+ }
+ 

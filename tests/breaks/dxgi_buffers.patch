@@ -1,0 +1,12 @@
+# resize accepts a back buffer still held by the application
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -474,7 +474,7 @@
+     if (BufferCount == 1 && desc_.SwapEffect >= DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL)
+       return DXGI_ERROR_INVALID_CALL;
+     for (const auto &buffer : backbuffers_)
+-      if (buffer->GetPrivateRefCount() > 1)
++      if (buffer->GetPrivateRefCount() > 2)
+         return DXGI_ERROR_INVALID_CALL;
+     if (!backbuffers_.empty()) {
+       // queued commands can release their textures; retained command lists cannot (IDXGISwapChain::ResizeBuffers)

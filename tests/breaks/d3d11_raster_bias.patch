@@ -1,0 +1,12 @@
+# slope-scaled depth bias is dropped.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -453,7 +453,7 @@
+     cmd.depth_clip_mode = desc_.DepthClipEnable ? WMTDepthClipModeClip : WMTDepthClipModeClamp;
+ 
+     cmd.depth_bias = desc_.DepthBias;
+-    cmd.scole_scale = desc_.SlopeScaledDepthBias;
++    cmd.scole_scale = 0;
+     cmd.depth_bias_clamp = desc_.DepthBiasClamp;
+ 
+     cmd.winding = desc_.FrontCounterClockwise ? WMTWindingCounterClockwise: WMTWindingClockwise;

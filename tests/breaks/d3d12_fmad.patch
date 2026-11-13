@@ -1,0 +1,12 @@
+# precise DXIL FMad rounds once instead of twice
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3296,7 +3296,6 @@
+     case FMad:
+     case Fma:
+-      ret = op == FMad && (precise || call->getMetadata("dx.precise")) ? ir.CreateFAdd(ir.CreateFMul(a(1), a(2)), a(3))
+-                                                                   : air.CreateFMA(a(1), a(2), a(3));
++      ret = air.CreateFMA(a(1), a(2), a(3));
+       break;
+     case IMad:
+     case UMad:

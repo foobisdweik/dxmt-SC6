@@ -1,0 +1,12 @@
+# ignores the first subresource in the version one footprint API
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1696,7 +1696,7 @@
+     D3D12_RESOURCE_DESC desc;
+ 
+     GetCopyableFootprints(
+-        ResourceDesc(pResourceDesc, desc) ? &desc : nullptr, FirstSubresource, NumSubresources, BaseOffset, pLayouts,
++        ResourceDesc(pResourceDesc, desc) ? &desc : nullptr, 0, NumSubresources, BaseOffset, pLayouts,
+         pNumRows, pRowSizeInBytes, pTotalBytes
+     );
+   }

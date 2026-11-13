@@ -1,0 +1,12 @@
+# no implicit viewport scissor
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5848,7 +5848,7 @@
+           LONG top =
+               std::clamp(std::max(d3d_rect.top, LONG(std::floor(viewport.TopLeftY))), (LONG)0, (LONG)render_target_height);
+           LONG right = std::clamp(
+-              std::min(d3d_rect.right, LONG(std::floor(viewport.TopLeftX + viewport.Width))), left,
++              d3d_rect.right, left,
+               (LONG)render_target_width
+           );
+           LONG bottom = std::clamp(

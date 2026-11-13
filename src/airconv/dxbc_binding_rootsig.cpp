@@ -20,50 +20,75 @@
 #include "dxbc_converter.hpp"
 #include "dxbc_root_signature.hpp"
 #include "shader_common.hpp"
+#include "../mullion/mullion_command_constants.hpp"
 #include "llvm/IR/DerivedTypes.h"
+#include <algorithm>
+#include <set>
+#include <cmath>
 #include <cassert>
 
-namespace dxmt::dxbc {
+namespace mullion::dxbc {
 
 using namespace llvm::air;
 
 class RootSignatureBindingMap : public BindingMap {
 public:
+  // the root arguments and the static samplers are arguments of the function, or what a ray tracing shader took
+  // from its context (bind_rootsig_arguments)
+  llvm::Value *
+  Table(llvm::air::AIRBuilder &AIR, uint32_t TableIndex) {
+    if (TableIndex == RootSignatureArgumentIndex && RootArguments)
+      return RootArguments;
+    if (TableIndex == StaticSamplerArgumentIndex && StaticSamplers)
+      return StaticSamplers;
+    return AIR.builder.GetInsertBlock()->getParent()->getArg(TableIndex);
+  }
+
   llvm::Value *
   GetArgument(llvm::air::AIRBuilder &AIR, uint32_t TableIndex, uint32_t Index) {
     auto &B = AIR.builder;
-    auto Fn = B.GetInsertBlock()->getParent();
-    auto Arg = Fn->getArg(TableIndex);
+    auto Arg = Table(AIR, TableIndex);
     auto TyArg = llvm::cast<llvm::PointerType>(Arg->getType())->getNonOpaquePointerElementType();
     auto TyStruct = llvm::cast<llvm::StructType>(TyArg);
     return B.CreateLoad(TyStruct->getElementType(Index), B.CreateStructGEP(TyStruct, Arg, Index));
   };
 
+  // a constant, structured or raw buffer's pointer and metadata (its byte length). `typed`, for a structured or raw
+  // SRV or UAV: the descriptor may be a typed view's, which games give to such slots (Hogwarts Legacy reads tile
+  // lists written as RWBuffer<uint> through a typed R32_UINT view as StructuredBuffer<uint>), and drivers read it as
+  // the memory it views: one is told by the upper half of its metadata, its element count where a byte length leaves
+  // 0, and read from the first byte it keeps in its last qword, 4 bytes an element
   std::pair<llvm::Value *, llvm::Value *>
   GetBufferDescriptor(
       llvm::air::AIRBuilder &AIR, llvm::Value *IntPtr, llvm::Value *Index, llvm::Type *HandleType, RangeId RangeId,
-      uint32_t DescriptorOffset
+      uint32_t DescriptorOffset, bool typed = false
   ) {
     auto TyBufferDescriptor = llvm::StructType::get(
         AIR.getContext(), {HandleType, llvm::Type::getInt64Ty(AIR.getContext()),
                            llvm::Type::getInt64Ty(AIR.getContext()), llvm::Type::getInt64Ty(AIR.getContext())}
     );
     auto &B = AIR.builder;
+    auto Pointer = B.CreatePointerCast(
+        IntPtr, TyBufferDescriptor->getPointerTo(IntPtr->getType()->getPointerAddressSpace())
+    );
     auto IdxDescriptor = B.CreateAdd(B.CreateSub(Index, AIR.getInt(RangeId)), AIR.getInt(DescriptorOffset));
+    auto Handle =
+        B.CreateLoad(HandleType, B.CreateGEP(TyBufferDescriptor, Pointer, {IdxDescriptor, AIR.getInt(0) /* pointer */}));
+    auto Metadata = B.CreateLoad(
+        llvm::Type::getInt64Ty(AIR.getContext()),
+        B.CreateGEP(TyBufferDescriptor, Pointer, {IdxDescriptor, AIR.getInt(1) /* metadata */})
+    );
+    if (!typed)
+      return {Handle, Metadata};
+    auto Elements = B.CreateLShr(Metadata, 32);
+    auto Typed = B.CreateICmpNE(Elements, B.getInt64(0));
+    auto First = B.CreateLoad(
+        llvm::Type::getInt64Ty(AIR.getContext()),
+        B.CreateGEP(TyBufferDescriptor, Pointer, {IdxDescriptor, AIR.getInt(3) /* a typed view's first byte */})
+    );
     return {
-        B.CreateLoad(
-            HandleType, B.CreateGEP(
-                            TyBufferDescriptor, B.CreatePointerCast(IntPtr, TyBufferDescriptor->getPointerTo(2)),
-                            {IdxDescriptor, AIR.getInt(0) /* pointer */}
-                        )
-        ),
-        B.CreateLoad(
-            llvm::Type::getInt64Ty(AIR.getContext()),
-            B.CreateGEP(
-                TyBufferDescriptor, B.CreatePointerCast(IntPtr, TyBufferDescriptor->getPointerTo(2)),
-                {IdxDescriptor, AIR.getInt(1) /* metadata */}
-            )
-        )
+        B.CreateSelect(Typed, B.CreateIntToPtr(First, HandleType), Handle),
+        B.CreateSelect(Typed, B.CreateMul(Elements, B.getInt64(4)), Metadata)
     };
   }
 
@@ -77,23 +102,24 @@ public:
                            TyCounter, llvm::Type::getInt64Ty(AIR.getContext())}
     );
     auto &B = AIR.builder;
+    auto Pointer = B.CreatePointerCast(
+        IntPtr, TyBufferDescriptor->getPointerTo(IntPtr->getType()->getPointerAddressSpace())
+    );
     auto IdxDescriptor = B.CreateAdd(B.CreateSub(Index, AIR.getInt(RangeId)), AIR.getInt(DescriptorOffset));
     return B.CreateLoad(
-        TyCounter, B.CreateGEP(
-                       TyBufferDescriptor, B.CreatePointerCast(IntPtr, TyBufferDescriptor->getPointerTo(2)),
-                       {IdxDescriptor, AIR.getInt(2) /* metadata */}
-                   )
+        TyCounter, B.CreateGEP(TyBufferDescriptor, Pointer, {IdxDescriptor, AIR.getInt(2) /* metadata */})
     );
   }
 
   llvm::Value *
   GetRootConstantPointer(llvm::air::AIRBuilder &AIR, uint32_t TableIndex, uint32_t Index) {
     auto &B = AIR.builder;
-    auto Fn = B.GetInsertBlock()->getParent();
-    auto Arg = Fn->getArg(TableIndex);
+    auto Arg = Table(AIR, TableIndex);
     auto TyArg = llvm::cast<llvm::PointerType>(Arg->getType())->getNonOpaquePointerElementType();
     auto TyStruct = llvm::cast<llvm::StructType>(TyArg);
-    return B.CreatePointerCast(B.CreateStructGEP(TyStruct, Arg, Index), AIR.getIntTy(4)->getPointerTo(2));
+    return B.CreatePointerCast(
+        B.CreateStructGEP(TyStruct, Arg, Index), AIR.getIntTy(4)->getPointerTo(Arg->getType()->getPointerAddressSpace())
+    );
   };
 
   virtual llvm::Optional<ConstantBufferDescriptor>
@@ -117,43 +143,29 @@ public:
     auto [Pointer, Metadata] = GetBufferDescriptor(
         Builder, HeapPointer, Index, Builder.getIntTy(4)->getPointerTo(2), CBuf.range.lower_bound, DescriptorOffset
     );
-    return ConstantBufferDescriptor{Pointer, Metadata};
+    return ConstantBufferDescriptor{Pointer, Unbounded.count({D3D12_DESCRIPTOR_RANGE_TYPE_CBV, Range}) ? nullptr : Metadata};
   }
 
-  std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>
+  SamplerDescriptor
   GetSamplerDescriptor(
       llvm::air::AIRBuilder &AIR, llvm::Value *IntPtr, llvm::Value *Index, RangeId RangeId, uint32_t DescriptorOffset
   ) {
     auto TySampleHandler = AIR.getSamplerHandleType();
-    auto TySamplerDescriptor = llvm::StructType::get(
-        AIR.getContext(), {TySampleHandler, TySampleHandler, llvm::Type::getInt64Ty(AIR.getContext()),
-                           llvm::Type::getInt64Ty(AIR.getContext())}
-    );
+    auto TyInt64 = llvm::Type::getInt64Ty(AIR.getContext());
+    auto TySamplerDescriptor =
+        llvm::StructType::get(AIR.getContext(), {TySampleHandler, TySampleHandler, TyInt64, TyInt64});
     auto &B = AIR.builder;
     auto IdxDescriptor = B.CreateAdd(B.CreateSub(Index, AIR.getInt(RangeId)), AIR.getInt(DescriptorOffset));
-    return {
-        B.CreateLoad(
-            TySampleHandler, //
-            B.CreateGEP(
-                TySamplerDescriptor, B.CreatePointerCast(IntPtr, TySamplerDescriptor->getPointerTo(2)),
-                {IdxDescriptor, AIR.getInt(0) /*sampler*/}
-            )
-        ),
-        B.CreateLoad(
-            TySampleHandler, //
-            B.CreateGEP(
-                TySamplerDescriptor, B.CreatePointerCast(IntPtr, TySamplerDescriptor->getPointerTo(2)),
-                {IdxDescriptor, AIR.getInt(1) /* cube_sampler */}
-            )
-        ),
-        B.CreateLoad(
-            llvm::Type::getInt64Ty(AIR.getContext()),
-            B.CreateGEP(
-                TySamplerDescriptor, B.CreatePointerCast(IntPtr, TySamplerDescriptor->getPointerTo(2)),
-                {IdxDescriptor, AIR.getInt(2) /* metadata*/}
-            )
-        )
+    auto Field = [&](llvm::Type *Ty, unsigned Field) {
+      return B.CreateLoad(
+          Ty, B.CreateGEP(
+                  TySamplerDescriptor, B.CreatePointerCast(IntPtr, TySamplerDescriptor->getPointerTo(2)),
+                  {IdxDescriptor, AIR.getInt(Field)}
+              )
+      );
     };
+    // sampler, cube_sampler, metadata, border
+    return {Field(TySampleHandler, 0), Field(TySampleHandler, 1), Field(TyInt64, 2), Field(TyInt64, 3)};
   }
 
   virtual llvm::Optional<SamplerDescriptor>
@@ -167,22 +179,27 @@ public:
     if (DescriptorOffset == ~0u) {
       if (~StaticSamplerArgumentIndex == 0)
         return {};
-      auto [SamplerH, CubeSampler, Metadata] = GetSamplerDescriptor(
-          Builder, Builder.builder.GetInsertBlock()->getParent()->getArg(StaticSamplerArgumentIndex), Index,
+      auto Static = GetSamplerDescriptor(
+          Builder, Table(Builder, StaticSamplerArgumentIndex), Index,
           Sampler.range.lower_bound, Sampler.arg_index
       );
-      return SamplerDescriptor{SamplerH, CubeSampler, Metadata};
+      // a static sampler's border color is one of Metal's own (D3D12_STATIC_BORDER_COLOR)
+      Static.Border = nullptr;
+      if (auto Known = llvm::dyn_cast<llvm::ConstantInt>(Index)) {
+        auto At = Known->getZExtValue() - Sampler.range.lower_bound + Sampler.arg_index;
+        if (At < StaticSamplerStates.size())
+          std::tie(Static.Anisotropic, Static.Biased, Static.Reduces) = StaticSamplerStates[At];
+      }
+      return Static;
     }
     if (~RootSignatureArgumentIndex == 0)
       return {};
 
     auto HeapPointer = GetArgument(Builder, RootSignatureArgumentIndex, Sampler.arg_index);
-    auto [SamplerH, CubeSampler, Metadata] =
-        GetSamplerDescriptor(Builder, HeapPointer, Index, Sampler.range.lower_bound, DescriptorOffset);
-    return SamplerDescriptor{SamplerH, CubeSampler, Metadata};
+    return GetSamplerDescriptor(Builder, HeapPointer, Index, Sampler.range.lower_bound, DescriptorOffset);
   }
 
-  std::pair<llvm::Value *, llvm::Value *>
+  std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>
   GetTextureDescriptor(
       llvm::air::AIRBuilder &AIR, llvm::Value *IntPtr, llvm::Value *Index, Texture::ResourceKind Kind, RangeId RangeId,
       uint32_t DescriptorOffset
@@ -193,21 +210,21 @@ public:
                            llvm::Type::getInt64Ty(AIR.getContext()), llvm::Type::getInt64Ty(AIR.getContext())}
     );
     auto &B = AIR.builder;
+    auto Pointer = B.CreatePointerCast(
+        IntPtr, TyTextureDescriptor->getPointerTo(IntPtr->getType()->getPointerAddressSpace())
+    );
     auto IdxDescriptor = B.CreateAdd(B.CreateSub(Index, AIR.getInt(RangeId)), AIR.getInt(DescriptorOffset));
     return {
         B.CreateLoad(
             TyTextureHandle, //
-            B.CreateGEP(
-                TyTextureDescriptor, B.CreatePointerCast(IntPtr, TyTextureDescriptor->getPointerTo(2)),
-                {IdxDescriptor, AIR.getInt(0) /* pointer */}
-            )
+            B.CreateGEP(TyTextureDescriptor, Pointer, {IdxDescriptor, AIR.getInt(0) /* pointer */})
         ),
         B.CreateLoad(
             llvm::Type::getInt64Ty(AIR.getContext()),
-            B.CreateGEP(
-                TyTextureDescriptor, B.CreatePointerCast(IntPtr, TyTextureDescriptor->getPointerTo(2)),
-                {IdxDescriptor, AIR.getInt(1) /* metadata */}
-            )
+            B.CreateGEP(TyTextureDescriptor, Pointer, {IdxDescriptor, AIR.getInt(1) /* metadata */})
+        ),
+        B.CreateGEP(
+            TyTextureDescriptor, Pointer, {IdxDescriptor, AIR.getInt(2) /* the format range (SM50_SAMPLER_BORDER) */}
         )
     };
   }
@@ -227,13 +244,20 @@ public:
     if (DescriptorOffset == ~0u)
       return {}; // root descriptor can only be a buffer
     auto ResourceKindLogical = air::to_air_resource_type(SRV.resource_type, SRV.compared);
-    auto ResourceKind = air::lowering_texture_1d_to_2d(ResourceKindLogical);
-    auto SampleType = air::to_air_sample_type(SRV.scaler_type, SRV.compared);
+    auto ResourceKind = air::lowering_texture_to_array(ResourceKindLogical, SRV.compared);
+    auto SampleType = std::visit(
+        patterns{
+            [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
+            [](auto) { return Texture::sample_float; }
+        },
+        air::to_air_scaler_type(SRV.scaler_type)
+    );
     auto MemoryAccess = SRV.sampled ? Texture::MemoryAccess::access_sample : Texture::MemoryAccess::access_read;
 
-    auto [Handle, Metadata] =
+    auto [Handle, Metadata, FormatRange] =
         GetTextureDescriptor(Builder, HeapPointer, Index, ResourceKind, SRV.range.lower_bound, DescriptorOffset);
-    return TextureDescirptor{Handle, Metadata, false, ResourceKind, ResourceKindLogical, MemoryAccess, SampleType};
+    return TextureDescirptor{Handle,       Metadata,   false, ResourceKind, ResourceKindLogical,
+                             MemoryAccess, SampleType, FormatRange};
   }
 
   virtual llvm::Optional<TextureDescirptor>
@@ -251,15 +275,23 @@ public:
     if (DescriptorOffset == ~0u)
       return {}; // root descriptor can only be a buffer
     auto ResourceKindLogical = air::to_air_resource_type(UAV.resource_type);
-    auto ResourceKind = air::lowering_texture_1d_to_2d(ResourceKindLogical);
-    auto SampleType = air::to_air_sample_type(UAV.scaler_type);
+    auto ResourceKind = air::lowering_texture_to_array(ResourceKindLogical);
+    auto SampleType = std::visit(
+        patterns{
+            [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
+            [](auto) { return Texture::sample_float; }
+        },
+        air::to_air_scaler_type(UAV.scaler_type)
+    );
     auto MemoryAccess = UAV.written
                             ? (UAV.read ? Texture::MemoryAccess::acesss_readwrite : Texture::MemoryAccess::access_write)
                             : Texture::MemoryAccess::access_read;
-    auto [Handle, Metadata] =
+    auto [Handle, Metadata, FormatRange] =
         GetTextureDescriptor(Builder, HeapPointer, Index, ResourceKind, UAV.range.lower_bound, DescriptorOffset);
-    return TextureDescirptor{Handle,       Metadata,  UAV.global_coherent, ResourceKind, ResourceKindLogical,
-                             MemoryAccess, SampleType};
+    return TextureDescirptor{
+        Handle,  Metadata, UAV.global_coherent, ResourceKind, ResourceKindLogical, MemoryAccess, SampleType,
+        FormatRange, true
+    };
   }
 
   virtual llvm::Optional<BufferDescriptor>
@@ -275,13 +307,15 @@ public:
     auto DescriptorOffset = Iter->second.second;
     auto HeapPointer = GetArgument(Builder, RootSignatureArgumentIndex, SRV.arg_index);
     if (DescriptorOffset == ~0u) {
-      return BufferDescriptor{HeapPointer, Builder.builder.getInt64(0xffffffff), SRV.structure_stride, false};
+      return BufferDescriptor{HeapPointer, Builder.builder.getInt64(0xffffffff), SRV.structure_stride, false, false};
     }
     auto [Pointer, Metadata] = GetBufferDescriptor(
-        Builder, HeapPointer, Index, Builder.getIntTy()->getPointerTo(1), SRV.range.lower_bound, DescriptorOffset
+        Builder, HeapPointer, Index, Builder.getIntTy()->getPointerTo(1), SRV.range.lower_bound, DescriptorOffset, true
     );
 
-    return BufferDescriptor{Pointer, Metadata, SRV.structure_stride, false};
+    return BufferDescriptor{
+        Pointer, Metadata, SRV.structure_stride, false, !Unbounded.count({D3D12_DESCRIPTOR_RANGE_TYPE_SRV, Range})
+    };
   }
 
   virtual llvm::Optional<BufferDescriptor>
@@ -298,14 +332,17 @@ public:
     auto HeapPointer = GetArgument(Builder, RootSignatureArgumentIndex, UAV.arg_index);
     if (DescriptorOffset == ~0u) {
       return BufferDescriptor{
-          HeapPointer, Builder.builder.getInt64(0xffffffff), UAV.structure_stride, UAV.global_coherent
+          HeapPointer, Builder.builder.getInt64(0xffffffff), UAV.structure_stride, UAV.global_coherent, false
       };
     }
     auto [Pointer, Metadata] = GetBufferDescriptor(
-        Builder, HeapPointer, Index, Builder.getIntTy()->getPointerTo(1), UAV.range.lower_bound, DescriptorOffset
+        Builder, HeapPointer, Index, Builder.getIntTy()->getPointerTo(1), UAV.range.lower_bound, DescriptorOffset, true
     );
 
-    return BufferDescriptor{Pointer, Metadata, UAV.structure_stride, UAV.global_coherent};
+    return BufferDescriptor{
+        Pointer, Metadata, UAV.structure_stride, UAV.global_coherent,
+        !Unbounded.count({D3D12_DESCRIPTOR_RANGE_TYPE_UAV, Range})
+    };
   }
 
   virtual llvm::Optional<CounterDescriptor>
@@ -327,8 +364,30 @@ public:
     return CounterDescriptor{Pointer};
   }
 
+  llvm::Value *
+  GetAtomicLocks(llvm::air::AIRBuilder &Builder) override {
+    return GetArgument(Builder, RootSignatureArgumentIndex, AtomicLocksArgIndex);
+  }
+
+  llvm::Value *
+  GetSparseBufferMappings(llvm::air::AIRBuilder &Builder) override {
+    return SparseBufferMappings ? SparseBufferMappings
+                                : Builder.builder.GetInsertBlock()->getParent()->getArg(SparseBufferMappingsIndex);
+  }
+
   uint32_t RootSignatureArgumentIndex = ~0u;
   uint32_t StaticSamplerArgumentIndex = ~0u;
+  uint32_t AtomicLocksArgIndex = ~0u;
+  llvm::StructType *RootArgumentsType = nullptr;
+  llvm::Value *RootArguments = nullptr;
+  llvm::Value *StaticSamplers = nullptr;
+  // each static sampler's anisotropy and LOD bias as its metadata has them (mullion::Sampler::createSampler)
+  std::vector<std::tuple<bool, bool, bool>> StaticSamplerStates;
+  uint32_t SparseBufferMappingsIndex;
+  llvm::Value *SparseBufferMappings = nullptr;
+
+  // the table ranges whose descriptors root signature 1.1 says are static, by range type (BufferDescriptor::Bounded)
+  std::set<std::pair<D3D12_DESCRIPTOR_RANGE_TYPE, RangeId>> Unbounded;
 
   std::map<RangeId, std::pair<ConstantBufferInfo, uint64_t>> ConstantBuffers;
   std::map<RangeId, std::pair<SamplerInfo, uint64_t>> Samplers;
@@ -340,34 +399,42 @@ std::unique_ptr<BindingMap>
 setup_binding_rootsig(
     const ShaderInfo *shader_info, air::FunctionSignatureBuilder &func_signature, llvm::Module &module,
     microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type, const void *bytecode, size_t bytecode_length,
-    uint32_t root_sig_slot, uint32_t static_sampler_slot
+    uint32_t root_sig_slot, uint32_t static_sampler_slot, bool local
 ) {
   using namespace microsoft;
-  using namespace dxmt::dxbc;
-  using namespace dxmt::air;
-  using namespace dxmt::shader::common;
+  using namespace mullion::dxbc;
+  using namespace mullion::air;
+  using namespace mullion::shader::common;
 
   auto binding_map = std::make_unique<RootSignatureBindingMap>();
+  binding_map->SparseBufferMappingsIndex = func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = kSparseBufferArgumentIndex,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::read,
+      .address_space = air::AddressSpace::constant,
+      .type = air::msl_ulong,
+      .arg_name = "sparse_buffers",
+      .raster_order_group = {},
+  });
 
   const void *pRawRootSig;
   UINT RawRootSigSize;
   HRESULT hr = microsoft::DXBCGetRootSignature(bytecode, &pRawRootSig, &RawRootSigSize);
-  if (FAILED(hr)) {
-    assert(0 && "invalid root signature blob");
+  if (FAILED(hr))
     return {};
-  }
 
   RootSignatureDeserializer deserializer;
   hr = deserializer.Deserialize(pRawRootSig, RawRootSigSize);
-  if (FAILED(hr)) {
-    assert(0 && "invalid root signature");
+  if (FAILED(hr))
     return {};
-  }
 
   auto &root_sig = deserializer.desc_1_1_.Desc_1_1;
 
   air::ArgumentBufferBuilder builder;
   unsigned inc_attribute_index = 0;
+  // root constants: their first field and their DWORDs
+  std::vector<std::pair<uint32_t, uint32_t>> constants_fields;
 
   auto check_visibility = [=](D3D12_SHADER_VISIBILITY visibility) -> bool {
     if (visibility == D3D12_SHADER_VISIBILITY_ALL)
@@ -396,6 +463,11 @@ setup_binding_rootsig(
     default:
       break;
     }
+    // D3D12_SHADER_VISIBILITY_AMPLIFICATION and _MESH, which the bundled header does not have
+    if (visibility == D3D12_SHADER_VISIBILITY(6))
+      return shader_type == D3D12_SB_AMPLIFICATION_SHADER;
+    if (visibility == D3D12_SHADER_VISIBILITY(7))
+      return shader_type == D3D12_SB_MESH_SHADER;
     return false;
   };
 
@@ -418,17 +490,23 @@ setup_binding_rootsig(
     case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE: {
       auto &table = Parameter.DescriptorTable;
       unsigned descriptor_offset = 0;
-      auto table_index = builder.DefineBuffer(
-          "table" + std::to_string(i), AddressSpace::constant, MemoryAccess::read, msl_int, inc_attribute_index++
-      );
-      if (!check_visibility(Parameter.ShaderVisibility))
-        break;
-      for (unsigned i = 0; i < table.NumDescriptorRanges; i++) {
+      auto table_index = builder.Size();
+      std::optional<uint32_t> raster_order_group;
+      for (unsigned i = 0; check_visibility(Parameter.ShaderVisibility) && i < table.NumDescriptorRanges; i++) {
         auto &range = table.pDescriptorRanges[i];
         auto calculated_descriptor_offset = range.OffsetInDescriptorsFromTableStart == ~0u
                                                 ? descriptor_offset
                                                 : range.OffsetInDescriptorsFromTableStart;
         descriptor_offset = calculated_descriptor_offset + range.NumDescriptors;
+        // D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_STATIC_KEEPING_BUFFER_BOUNDS_CHECKS, which the bundled header lacks
+        constexpr uint32_t kKeepsBoundsChecks = 0x10000;
+        bool bounded = uint32_t(range.Flags) & (D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE | kKeepsBoundsChecks);
+        auto bind = [&](RangeId id) {
+          if (bounded)
+            binding_map->Unbounded.erase({range.RangeType, id});
+          else
+            binding_map->Unbounded.insert({range.RangeType, id});
+        };
         switch (range.RangeType) {
         case D3D12_DESCRIPTOR_RANGE_TYPE_SRV: {
           for (auto &[_, srv] : shader_info->srvMap) {
@@ -440,6 +518,7 @@ setup_binding_rootsig(
                   srv, calculated_descriptor_offset + (srv.range.lower_bound - range.BaseShaderRegister)
               };
               binding_map->SRVs[range_id].first.arg_index = table_index;
+              bind(range_id);
             }
           }
           break;
@@ -454,6 +533,9 @@ setup_binding_rootsig(
                   uav, calculated_descriptor_offset + (uav.range.lower_bound - range.BaseShaderRegister)
               };
               binding_map->UAVs[range_id].first.arg_index = table_index;
+              bind(range_id);
+              if (uav.rasterizer_order)
+                raster_order_group = 1;
             }
           }
           break;
@@ -467,6 +549,7 @@ setup_binding_rootsig(
                   cbuf, calculated_descriptor_offset + (cbuf.range.lower_bound - range.BaseShaderRegister)
               };
               binding_map->ConstantBuffers[range_id].first.arg_index = table_index;
+              bind(range_id);
             }
           }
           break;
@@ -488,6 +571,11 @@ setup_binding_rootsig(
           return {};
         }
       }
+      // ordered descriptor reads precede the UAV accesses that depend on them (MSL 5.2.1.2).
+      builder.DefineBuffer(
+          "table" + std::to_string(i), raster_order_group ? AddressSpace::device : AddressSpace::constant,
+          MemoryAccess::read, msl_int, inc_attribute_index++, raster_order_group
+      );
       break;
     }
     case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS: {
@@ -497,6 +585,7 @@ setup_binding_rootsig(
       for (unsigned x = 1; x < qwords; x++) {
         builder.DefineInteger64("root_constant" + std::to_string(i) + "_" + std::to_string(x), inc_attribute_index++);
       }
+      constants_fields.push_back({first, constants.Num32BitValues});
       if (!check_visibility(Parameter.ShaderVisibility))
         break;
       for (auto &[_, cbuf] : shader_info->cbufferMap) {
@@ -543,42 +632,112 @@ setup_binding_rootsig(
     }
     case D3D12_ROOT_PARAMETER_TYPE_UAV: {
       auto &descriptor = Parameter.Descriptor;
-      auto descriptor_index = builder.DefineBuffer(
-          "u" + std::to_string(i), AddressSpace::device, MemoryAccess::read_write /* FIXME */, msl_uint,
-          inc_attribute_index++, std::nullopt /* FIXME: */
-      );
-      if (!check_visibility(Parameter.ShaderVisibility))
-        break;
-      for (auto &[_, uav] : shader_info->uavMap) {
-        if (uav.range.lower_bound == descriptor.ShaderRegister && uav.range.space == descriptor.RegisterSpace) {
-          assert(uav.resource_type == shader::common::ResourceType::NonApplicable);
-          auto range_id = uav.range.range_id;
-          binding_map->UAVs[range_id] = {uav, ~0u};
-          binding_map->UAVs[range_id].first.arg_index = descriptor_index;
+      auto descriptor_index = builder.Size();
+      std::optional<uint32_t> raster_order_group;
+      if (check_visibility(Parameter.ShaderVisibility))
+        for (auto &[_, uav] : shader_info->uavMap) {
+          if (uav.range.lower_bound == descriptor.ShaderRegister && uav.range.space == descriptor.RegisterSpace) {
+            assert(uav.resource_type == shader::common::ResourceType::NonApplicable);
+            auto range_id = uav.range.range_id;
+            binding_map->UAVs[range_id] = {uav, ~0u};
+            binding_map->UAVs[range_id].first.arg_index = descriptor_index;
+            raster_order_group = uav.rasterizer_order ? std::optional(1) : std::nullopt;
+          }
         }
-      }
+      builder.DefineBuffer(
+          "u" + std::to_string(i), AddressSpace::device, MemoryAccess::read_write /* FIXME */, msl_uint,
+          inc_attribute_index++, raster_order_group
+      );
       break;
     }
     }
   }
 
+  uint32_t parameter_fields = builder.Size();
+  // directly indexed heaps, declared after the parameters as the root signature lays them out (ResourceHeapQword,
+  // SamplerHeapQword). a heap-space range (SM 6.6 createHandleFromHeap) covers its heap from descriptor 0
+  auto bind_heap = [&](auto &binding, auto &ranges, uint32_t heap_index) {
+    for (auto &[_, info] : ranges)
+      if (info.range.space == kDescriptorHeapSpace) {
+        binding[info.range.range_id] = {info, 0};
+        binding[info.range.range_id].first.arg_index = heap_index;
+      }
+  };
+  // D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED and _SAMPLER_HEAP_DIRECTLY_INDEXED, which the native
+  // headers' enumeration stops before
+  constexpr uint32_t kResourceHeapDirectlyIndexed = 0x400, kSamplerHeapDirectlyIndexed = 0x800;
+  if (root_sig.Flags & kResourceHeapDirectlyIndexed) {
+    auto ordered = std::any_of(shader_info->uavMap.begin(), shader_info->uavMap.end(), [&](auto &entry) {
+      return entry.second.range.space == kDescriptorHeapSpace && entry.second.rasterizer_order;
+    });
+    auto heap_index = builder.DefineBuffer(
+        "resource_heap", ordered ? AddressSpace::device : AddressSpace::constant, MemoryAccess::read, msl_int,
+        inc_attribute_index++, ordered ? std::optional(1) : std::nullopt
+    );
+    bind_heap(binding_map->SRVs, shader_info->srvMap, heap_index);
+    bind_heap(binding_map->UAVs, shader_info->uavMap, heap_index);
+    bind_heap(binding_map->ConstantBuffers, shader_info->cbufferMap, heap_index);
+  }
+  if (root_sig.Flags & kSamplerHeapDirectlyIndexed)
+    bind_heap(
+        binding_map->Samplers, shader_info->samplerMap,
+        builder.DefineBuffer("sampler_heap", AddressSpace::constant, MemoryAccess::read, msl_int, inc_attribute_index++)
+    );
+  // then the lock table of 64-bit atomics (AtomicLocksQword)
+  binding_map->AtomicLocksArgIndex =
+      builder.DefineBuffer("atomic_locks", AddressSpace::device, MemoryAccess::read_write, msl_uint, inc_attribute_index++);
+
   auto [type, metadata] = builder.Build(module.getContext(), module.getDataLayout());
-
-  binding_map->RootSignatureArgumentIndex = func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
-      .location_index = root_sig_slot, // SM50_BINDING_INDEX_ROOT_ARGUMENTS
-      .array_size = 1,
-      .memory_access = air::MemoryAccess::read,
-      .address_space = air::AddressSpace::constant,
-      .struct_type = type,
-      .struct_type_info = metadata,
-      .arg_name = "rootsig",
-  });
-
-  if (root_sig.NumStaticSamplers == 0)
-    return binding_map;
+  binding_map->RootArgumentsType = type;
+  if (local) {
+    // a shader record's local root arguments: each aligned to its own size, in the parameters' order, so that root
+    // constants are DWORDs with no padding of their own (DXR spec, "Shader table memory initialization"), where the
+    // global block gives them whole qwords. the record has only the parameters' arguments
+    std::vector<llvm::Type *> fields;
+    std::vector<uint32_t> moved(type->getNumElements());
+    auto constants = constants_fields.begin();
+    for (uint32_t i = 0; i < parameter_fields;) {
+      moved[i] = fields.size();
+      if (constants != constants_fields.end() && constants->first == i) {
+        fields.insert(fields.end(), constants->second, llvm::Type::getInt32Ty(module.getContext()));
+        i += (constants->second + 1) / 2;
+        ++constants;
+      } else {
+        fields.push_back(type->getElementType(i++));
+      }
+    }
+    binding_map->RootArgumentsType = llvm::StructType::get(module.getContext(), fields);
+    auto move = [&](auto &ranges) {
+      std::erase_if(ranges, [&](auto &range) { return range.second.first.arg_index >= parameter_fields; });
+      for (auto &[_, range] : ranges)
+        range.first.arg_index = moved[range.first.arg_index];
+    };
+    move(binding_map->ConstantBuffers);
+    move(binding_map->Samplers);
+    move(binding_map->SRVs);
+    move(binding_map->UAVs);
+    binding_map->RootSignatureArgumentIndex = 0;
+  } else {
+    binding_map->RootSignatureArgumentIndex = func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
+        .location_index = root_sig_slot, // SM50_BINDING_INDEX_ROOT_ARGUMENTS
+        .array_size = 1,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::constant,
+        .struct_type = type,
+        .struct_type_info = metadata,
+        .arg_name = "rootsig",
+    });
+  }
 
   for (unsigned i = 0; i < root_sig.NumStaticSamplers; i++) {
     auto &State = root_sig.pStaticSamplers[i];
+    binding_map->StaticSamplerStates.emplace_back(
+        D3D12_DECODE_IS_ANISOTROPIC_FILTER(State.Filter) && State.MaxAnisotropy > 1,
+        std::lround(std::clamp(std::ldexp(State.MipLODBias, SM50_SAMPLER_METADATA_LOD_FRACTION_BITS), (float)INT16_MIN,
+                               (float)INT16_MAX)) != 0,
+        D3D12_DECODE_FILTER_REDUCTION(State.Filter) == D3D12_FILTER_REDUCTION_TYPE_MINIMUM ||
+            D3D12_DECODE_FILTER_REDUCTION(State.Filter) == D3D12_FILTER_REDUCTION_TYPE_MAXIMUM
+    );
 
     for (auto &[_, sampler] : shader_info->samplerMap) {
       if (sampler.range.space != State.RegisterSpace)
@@ -593,18 +752,106 @@ setup_binding_rootsig(
     }
   }
 
-  binding_map->StaticSamplerArgumentIndex = func_signature.DefineInput(air::ArgumentBindingBuffer{
-      .buffer_size = {},
-      .location_index = static_sampler_slot, // SM50_BINDING_INDEX_STATIC_SAMPLERS
-      .array_size = 0,
-      .memory_access = air::MemoryAccess::read,
-      .address_space = air::AddressSpace::constant,
-      .type = air::msl_ulong,
-      .arg_name = "static_samplers",
-      .raster_order_group = {},
-  });
+  // ordinary stages need every resource covered; ray shaders share global and local maps (Microsoft Learn,
+  // Creating a Root Signature, "Root Signature in Pipeline State Objects")
+  if (shader_type != kShaderLibrary &&
+      (binding_map->ConstantBuffers.size() != shader_info->cbufferMap.size() ||
+       binding_map->Samplers.size() != shader_info->samplerMap.size() ||
+       binding_map->SRVs.size() != shader_info->srvMap.size() || binding_map->UAVs.size() != shader_info->uavMap.size()))
+    return {};
+  if (root_sig.NumStaticSamplers == 0)
+    return binding_map;
+
+  // a shader record has no static samplers: its shader is told where they are (bind_rootsig_arguments), which
+  // stands for an argument after the record
+  binding_map->StaticSamplerArgumentIndex =
+      local ? binding_map->RootSignatureArgumentIndex + 1
+            : func_signature.DefineInput(air::ArgumentBindingBuffer{
+                  .buffer_size = {},
+                  .location_index = static_sampler_slot, // SM50_BINDING_INDEX_STATIC_SAMPLERS
+                  .array_size = 0,
+                  .memory_access = air::MemoryAccess::read,
+                  .address_space = air::AddressSpace::constant,
+                  .type = air::msl_ulong,
+                  .arg_name = "static_samplers",
+                  .raster_order_group = {},
+              });
 
   return binding_map;
 }
 
-} // namespace dxmt::dxbc
+void
+bind_rootsig_arguments(
+    BindingMap &map, llvm::IRBuilder<> &builder, llvm::Value *arguments, llvm::Value *static_samplers,
+    llvm::Value *sparse_buffers
+) {
+  auto &rootsig = static_cast<RootSignatureBindingMap &>(map);
+  rootsig.RootArguments = builder.CreatePointerCast(
+      arguments, rootsig.RootArgumentsType->getPointerTo(arguments->getType()->getPointerAddressSpace())
+  );
+  rootsig.StaticSamplers = static_samplers;
+  rootsig.SparseBufferMappings = sparse_buffers;
+}
+
+class CombinedBindingMap : public BindingMap {
+public:
+  std::unique_ptr<BindingMap> maps[2];
+
+  template <typename Get>
+  auto
+  First(Get &&get) -> decltype(get(*maps[0])) {
+    for (auto &map : maps)
+      if (map)
+        if (auto found = get(*map))
+          return found;
+    return {};
+  }
+
+  llvm::Optional<ConstantBufferDescriptor>
+  GetConstantBuffer(llvm::air::AIRBuilder &Builder, RangeId Range, llvm::Value *Index) override {
+    return First([&](BindingMap &map) { return map.GetConstantBuffer(Builder, Range, Index); });
+  }
+  llvm::Optional<SamplerDescriptor>
+  GetSampler(llvm::air::AIRBuilder &Builder, RangeId Range, llvm::Value *Index) override {
+    return First([&](BindingMap &map) { return map.GetSampler(Builder, Range, Index); });
+  }
+  llvm::Optional<TextureDescirptor>
+  GetSRVTexture(llvm::air::AIRBuilder &Builder, RangeId Range, llvm::Value *Index) override {
+    return First([&](BindingMap &map) { return map.GetSRVTexture(Builder, Range, Index); });
+  }
+  llvm::Optional<TextureDescirptor>
+  GetUAVTexture(llvm::air::AIRBuilder &Builder, RangeId Range, llvm::Value *Index) override {
+    return First([&](BindingMap &map) { return map.GetUAVTexture(Builder, Range, Index); });
+  }
+  llvm::Optional<BufferDescriptor>
+  GetSRVBuffer(llvm::air::AIRBuilder &Builder, RangeId Range, llvm::Value *Index) override {
+    return First([&](BindingMap &map) { return map.GetSRVBuffer(Builder, Range, Index); });
+  }
+  llvm::Optional<BufferDescriptor>
+  GetUAVBuffer(llvm::air::AIRBuilder &Builder, RangeId Range, llvm::Value *Index) override {
+    return First([&](BindingMap &map) { return map.GetUAVBuffer(Builder, Range, Index); });
+  }
+  llvm::Optional<CounterDescriptor>
+  GetUAVCounter(llvm::air::AIRBuilder &Builder, RangeId Range, llvm::Value *Index) override {
+    return First([&](BindingMap &map) { return map.GetUAVCounter(Builder, Range, Index); });
+  }
+  // the device's lock table comes with the global root arguments, which are the second map
+  llvm::Value *
+  GetAtomicLocks(llvm::air::AIRBuilder &Builder) override {
+    return maps[1] ? maps[1]->GetAtomicLocks(Builder) : nullptr;
+  }
+  llvm::Value *
+  GetSparseBufferMappings(llvm::air::AIRBuilder &Builder) override {
+    return First([&](BindingMap &map) { return map.GetSparseBufferMappings(Builder); });
+  }
+};
+
+std::unique_ptr<BindingMap>
+combine_bindings(std::unique_ptr<BindingMap> first, std::unique_ptr<BindingMap> second) {
+  auto combined = std::make_unique<CombinedBindingMap>();
+  combined->maps[0] = std::move(first);
+  combined->maps[1] = std::move(second);
+  return combined;
+}
+
+} // namespace mullion::dxbc

@@ -1,0 +1,11 @@
+# the last public release discards pending event and queue callbacks without firing them
+--- a/src/d3d12/d3d12_fence.cpp
++++ b/src/d3d12/d3d12_fence.cpp
+@@ -42,7 +42,6 @@
+     uint32_t refCount = --m_refCount;
+     if (!refCount) {
+       // pending signals keep the object alive after the last public release has unblocked its waiters
+-      completion->Reach(UINT64_MAX);
+       ReleasePrivate();
+     }
+     return refCount;

@@ -1,0 +1,13 @@
+# the pass of an indirect draw's resolver does not wait for the passes before it
+# family native-metal3
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -1109,8 +1109,6 @@ public:
+             if (diag::trace_encoders)
+               scope.inflight->physical[WMTMetal4Compute]++;
+             auto before = cmdbuf.computeCommandEncoder(true);
+-            if constexpr (!Metal4)
+-              before.waitForFence(fence_);
+             before.encodeCommands(&data->before_head);
+             if constexpr (!Metal4)
+               before.updateFence(fence_);

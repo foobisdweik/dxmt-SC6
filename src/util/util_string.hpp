@@ -15,9 +15,10 @@
 #include <sstream>
 #include <vector>
 #include <cstdint>
+#include <type_traits>
 #include "unknwn.h"
 
-namespace dxmt::str {
+namespace mullion::str {
 
 template <size_t S> struct UnicodeChar {};
 template <> struct UnicodeChar<1> { using type = uint8_t; };
@@ -173,7 +174,11 @@ void format1(std::stringstream &str, const WCHAR *arg, const Tx &...args) {
 
 template <typename T, typename... Tx>
 void format1(std::stringstream &str, const T &arg, const Tx &...args) {
-  str << arg;
+  // a byte is a number (a sample count, a mask), where a stream would write it as a character
+  if constexpr (std::is_same_v<T, uint8_t>)
+    str << unsigned(arg);
+  else
+    str << arg;
   format1(str, args...);
 }
 
@@ -218,4 +223,4 @@ inline std::vector<std::string_view> split(std::string_view string,
   return tokens;
 }
 
-} // namespace dxmt::str
+} // namespace mullion::str

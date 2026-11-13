@@ -1,0 +1,12 @@
+# return a D3D10 texture2D row pitch one word too large
+--- a/src/d3d10/d3d10_texture.cpp
++++ b/src/d3d10/d3d10_texture.cpp
+@@ -37,7 +37,7 @@
+   HRESULT hr = d3d11_context->Map(d3d11, Subresource, D3D11_MAP(MapType), MapFlags, &subresource);
+   if (hr == S_OK) {
+     pMappedTex2D->pData = subresource.pData;
+-    pMappedTex2D->RowPitch = subresource.RowPitch;
++    pMappedTex2D->RowPitch = subresource.RowPitch + sizeof(UINT);
+   }
+   return hr;
+ }

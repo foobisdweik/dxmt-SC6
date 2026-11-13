@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <cstdlib>
 
-namespace dxmt {
+namespace mullion {
 
 uint64_t seeds[] = {0x1A2B3C4D5E6F7081, 0x2A3B4C5D6E7F8092, 0x3A4B5C6D7E8F90A3,
                     0x4A5B6C7D8E9F91B4, 0x5A6B7C8D9EAF92C5, 0x6A7B8C9D0E1F93D6,
@@ -33,4 +33,4 @@ PartitionedBloomFilter64<k>::generateNewKey(uint64_t seq) {
 };
 
 template PartitionedBloomFilter64<16>::Key PartitionedBloomFilter64<16>::generateNewKey(uint64_t seq);
-} // namespace dxmt
+} // namespace mullion

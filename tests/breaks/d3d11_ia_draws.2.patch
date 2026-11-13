@@ -1,0 +1,13 @@
+# add the base vertex to the shader vertex ID instead of removing it.
+diff --git a/src/airconv/dxbc_converter.cpp b/src/airconv/dxbc_converter.cpp
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -768,7 +768,7 @@
+   resource_map.base_vertex_id = function->getArg(base_vertex_idx);
+   resource_map.instance_id_with_base = function->getArg(instance_idx);
+   resource_map.base_instance_id = function->getArg(base_instance_idx);
+-  resource_map.vertex_id = builder.CreateSub(
++  resource_map.vertex_id = builder.CreateAdd(
+     resource_map.vertex_id_with_base, resource_map.base_vertex_id
+   );
+   resource_map.instance_id = builder.CreateSub(

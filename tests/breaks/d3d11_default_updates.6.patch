@@ -1,0 +1,21 @@
+# indirect draws omit the current storage offset
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -1690,7 +1690,7 @@
+         cmd.primitive_type = Primitive;
+         cmd.index_type = IndexType;
+         cmd.indirect_args_buffer = buffer->buffer();
+-        cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
++        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
+         cmd.index_buffer = index_buffer;
+         cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
+       });
+@@ -1731,7 +1731,7 @@
+         cmd.type = WMTRenderCommandDrawIndirect;
+         cmd.primitive_type = Primitive;
+         cmd.indirect_args_buffer = buffer->buffer();
+-        cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
++        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
+       });
+     }
+   }

@@ -1,0 +1,13 @@
+# a Direct3D 11 command buffer commits without waiting for the Direct3D 12 queue's earlier work
+--- a/src/mullion/mullion_command_queue.cpp
++++ b/src/mullion/mullion_command_queue.cpp
+@@ -238,8 +238,7 @@
+   if (profile_)
+     profile_->buffers[seq % kCommandChunkCount].committed = diag::Now();
+   // a wait on the CPU, which holds no command buffer on the GPU for as long as the work it waits for takes
+-  if (chunk.wait_event)
+-    chunk.wait_event.waitUntilSignaledValue(chunk.wait_value, ~0ull);
++  ;
+   cmdbuf.commit();
+ 
+   ready_for_commit.fetch_add(1, std::memory_order_release);

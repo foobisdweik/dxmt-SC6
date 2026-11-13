@@ -1,6 +1,6 @@
 #include "d3d10_texture.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D10Texture1D::Map(UINT Subresource, D3D10_MAP MapType, UINT MapFlags, void **ppData) {
@@ -97,4 +97,4 @@ MTLD3D10Texture3D::GetDesc(D3D10_TEXTURE3D_DESC *pDesc) {
   pDesc->MiscFlags = ConvertD3D11ResourceFlags(d3d11_desc.MiscFlags);
 }
 
-} // namespace dxmt
+} // namespace mullion

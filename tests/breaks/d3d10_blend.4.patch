@@ -1,0 +1,12 @@
+# disable blending when the red write-mask bit is clear.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -329,7 +329,7 @@
+         }
+         attachment_desc.alpha_blend_operation = kBlendOpMap[renderTarget.BlendOpAlpha];
+         attachment_desc.rgb_blend_operation = kBlendOpMap[renderTarget.BlendOp];
+-        attachment_desc.blending_enabled = renderTarget.BlendEnable;
++        attachment_desc.blending_enabled = (renderTarget.RenderTargetWriteMask & D3D11_COLOR_WRITE_ENABLE_RED) != 0;
+         attachment_desc.src_alpha_blend_factor = kBlendAlphaFactorMap[renderTarget.SrcBlendAlpha];
+         attachment_desc.src_rgb_blend_factor = kBlendFactorMap[renderTarget.SrcBlend];
+         attachment_desc.dst_alpha_blend_factor = kBlendAlphaFactorMap[renderTarget.DestBlendAlpha];

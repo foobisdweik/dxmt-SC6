@@ -1,0 +1,18 @@
+# only flip-discard swap chains validate their queue and window
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -1444,10 +1444,10 @@
+       IDXGIFactory1 *pFactory, HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
+       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc, IDXGISwapChain1 **ppSwapChain
+   ) {
+-    if (desc_.Type != D3D12_COMMAND_LIST_TYPE_DIRECT)
+-      return FAIL(DXGI_ERROR_INVALID_CALL);
+-    if (hWnd == GetDesktopWindow())
+-      return FAIL(E_ACCESSDENIED);
++    if (pDesc->SwapEffect == DXGI_SWAP_EFFECT_FLIP_DISCARD && desc_.Type != D3D12_COMMAND_LIST_TYPE_DIRECT)
++      return DXGI_ERROR_INVALID_CALL;
++    if (pDesc->SwapEffect == DXGI_SWAP_EFFECT_FLIP_DISCARD && hWnd == GetDesktopWindow())
++      return E_ACCESSDENIED;
+     return mullion::CreateSwapChain(pFactory, device_, this, hWnd, pDesc, pFullscreenDesc, ppSwapChain);
+   }
+ 

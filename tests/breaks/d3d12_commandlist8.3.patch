@@ -1,0 +1,11 @@
+# the interface 8 stencil setter is lost inside bundles
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -1841,5 +1841,6 @@
+   void STDMETHODCALLTYPE
+   OMSetFrontAndBackStencilRef(UINT FrontStencilRef, UINT BackStencilRef) {
+-    if (Record([=](auto *l) { l->OMSetFrontAndBackStencilRef(FrontStencilRef, BackStencilRef); }))
++    if (type_ == D3D12_COMMAND_LIST_TYPE_BUNDLE ||
++        Record([=](auto *l) { l->OMSetFrontAndBackStencilRef(FrontStencilRef, BackStencilRef); }))
+       return;
+     if (stencil_ref_ == (UINT8)FrontStencilRef && back_stencil_ref_ == (UINT8)BackStencilRef)

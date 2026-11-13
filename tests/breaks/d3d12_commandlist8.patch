@@ -1,0 +1,12 @@
+# the back face receives the front reference
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -1076,7 +1076,7 @@
+     }
+     case WMTRenderCommandSetStencilRef: {
+       struct wmtcmd_render_setstencilref *body = (struct wmtcmd_render_setstencilref *)next;
+-      [encoder setStencilFrontReferenceValue:body->stencil_ref backReferenceValue:body->back_stencil_ref];
++      [encoder setStencilFrontReferenceValue:body->stencil_ref backReferenceValue:body->stencil_ref];
+       break;
+     }
+     case WMTRenderCommandSetDepthTestBounds: {

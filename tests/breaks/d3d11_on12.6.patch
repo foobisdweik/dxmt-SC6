@@ -1,0 +1,12 @@
+# a returned resource's fences hold the queue at once, and are not kept
+--- a/src/d3d11/d3d11_on12.cpp
++++ b/src/d3d11/d3d11_on12.cpp
+@@ -184,7 +184,7 @@
+       return E_INVALIDARG;
+     // Direct3D 11's next command buffer waits for them (Order), as nothing of it before can use the resource
+     for (UINT i = 0; i < NumSync; i++)
+-      returned_.emplace_back(ppFences[i], pSignalValues[i]);
++      queue_->Wait(ppFences[i], pSignalValues[i]);
+     return S_OK;
+   }
+ 

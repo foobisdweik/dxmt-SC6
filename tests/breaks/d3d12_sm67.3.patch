@@ -1,0 +1,12 @@
+# the attribute that lets helper lanes take part in wave operations is ignored
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -1311,7 +1311,7 @@
+   auto start = (*module)->getFunction(function);
+   // DXIL.rst, Functions: with 'waveops-include-helper-lanes' (SM 6.7) a pixel shader's helper lanes take part in its
+   // wave operations, which they do not by default
+-  bool helper_waves = start && start->hasFnAttribute("waveops-include-helper-lanes");
++  bool helper_waves = false;
+   if (start)
+     for (bool inlined = true; inlined;) {
+       inlined = false;

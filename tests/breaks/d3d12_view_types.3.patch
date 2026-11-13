@@ -1,0 +1,39 @@
+# array SRVs and UAVs ignore their first slice
+--- a/src/d3d12/d3d12_texture.cpp
++++ b/src/d3d12/d3d12_texture.cpp
+@@ -550,7 +550,7 @@
+         view_descriptor.miplevelCount = desc_.MipLevels - ViewDesc.Texture1DArray.MostDetailedMip;
+       else
+         view_descriptor.miplevelCount = ViewDesc.Texture1DArray.MipLevels;
+-      view_descriptor.firstArraySlice = ViewDesc.Texture1DArray.FirstArraySlice;
++      view_descriptor.firstArraySlice = 0;
+       if (ViewDesc.Texture1DArray.ArraySize == ~0u)
+         view_descriptor.arraySize = desc_.DepthOrArraySize - ViewDesc.Texture1DArray.FirstArraySlice;
+       else
+@@ -579,7 +579,7 @@
+         view_descriptor.miplevelCount = desc_.MipLevels - ViewDesc.Texture2DArray.MostDetailedMip;
+       else
+         view_descriptor.miplevelCount = ViewDesc.Texture2DArray.MipLevels;
+-      view_descriptor.firstArraySlice = ViewDesc.Texture2DArray.FirstArraySlice;
++      view_descriptor.firstArraySlice = 0;
+       if (ViewDesc.Texture2DArray.ArraySize == ~0u)
+         view_descriptor.arraySize = desc_.DepthOrArraySize - ViewDesc.Texture2DArray.FirstArraySlice;
+       else
+@@ -728,7 +728,7 @@
+       view_descriptor.type = WMTTextureType2DArray;
+       view_descriptor.firstMiplevel = ViewDesc.Texture1DArray.MipSlice;
+       view_descriptor.miplevelCount = 1;
+-      view_descriptor.firstArraySlice = ViewDesc.Texture1DArray.FirstArraySlice;
++      view_descriptor.firstArraySlice = 0;
+       if (ViewDesc.Texture1DArray.ArraySize == ~0u)
+         view_descriptor.arraySize = desc_.DepthOrArraySize - ViewDesc.Texture1DArray.FirstArraySlice;
+       else
+@@ -740,7 +740,7 @@
+       view_descriptor.type = WMTTextureType2DArray;
+       view_descriptor.firstMiplevel = ViewDesc.Texture2DArray.MipSlice;
+       view_descriptor.miplevelCount = 1;
+-      view_descriptor.firstArraySlice = ViewDesc.Texture2DArray.FirstArraySlice;
++      view_descriptor.firstArraySlice = 0;
+       if (ViewDesc.Texture2DArray.ArraySize == ~0u)
+         view_descriptor.arraySize = desc_.DepthOrArraySize - ViewDesc.Texture2DArray.FirstArraySlice;
+       else

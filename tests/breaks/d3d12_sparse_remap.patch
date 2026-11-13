@@ -1,0 +1,13 @@
+# Metal 3: the command buffer after an aliasing barrier does not wait for the one before
+# family native-metal3
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -868,7 +868,7 @@ class MTLD3D12CommandQueueImpl : public MTLD3D12Pageable<MTLD3D12CommandQueue, I
+         inflight->cmdbuf.encodeSignalEvent(queue->alias_event_, value);
+         End();
+         Start();
+-        inflight->cmdbuf.encodeWaitForEvent(queue->alias_event_, value);
++        (void)value;
+       }
+     }
+ 

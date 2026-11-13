@@ -1,0 +1,12 @@
+# drops the fourth packed byte
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -3392,7 +3392,7 @@
+       for (unsigned i = 0; i < 4; i++) {
+         auto v = mode == 1 ? clamp(a(2 + i), 0, 255) : mode == 2 ? clamp(a(2 + i), -128, 127) : a(2 + i);
+         auto byte = ir.CreateZExt(ir.CreateTrunc(v, ir.getInt8Ty()), ir.getInt32Ty());
+-        packed = ir.CreateOr(packed, ir.CreateShl(byte, 8 * i));
++        packed = ir.CreateOr(packed, ir.CreateShl(byte, 8 * (i % 3)));
+       }
+       ret = packed;
+       break;

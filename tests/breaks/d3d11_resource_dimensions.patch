@@ -1,0 +1,12 @@
+# rejects the legal maximum width of a texture.
+--- a/src/d3d11/d3d11_resource_helper.cpp
++++ b/src/d3d11/d3d11_resource_helper.cpp
+@@ -320,7 +320,7 @@
+       : Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D
+           ? (d3d11 ? D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION : D3D10_REQ_TEXTURE2D_U_OR_V_DIMENSION)
+           : (d3d11 ? D3D11_REQ_TEXTURE3D_U_V_OR_W_DIMENSION : D3D10_REQ_TEXTURE3D_U_V_OR_W_DIMENSION);
+-  if (Width > dimension_limit || Height > dimension_limit || Depth > dimension_limit)
++  if (Width >= dimension_limit || Height > dimension_limit || Depth > dimension_limit)
+     return E_INVALIDARG;
+ 
+   UINT array_limit = pDevice->GetFeatureLevel() >= D3D_FEATURE_LEVEL_11_0 ?

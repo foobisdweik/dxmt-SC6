@@ -1,0 +1,12 @@
+# enhanced Barrier examines only the first group
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -3571,7 +3571,7 @@
+     auto any = [](D3D12_BARRIER_ACCESS access, D3D12_BARRIER_ACCESS of) {
+       return access == D3D12_BARRIER_ACCESS_COMMON || (access != D3D12_BARRIER_ACCESS_NO_ACCESS && (access & of));
+     };
+-    for (auto &group : std::span(pBarrierGroups, NumBarrierGroups))
++    for (auto &group : std::span(pBarrierGroups, NumBarrierGroups ? 1u : 0u))
+       for (UINT32 i = 0; i < group.NumBarriers; i++) {
+         auto [before, after] =
+             group.Type == D3D12_BARRIER_TYPE_GLOBAL

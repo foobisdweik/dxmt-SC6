@@ -1,0 +1,12 @@
+# leaves the last ballot word set beyond the wave width
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2165,7 +2165,7 @@
+   auto mask_words = [&](Value *mask, Type *ty) {
+     Value *words[] = {
+         ir.CreateTrunc(mask, ir.getInt32Ty()), ir.CreateTrunc(ir.CreateLShr(mask, 32), ir.getInt32Ty()), ir.getInt32(0),
+-        ir.getInt32(0)
++        ir.getInt32(1)
+     };
+     Value *ret = UndefValue::get(ty);
+     for (unsigned i = 0; i < 4; i++)

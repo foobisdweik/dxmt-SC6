@@ -1,0 +1,12 @@
+# rounds source byte offsets down to DWORDs
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2174,7 +2174,7 @@ public:
+     cmd_cp.type = WMTBlitCommandCopyFromBufferToBuffer;
+     cmd_cp.src = src;
+     cmd_cp.dst = dst;
+-    cmd_cp.src_offset = SrcOffset;
++    cmd_cp.src_offset = SrcOffset & ~UINT64(3);
+     cmd_cp.dst_offset = DstOffset;
+     cmd_cp.copy_length = ByteCount;
+   };

@@ -1,0 +1,14 @@
+# a resource that ends where its heap does is refused
+# family native
+# family 7
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1376,7 +1376,7 @@
+     // Starfield places a small one at the start of a heap of one page it imported (#32)
+     UINT64 needed = pDesc->Dimension == D3D12_RESOURCE_DIMENSION_BUFFER ? pDesc->Width : info.SizeInBytes;
+     if (heap_desc.Alignment < info.Alignment || Offset % info.Alignment || needed > heap_desc.SizeInBytes ||
+-        Offset > heap_desc.SizeInBytes - needed) {
++        Offset >= heap_desc.SizeInBytes - needed) {
+       WARN("CreatePlacedResource: ", needed, " bytes at alignment ", info.Alignment, " placed at ", Offset,
+            " of a heap of ", heap_desc.SizeInBytes, " at alignment ", heap_desc.Alignment, " (dimension ",
+            pDesc->Dimension, ", format ", pDesc->Format, ", alignment ", pDesc->Alignment, ")");

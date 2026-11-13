@@ -1,0 +1,12 @@
+# depth clipping is always enabled.
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -916,7 +916,7 @@
+       cull_mode = WMTCullModeNone;
+       break;
+     }
+-    depth_clip_mode = pDesc->RasterizerState.DepthClipEnable ? WMTDepthClipModeClip : WMTDepthClipModeClamp;
++    depth_clip_mode = WMTDepthClipModeClip;
+     depth_bias = pDesc->RasterizerState.DepthBias;
+     scole_scale = pDesc->RasterizerState.SlopeScaledDepthBias;
+     depth_bias_clamp = pDesc->RasterizerState.DepthBiasClamp;

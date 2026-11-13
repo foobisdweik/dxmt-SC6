@@ -1,0 +1,12 @@
+# maps XOR logic to AND.
+--- a/src/d3d12/d3d12_pipeline_graphics.cpp
++++ b/src/d3d12/d3d12_pipeline_graphics.cpp
+@@ -72,7 +72,7 @@
+     WMTLogicOperationClear,        WMTLogicOperationSet,         WMTLogicOperationCopy,
+     WMTLogicOperationCopyInverted, WMTLogicOperationNoOp,        WMTLogicOperationInvert,
+     WMTLogicOperationAnd,          WMTLogicOperationNand,        WMTLogicOperationOr,
+-    WMTLogicOperationNor,          WMTLogicOperationXor,         WMTLogicOperationEquiv,
++    WMTLogicOperationNor,          WMTLogicOperationAnd,         WMTLogicOperationEquiv,
+     WMTLogicOperationAndReverse,   WMTLogicOperationAndInverted, WMTLogicOperationOrReverse,
+     WMTLogicOperationOrInverted,
+ };

@@ -18,6 +18,7 @@ enum airconv_unixcalls {
   unix_sm50_compile_tessellation_hull,
   unix_sm50_compile_tessellation_domain,
   unix_sm50_get_arguments_info = 88,
+  unix_sm50_get_ray_shader = 164,
 };
 
 struct sm50_initialize_params {
@@ -221,6 +222,26 @@ struct sm50_compile_tessellation_pipeline_domain_params32 {
 };
 
 COMPATIBLE_STRUCT32(sm50_compile_tessellation_pipeline_domain_params, 40)
+
+struct sm50_get_ray_shader_params {
+  sm50_shader_t shader;
+  char *name;
+  size_t name_size;
+  struct SM50_RAY_SHADER_INFO *info;
+  uint32_t index;
+  int ret;
+};
+
+struct sm50_get_ray_shader_params32 {
+  sm50_shader_t shader;
+  uint32_t name;
+  uint32_t name_size;
+  uint32_t info;
+  uint32_t index;
+  int ret;
+};
+
+COMPATIBLE_STRUCT32(sm50_get_ray_shader_params, 32)
 
 struct sm50_get_arguments_info_params32 {
   sm50_shader_t shader;

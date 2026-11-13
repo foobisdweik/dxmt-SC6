@@ -1,0 +1,12 @@
+# reports no helper lanes in pixel shaders
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -4145,7 +4145,7 @@ convert_dxil(
+       break;
+     case IsHelperLane:
+       ret =
+-          ctx.shader_type == D3D10_SB_PIXEL_SHADER ? simd("simd_is_helper_thread", ir.getInt1Ty(), {}) : ir.getFalse();
++          ctx.shader_type == D3D10_SB_PIXEL_SHADER ? (Value *)ir.getFalse() : ir.getFalse();
+       break;
+     case QuadVote:
+       // DXIL's QuadVoteOpKind: any 0, all 1. a quad's helpers take part

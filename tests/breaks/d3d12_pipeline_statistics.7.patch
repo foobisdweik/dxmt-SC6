@@ -1,0 +1,12 @@
+# a command list run again adds to the counts of its last run
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -40,7 +40,7 @@
+ [[vertex]] void pipeline_statistics_draw(constant PipelineStatisticsDraw &draw
+                                          [[buffer(kCustomBufferArgumentIndex0)]]) {
+   auto result = reinterpret_cast<device PipelineStatisticsResult *>(draw.result);
+-  *result = {};
++  if (false) *result = {};
+   if (!draw.first || (draw.skips && *reinterpret_cast<device const uint *>(draw.skips)))
+     return;
+   ulong vertices = draw.vertices, instances = draw.instances;

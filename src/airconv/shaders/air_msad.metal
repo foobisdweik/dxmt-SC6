@@ -29,10 +29,10 @@ T msad_impl(T ref, T src, T accum) {
     return accum;
 }
 
-uint msad(uint ref, uint src, uint accum) asm("dxmt.msad.i32");
-uint2 msad(uint2 ref, uint2 src, uint2 accum) asm("dxmt.msad.v2i32");
-uint3 msad(uint3 ref, uint3 src, uint3 accum) asm("dxmt.msad.v3i32");
-uint4 msad(uint4 ref, uint4 src, uint4 accum) asm("dxmt.msad.v4i32");
+uint msad(uint ref, uint src, uint accum) asm("mullion.msad.i32");
+uint2 msad(uint2 ref, uint2 src, uint2 accum) asm("mullion.msad.v2i32");
+uint3 msad(uint3 ref, uint3 src, uint3 accum) asm("mullion.msad.v3i32");
+uint4 msad(uint4 ref, uint4 src, uint4 accum) asm("mullion.msad.v4i32");
 
 uint msad(uint ref, uint src, uint accum) {
     return msad_impl(ref, src, accum);

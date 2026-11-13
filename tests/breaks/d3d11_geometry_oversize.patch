@@ -1,0 +1,37 @@
+# the CPU collects and clears the warning before its command buffer executes
+--- a/src/mullion/mullion_command_queue.cpp
++++ b/src/mullion/mullion_command_queue.cpp
+@@ -267,6 +267,17 @@
+     diag::Write(diag::Line("span", "encode", seq, GetCurrentThreadId(), began, diag::Now() - began));
+   if (profile_)
+     profile_->buffers[seq % kCommandChunkCount].committed = diag::Now();
++  uint64_t omitted = 0;
++  for (auto word : chunk.readback.omitted)
++    omitted = std::max(omitted, *word);
++  if (omitted) {
++    auto &bound = argument_encoding_ctx.indirect_geometry_bound;
++    bound.store(std::max(bound.load(std::memory_order_relaxed), omitted), std::memory_order_relaxed);
++    WARN("Omitted indirect mesh draw (GS) because of too many object threadgroups (", omitted,
++         "); later indirect draws reserve parts for this many");
++  }
++  for (auto word : chunk.readback.omitted)
++    *const_cast<uint64_t *>(word) = 0;
+   cmdbuf.commit();
+ 
+   ready_for_commit.fetch_add(1, std::memory_order_release);
+@@ -342,15 +353,6 @@
+       buffer = {};
+     }
+ 
+-    uint64_t omitted = 0;
+-    for (auto word : chunk.readback.omitted)
+-      omitted = std::max(omitted, *word);
+-    if (omitted) {
+-      auto &bound = argument_encoding_ctx.indirect_geometry_bound;
+-      bound.store(std::max(bound.load(std::memory_order_relaxed), omitted), std::memory_order_relaxed);
+-      WARN("Omitted indirect mesh draw (GS) because of too many object threadgroups (", omitted,
+-           "); later indirect draws reserve parts for this many");
+-    }
+     if (chunk.completed)
+       chunk.completed();
+     if (chunk.signal_frame_latency_fence_ != ~0ull)

@@ -1,0 +1,20 @@
+# sampler feedback leaks the D3D11 mip-autogeneration bit into D3D12 format support.
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -20,6 +20,7 @@
+ #include "mullion_diag.hpp"
+ #include "airconv_ray.h"
+ #include "d3d12_device.hpp"
++#include "d3d11.h"
+ #include "d3d12_device_child.hpp"
+ #include "d3d12_pipeline.hpp"
+ #include "Metal.hpp"
+@@ -728,7 +729,7 @@
+         return S_OK;
+       }
+       if (IsSamplerFeedback(out->Format)) {
+-        out->Support1 = D3D12_FORMAT_SUPPORT1_TEXTURE2D | D3D12_FORMAT_SUPPORT1_MIP;
++        out->Support1 = D3D12_FORMAT_SUPPORT1(D3D12_FORMAT_SUPPORT1_TEXTURE2D | D3D12_FORMAT_SUPPORT1_MIP | D3D11_FORMAT_SUPPORT_MIP_AUTOGEN);
+         out->Support2 = D3D12_FORMAT_SUPPORT2_SAMPLER_FEEDBACK;
+         return S_OK;
+       }

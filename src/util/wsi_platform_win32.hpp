@@ -12,15 +12,15 @@
 
 #include <windows.h>
 
-namespace dxmt::wsi {
+namespace mullion::wsi {
 
 /**
  * \brief Impl-dependent state
  */
-struct DXMTWindowState {
+struct MullionWindowState {
   LONG style = 0;
   LONG exstyle = 0;
   RECT rect = {0, 0, 0, 0};
 };
 
-} // namespace dxmt::wsi
+} // namespace mullion::wsi

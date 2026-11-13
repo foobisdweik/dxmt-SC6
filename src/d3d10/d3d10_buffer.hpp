@@ -2,7 +2,7 @@
 
 #include "d3d10_util.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 class MTLD3D10Buffer final : public ID3D10Buffer {
 
@@ -68,4 +68,4 @@ MTLD3D10Buffer(ID3D11Buffer *d3d11, ID3D11DeviceContext *d3d11_context) : d3d11(
   void STDMETHODCALLTYPE GetDesc(D3D10_BUFFER_DESC *pDesc);
 };
 
-}; // namespace dxmt
+}; // namespace mullion

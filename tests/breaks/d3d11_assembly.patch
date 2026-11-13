@@ -1,0 +1,12 @@
+# map D3D10 triangle strips to triangle lists.
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -168,7 +168,7 @@
+ 
+ void STDMETHODCALLTYPE
+ MTLD3D10Device::IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY Topology) {
+-  d3d11_context_->IASetPrimitiveTopology(Topology);
++  d3d11_context_->IASetPrimitiveTopology(Topology == D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP ? D3D10_PRIMITIVE_TOPOLOGY_TRIANGLELIST : Topology);
+ }
+ 
+ void STDMETHODCALLTYPE

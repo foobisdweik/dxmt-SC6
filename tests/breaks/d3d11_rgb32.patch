@@ -1,0 +1,16 @@
+# restores the 20-of-60-byte RGB32 FLOAT upload
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -565,11 +565,10 @@
+     break;
+   }
+   case DXGI_FORMAT_R32G32B32_FLOAT: {
+-    description.PixelFormat = WMTPixelFormat(WMTPixelFormatRGBA32Float | WMTPixelFormatRGB1Swizzle);
++    description.PixelFormat = WMTPixelFormatR32Float;
+     description.BufferPixelFormat = WMTPixelFormatR32Float;
+     description.AttributeFormat = WMTAttributeFormatFloat3;
+     description.BytesPerTexel = 12;
+-    description.Flag = MTL_DXGI_FORMAT_EMULATED_RGB32;
+     break;
+   }
+   case DXGI_FORMAT_R16G16B16A16_TYPELESS: {

@@ -1,0 +1,12 @@
+# return the MTLDevice_newMeshRenderPipelineState error without ownership
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -693,7 +693,7 @@
+                                                                                                   options:options
+                                                                                                reflection:nil
+                                                                                                     error:&err];
+-  params->ret_error = (obj_handle_t)[err retain];
++  params->ret_error = (obj_handle_t)err;
+ #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+   if (@available(macOS 15, *)) {
+     if (!err && info->binary_archive_for_serialization) {

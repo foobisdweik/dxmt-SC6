@@ -1,0 +1,13 @@
+# buffer refuses Resource2
+--- a/src/d3d12/d3d12_buffer.cpp
++++ b/src/d3d12/d3d12_buffer.cpp
+@@ -85,8 +85,7 @@
+     *ppvObject = nullptr;
+ 
+     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D12Object) || riid == __uuidof(ID3D12DeviceChild) ||
+-        riid == __uuidof(ID3D12Pageable) || riid == __uuidof(ID3D12Resource) || riid == __uuidof(ID3D12Resource1) ||
+-        riid == __uuidof(ID3D12Resource2)) {
++        riid == __uuidof(ID3D12Pageable) || riid == __uuidof(ID3D12Resource) || riid == __uuidof(ID3D12Resource1)) {
+       *ppvObject = ref(this);
+       return S_OK;
+     }

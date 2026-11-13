@@ -1,0 +1,12 @@
+# broadcasts the first Direct3D 10 target write mask to every slot.
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -1113,7 +1113,7 @@
+       d3d11_desc.RenderTarget[i].SrcBlendAlpha = D3D11_BLEND(pBlendStateDesc->SrcBlendAlpha);
+       d3d11_desc.RenderTarget[i].DestBlendAlpha = D3D11_BLEND(pBlendStateDesc->DestBlendAlpha);
+       d3d11_desc.RenderTarget[i].BlendOpAlpha = D3D11_BLEND_OP(pBlendStateDesc->BlendOpAlpha);
+-      d3d11_desc.RenderTarget[i].RenderTargetWriteMask = pBlendStateDesc->RenderTargetWriteMask[i];
++      d3d11_desc.RenderTarget[i].RenderTargetWriteMask = pBlendStateDesc->RenderTargetWriteMask[0];
+     }
+   }
+ 

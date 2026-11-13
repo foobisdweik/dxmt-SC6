@@ -1,0 +1,12 @@
+# rejects valid query resolves starting at index zero
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2722,6 +2722,8 @@
+       ID3D12QueryHeap *pHeap, D3D12_QUERY_TYPE Type, UINT StartIndex, UINT QueryCount, ID3D12Resource *pDstBuffer,
+       UINT64 AlignedDstBufferOffset
+   ) {
++    if (!StartIndex)
++      recording_error_ = E_INVALIDARG;
+     auto heap = static_cast<MTLD3D12QueryHeap *>(pHeap);
+     auto resource = static_cast<MTLD3D12Resource *>(pDstBuffer);
+     D3D12_QUERY_HEAP_TYPE heap_type;

@@ -1,0 +1,12 @@
+# drops the D3D10 destination alpha factor.
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -1111,7 +1111,7 @@
+       d3d11_desc.RenderTarget[i].DestBlend = D3D11_BLEND(pBlendStateDesc->DestBlend);
+       d3d11_desc.RenderTarget[i].BlendOp = D3D11_BLEND_OP(pBlendStateDesc->BlendOp);
+       d3d11_desc.RenderTarget[i].SrcBlendAlpha = D3D11_BLEND(pBlendStateDesc->SrcBlendAlpha);
+-      d3d11_desc.RenderTarget[i].DestBlendAlpha = D3D11_BLEND(pBlendStateDesc->DestBlendAlpha);
++      d3d11_desc.RenderTarget[i].DestBlendAlpha = D3D11_BLEND_ZERO;
+       d3d11_desc.RenderTarget[i].BlendOpAlpha = D3D11_BLEND_OP(pBlendStateDesc->BlendOpAlpha);
+       d3d11_desc.RenderTarget[i].RenderTargetWriteMask = pBlendStateDesc->RenderTargetWriteMask[i];
+     }

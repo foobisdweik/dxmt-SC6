@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace dxmt {
+namespace mullion {
 
 /** Small vector state with stateful allocator */
 template<typename Allocator, bool Stateless>

@@ -1,0 +1,12 @@
+# restores bindings without saving the state being swapped out.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -2274,7 +2274,7 @@
+     if (next == previous)
+       return;
+     ResetEncodingContextState();
+-    previous->state = std::exchange(state_, std::move(next->state));
++    state_ = std::move(next->state);
+     RestoreEncodingContextState();
+   }
+ 

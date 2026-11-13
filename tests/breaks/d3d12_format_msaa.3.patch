@@ -1,0 +1,12 @@
+# Metal resolves every whole-subresource average, also of formats it cannot resolve.
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -3354,7 +3354,7 @@
+     auto planes = DepthStencilPlanarFlags(dst->texture->pixelFormat());
+     // Metal's own resolve is of a whole attachment into one as large, by averaging colors of the formats it resolves
+     if (ResolveMode == D3D12_RESOLVE_MODE_AVERAGE && !planes &&
+-        any_bit_set(device_->GetMTLPixelFormatCapability(format.PixelFormat) & FormatCapability::Resolve) && !DstX && !DstY &&
++        !IsIntegerFormat(format.PixelFormat) && !DstX && !DstY &&
+         !memcmp(&rect, &whole, sizeof(rect)) && dst->texture->width(dst_view) == (UINT)whole.right &&
+         dst->texture->height(dst_view) == (UINT)whole.bottom) {
+       allocator_->InvalidateCurrentPass();

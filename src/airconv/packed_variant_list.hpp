@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <variant>
 
-namespace dxmt {
+namespace mullion {
 
 template <typename... Types> class PackedVariantList {
   static_assert(
@@ -135,4 +135,4 @@ public:
     return false;
   }
 };
-} // namespace dxmt
+} // namespace mullion

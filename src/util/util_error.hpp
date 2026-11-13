@@ -13,10 +13,10 @@
 #include <string>
 #include <exception>
 
-namespace dxmt {
+namespace mullion {
 
 /**
- * \brief DXMT error
+ * \brief Mullion error
  *
  * A generic exception class that stores a
  * message. Exceptions should be logged.
@@ -35,4 +35,4 @@ private:
   std::string m_message;
 };
 
-} // namespace dxmt
+} // namespace mullion

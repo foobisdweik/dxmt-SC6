@@ -1,0 +1,12 @@
+# UAV-only rasterization loses its forced sample count.
+--- a/src/d3d11/d3d11_context_impl.cpp
++++ b/src/d3d11/d3d11_context_impl.cpp
+@@ -5318,7 +5318,7 @@
+         auto &viewport = state_.Rasterizer.viewports[0];
+         render_target_width = so_only ? 1 : viewport.Width;
+         render_target_height = so_only ? 1 : viewport.Height;
+-        sample_count = std::max(1u, rs->ForcedSampleCount());
++        sample_count = 1;
+         if (!(render_target_width && render_target_height)) {
+           ERR("uav only rendering is enabled but viewport is empty");
+           return false;

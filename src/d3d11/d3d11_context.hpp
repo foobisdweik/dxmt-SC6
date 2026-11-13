@@ -4,7 +4,7 @@
 #include "d3d11_device.hpp"
 #include "d3d11_device_child.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 using MTLD3D11DeviceContextBase =
     MTLD3D11DeviceChild<IMTLD3D11DeviceContext>;
@@ -26,4 +26,4 @@ public:
 
 std::unique_ptr<MTLD3D11CommandListPoolBase> InitializeCommandListPool(MTLD3D11Device *device);
 
-} // namespace dxmt
+} // namespace mullion

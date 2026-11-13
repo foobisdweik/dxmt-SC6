@@ -1,0 +1,11 @@
+# creation loses the asked feedback mip region
+--- a/src/d3d12/d3d12_device.cpp
++++ b/src/d3d12/d3d12_device.cpp
+@@ -1667,6 +1667,7 @@
+     if (FAILED(hr))
+       return hr;
+     auto asked = *pDesc;
++    asked.SamplerFeedbackMipRegion = {};
+     // no mip count is the full chain, as of the texture the map is paired with
+     if (!asked.MipLevels)
+       asked.MipLevels = std::bit_width(std::max<UINT64>(asked.Width, asked.Height));

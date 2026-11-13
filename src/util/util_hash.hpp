@@ -11,7 +11,7 @@
 
 #include <cstddef>
 
-namespace dxmt {
+namespace mullion {
 
 class HashState {
 
@@ -26,4 +26,4 @@ private:
   size_t m_value = 0;
 };
 
-} // namespace dxmt
+} // namespace mullion

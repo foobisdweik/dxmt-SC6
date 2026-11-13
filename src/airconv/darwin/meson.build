@@ -23,23 +23,23 @@ if native_llvm_path.startswith('/usr/local/opt') or native_llvm_path.startswith(
 endif
 
 airconv_lib_darwin = static_library('airconv', airconv_src,
-  include_directories : [ dxmt_include_path, llvm_include_path_darwin ],
+  include_directories : [ mullion_include_path, llvm_include_path_darwin ],
   cpp_args            : [ airconv_args ],
   dependencies        : [ dxbc_parser_native_dep ],
   link_args           : llvm_ld_flags_darwin,
-  native              : dxmt_crossbuild
+  native              : mullion_crossbuild
 )
 
 airconv_dep_darwin = declare_dependency(
   link_with           : [ airconv_lib_darwin ],
-  include_directories : [ dxmt_include_path, include_directories('..') ],
+  include_directories : [ mullion_include_path, include_directories('..') ],
   link_args           : [ llvm_ld_flags_darwin, llvm_deps ] # meh
 )
 
 executable('airconv', airconv_src + airconv_cli_src,
-  include_directories : [ dxmt_include_path, llvm_include_path_darwin ],
+  include_directories : [ mullion_include_path, llvm_include_path_darwin ],
   cpp_args            : [ airconv_args ],
   dependencies        : [ dxbc_parser_native_dep ],
   link_args           : [ llvm_ld_flags_darwin, llvm_deps ],
-  native              : dxmt_crossbuild
+  native              : mullion_crossbuild
 )

@@ -1,0 +1,14 @@
+# the desktop window reaches swap-chain construction
+--- a/src/d3d12/d3d12_command_queue.cpp
++++ b/src/d3d12/d3d12_command_queue.cpp
+@@ -1445,9 +1445,7 @@
+       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc, IDXGISwapChain1 **ppSwapChain
+   ) {
+     if (desc_.Type != D3D12_COMMAND_LIST_TYPE_DIRECT)
+-      return FAIL(DXGI_ERROR_INVALID_CALL);
+-    if (hWnd == GetDesktopWindow())
+-      return FAIL(E_ACCESSDENIED);
++      return DXGI_ERROR_INVALID_CALL;
+     return mullion::CreateSwapChain(pFactory, device_, this, hWnd, pDesc, pFullscreenDesc, ppSwapChain);
+   }
+ 

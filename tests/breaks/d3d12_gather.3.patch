@@ -1,0 +1,12 @@
+# keeps a single mip after its minimum LOD clamp removed it
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2477,7 +2477,7 @@
+       llvm::air::Signedness::Unsigned
+   );
+   auto Removed = ir.CreateOr(
+-      ir.CreateFCmpOGE(Clamp, ConstantFP::get(air.getFloatTy(), 1)), ir.CreateFCmpOGT(Clamp, LastMip)
++      ir.CreateFCmpOGE(Clamp, ConstantFP::get(air.getFloatTy(), 1)), ir.CreateFCmpOGT(Clamp, ConstantFP::get(ir.getFloatTy(), 1))
+   );
+   return {ir.CreateSelect(Removed, OutOfBounds, Value), Residency};
+ }

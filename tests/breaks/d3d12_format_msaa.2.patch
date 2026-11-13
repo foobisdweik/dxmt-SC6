@@ -1,0 +1,12 @@
+# Only formats Metal resolves claim a resolve.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -1799,7 +1799,7 @@
+ 
+   // a color format Metal cannot resolve is resolved by a draw (fs_resolve_float)
+   if (any_bit_set(Capability & FormatCapability::Resolve) ||
+-      (any_bit_set(Capability & FormatCapability::Color) && any_bit_set(Capability & FormatCapability::MSAA) &&
++      (false && any_bit_set(Capability & FormatCapability::MSAA) &&
+        !IsIntegerFormat(metal_format.PixelFormat))) {
+     Support1 |= D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE;
+   }

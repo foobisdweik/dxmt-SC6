@@ -1,0 +1,13 @@
+# restore the fixed 2 KB mesh divisor, losing wide outputs
+# family 7
+--- a/src/mullion/mullion_geometry.hpp
++++ b/src/mullion/mullion_geometry.hpp
+@@ -61,7 +61,7 @@
+     uint64_t mesh_budget
+ ) {
+   constexpr uint32_t max_payload_bytes = 16 * 1024;
+-  constexpr uint32_t max_mesh_output_bytes = 16 * 1024;
++  constexpr uint32_t max_mesh_output_bytes = 2048;
+   uint64_t per_object = max_payload_bytes +
+       uint64_t(get_gs_warp(topology, registers).primitives) * instances * max_mesh_output_bytes;
+   return std::min(max_object_threadgroups, mesh_budget / per_object);

@@ -1,0 +1,12 @@
+# uses floating equality for WaveMatch so NaN lanes fail to match themselves
+--- a/src/airconv/dxil_converter.cpp
++++ b/src/airconv/dxil_converter.cpp
+@@ -2310,7 +2310,7 @@
+           bits, ir.getInt64(0),
+           [&](Value *from, Value *value) {
+             return ir.CreateSelect(
+-                ir.CreateICmpEQ(value, bits), ir.CreateShl(ir.getInt64(1), ir.CreateZExt(from, ir.getInt64Ty())),
++                a(1)->getType()->isFloatingPointTy() ? ir.CreateFCmpOEQ(ir.CreateBitCast(value, a(1)->getType()), a(1)) : ir.CreateICmpEQ(value, bits), ir.CreateShl(ir.getInt64(1), ir.CreateZExt(from, ir.getInt64Ty())),
+                 ir.getInt64(0)
+             );
+           },

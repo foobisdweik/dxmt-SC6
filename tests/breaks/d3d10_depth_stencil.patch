@@ -1,0 +1,12 @@
+# drops the D3D10 stencil reference.
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -265,7 +265,7 @@
+ 
+ void STDMETHODCALLTYPE
+ MTLD3D10Device::OMSetDepthStencilState(ID3D10DepthStencilState *pDepthStencilState, UINT StencilRef) {
+-  d3d11_context_->OMSetDepthStencilState(GetD3D11Interface<MTLD3D10DepthStencilState>(pDepthStencilState), StencilRef);
++  d3d11_context_->OMSetDepthStencilState(GetD3D11Interface<MTLD3D10DepthStencilState>(pDepthStencilState), 0);
+ }
+ 
+ void STDMETHODCALLTYPE

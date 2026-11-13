@@ -13,7 +13,7 @@
 #include <vector>
 #include <unknwn.h>
 
-namespace dxmt {
+namespace mullion {
 
 /**
  * \brief COM private data entry type
@@ -107,7 +107,7 @@ public:
   HRESULT getData(REFGUID guid, UINT *size, void *data);
 
 private:
-  dxmt::mutex mutex_;
+  mullion::mutex mutex_;
 };
 
-} // namespace dxmt
+} // namespace mullion

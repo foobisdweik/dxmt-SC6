@@ -13,7 +13,7 @@
 #include <unknwn.h>
 #include <cassert>
 
-namespace dxmt {
+namespace mullion {
 
 /**
  * \brief Increment public ref count
@@ -100,7 +100,7 @@ public:
   ~Com() { this->decRef(); }
 
   T *operator->() const {
-#ifdef DXMT_DEBUG
+#ifdef MULLION_DEBUG
     if (!m_ptr) {
       __builtin_trap();
     }
@@ -113,7 +113,7 @@ public:
   T *const *operator&() const { return &m_ptr; }
 
   /*
-   * dxmt: move to pointer semantic
+   * mullion: move to pointer semantic
    * the ownersihp is completely taken away
    */
   operator T *() && {
@@ -143,7 +143,7 @@ public:
   bool operator==(std::nullptr_t) const { return m_ptr == nullptr; }
   bool operator!=(std::nullptr_t) const { return m_ptr != nullptr; }
 
-  T *ref() const { return dxmt::ref(m_ptr); }
+  T *ref() const { return mullion::ref(m_ptr); }
 
   T *ptr() const { return m_ptr; }
 
@@ -190,4 +190,4 @@ template <typename T> Com<T> com_cast(IUnknown *pUnknwn) {
   return Com<T>::queryFrom(pUnknwn);
 };
 
-} // namespace dxmt
+} // namespace mullion

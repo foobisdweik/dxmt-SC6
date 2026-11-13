@@ -1,4 +1,5 @@
 #include "d3d10_device.hpp"
+#include <algorithm>
 #include "d3d10_input_layout.hpp"
 #include "d3d10_buffer.hpp"
 #include "d3d10_shader.hpp"
@@ -8,7 +9,7 @@
 #include "../d3d11/d3d11_context.hpp"
 #include "../d3d11/d3d11_device.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 template <typename Impl, typename Interface>
 auto
@@ -114,13 +115,14 @@ void STDMETHODCALLTYPE
 MTLD3D10Device::IASetVertexBuffers(
     UINT StartSlot, UINT NumBuffers, ID3D10Buffer *const *ppVertexBuffers, const UINT *pStrides, const UINT *pOffsets
 ) {
-  ID3D11Buffer *d3d11_buffers[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-
-  if (NumBuffers > D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT)
+  ID3D11Buffer *d3d11_buffers[D3D10_1_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
+  const UINT slots = GetFeatureLevel() >= D3D10_FEATURE_LEVEL_10_1 ? D3D10_1_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
+                                                                : D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT;
+  if (StartSlot > slots || NumBuffers > slots - StartSlot)
     return;
 
   for (unsigned i = 0; i < NumBuffers; i++)
-    d3d11_buffers[i] = GetD3D11Interface<MTLD3D10Buffer>(ppVertexBuffers[i]);
+    d3d11_buffers[i] = ppVertexBuffers ? GetD3D11Interface<MTLD3D10Buffer>(ppVertexBuffers[i]) : nullptr;
 
   d3d11_context_->IASetVertexBuffers(StartSlot, NumBuffers, d3d11_buffers, pStrides, pOffsets);
 }
@@ -471,7 +473,11 @@ void STDMETHODCALLTYPE
 MTLD3D10Device::IAGetVertexBuffers(
     UINT StartSlot, UINT NumBuffers, ID3D10Buffer **ppVertexBuffers, UINT *pStrides, UINT *pOffsets
 ) {
-  ID3D11Buffer *d3d11_buffers[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
+  ID3D11Buffer *d3d11_buffers[D3D10_1_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
+  const UINT slots = GetFeatureLevel() >= D3D10_FEATURE_LEVEL_10_1 ? D3D10_1_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
+                                                                : D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT;
+  if (StartSlot > slots || NumBuffers > slots - StartSlot)
+    return;
 
   d3d11_context_->IAGetVertexBuffers(
       StartSlot, NumBuffers, ppVertexBuffers ? d3d11_buffers : nullptr, pStrides, pOffsets
@@ -569,13 +575,13 @@ MTLD3D10Device::VSGetSamplers(UINT StartSlot, UINT NumSamplers, ID3D10SamplerSta
 
 void STDMETHODCALLTYPE
 MTLD3D10Device::GetPredication(ID3D10Predicate **ppPredicate, WINBOOL *pPredicateValue) {
-  Com<ID3D11Query> d3d11_predicate;
-  d3d11_context_->GetPredication(reinterpret_cast<ID3D11Predicate **>(&d3d11_predicate), pPredicateValue);
-  if (d3d11_predicate) {
-    d3d11_predicate->QueryInterface(__uuidof(ID3D10Query), reinterpret_cast<void **>(ppPredicate));
-  } else {
-    *ppPredicate = nullptr;
-  }
+  Com<ID3D11Predicate> d3d11_predicate;
+  d3d11_context_->GetPredication(ppPredicate ? &d3d11_predicate : nullptr, pPredicateValue);
+  if (!ppPredicate)
+    return;
+  *ppPredicate = nullptr;
+  if (d3d11_predicate)
+    d3d11_predicate->QueryInterface(IID_PPV_ARGS(ppPredicate));
 }
 
 void STDMETHODCALLTYPE
@@ -685,7 +691,10 @@ MTLD3D10Device::RSGetState(ID3D10RasterizerState **ppRasterizerState) {
 void STDMETHODCALLTYPE
 MTLD3D10Device::RSGetViewports(UINT *NumViewports, D3D10_VIEWPORT *pViewports) {
   D3D11_VIEWPORT vp[D3D10_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
-  d3d11_context_->RSGetViewports(NumViewports, pViewports != nullptr ? vp : nullptr);
+  const UINT requested = *NumViewports;
+  UINT available = std::size(vp);
+  d3d11_context_->RSGetViewports(&available, pViewports != nullptr ? vp : nullptr);
+  *NumViewports = pViewports ? std::min(requested, available) : available;
 
   if (pViewports != nullptr) {
     for (unsigned i = 0; i < *NumViewports; i++) {
@@ -696,12 +705,16 @@ MTLD3D10Device::RSGetViewports(UINT *NumViewports, D3D10_VIEWPORT *pViewports) {
       pViewports[i].MinDepth = vp[i].MinDepth;
       pViewports[i].MaxDepth = vp[i].MaxDepth;
     }
+    std::fill(pViewports + *NumViewports, pViewports + requested, D3D10_VIEWPORT{});
   }
 }
 
 void STDMETHODCALLTYPE
 MTLD3D10Device::RSGetScissorRects(UINT *NumRects, D3D10_RECT *pRects) {
+  const UINT requested = *NumRects;
   d3d11_context_->RSGetScissorRects(NumRects, pRects);
+  if (pRects)
+    *NumRects = std::min(requested, *NumRects);
 }
 
 HRESULT STDMETHODCALLTYPE
@@ -758,7 +771,8 @@ MTLD3D10Device::CreateBuffer(
   d3d11_desc.Usage = D3D11_USAGE(pDesc->Usage);
   d3d11_desc.BindFlags = pDesc->BindFlags;
   d3d11_desc.CPUAccessFlags = pDesc->CPUAccessFlags;
-  d3d11_desc.MiscFlags = ConvertD3D10ResourceFlags(pDesc->MiscFlags);
+  if (FAILED(ConvertD3D10ResourceFlags(pDesc->MiscFlags, d3d11_desc.MiscFlags)))
+    return E_INVALIDARG;
   d3d11_desc.StructureByteStride = 0;
 
   Com<ID3D11Buffer> d3d11_buffer = nullptr;
@@ -789,7 +803,8 @@ MTLD3D10Device::CreateTexture1D(
   d3d11_desc.Usage = D3D11_USAGE(pDesc->Usage);
   d3d11_desc.BindFlags = pDesc->BindFlags;
   d3d11_desc.CPUAccessFlags = pDesc->CPUAccessFlags;
-  d3d11_desc.MiscFlags = ConvertD3D10ResourceFlags(pDesc->MiscFlags);
+  if (FAILED(ConvertD3D10ResourceFlags(pDesc->MiscFlags, d3d11_desc.MiscFlags)))
+    return E_INVALIDARG;
 
   Com<ID3D11Texture1D> d3d11_tex1d;
   HRESULT hr = d3d11_device_->CreateTexture1D(
@@ -822,7 +837,8 @@ MTLD3D10Device::CreateTexture2D(
   d3d11_desc.Usage = D3D11_USAGE(pDesc->Usage);
   d3d11_desc.BindFlags = pDesc->BindFlags;
   d3d11_desc.CPUAccessFlags = pDesc->CPUAccessFlags;
-  d3d11_desc.MiscFlags = ConvertD3D10ResourceFlags(pDesc->MiscFlags);
+  if (FAILED(ConvertD3D10ResourceFlags(pDesc->MiscFlags, d3d11_desc.MiscFlags)))
+    return E_INVALIDARG;
 
   Com<ID3D11Texture2D> d3d11_tex2d;
   HRESULT hr = d3d11_device_->CreateTexture2D(
@@ -853,7 +869,8 @@ MTLD3D10Device::CreateTexture3D(
   d3d11_desc.Usage = D3D11_USAGE(pDesc->Usage);
   d3d11_desc.BindFlags = pDesc->BindFlags;
   d3d11_desc.CPUAccessFlags = pDesc->CPUAccessFlags;
-  d3d11_desc.MiscFlags = ConvertD3D10ResourceFlags(pDesc->MiscFlags);
+  if (FAILED(ConvertD3D10ResourceFlags(pDesc->MiscFlags, d3d11_desc.MiscFlags)))
+    return E_INVALIDARG;
 
   Com<ID3D11Texture3D> d3d11_tex3d;
   HRESULT hr = d3d11_device_->CreateTexture3D(
@@ -897,7 +914,7 @@ MTLD3D10Device::CreateRenderTargetView(
   if (!pResource)
     return E_INVALIDARG;
 
-  ID3D11RenderTargetView *d3d11_view = nullptr;
+  Com<ID3D11RenderTargetView> d3d11_view;
   HRESULT hr = d3d11_device_->CreateRenderTargetView(
       /* compatible memory layout to MTLD3D10Texture1/2/3D */
       GetD3D11Interface<MTLD3D10Buffer>(pResource), reinterpret_cast<const D3D11_RENDER_TARGET_VIEW_DESC *>(pDesc),
@@ -1036,6 +1053,8 @@ MTLD3D10Device::CreateGeometryShaderWithStreamOutput(
     UINT NumEntries, UINT OutputStreamStride, ID3D10GeometryShader **ppGeometryShader
 ) {
   InitReturnPtr(ppGeometryShader);
+  if (!NumEntries && OutputStreamStride)
+    return E_INVALIDARG;
 
   std::vector<D3D11_SO_DECLARATION_ENTRY> entries(NumEntries);
 
@@ -1049,10 +1068,14 @@ MTLD3D10Device::CreateGeometryShaderWithStreamOutput(
   }
 
   Com<ID3D11GeometryShader> d3d11_shader = nullptr;
+  bool one_slot = std::all_of(entries.begin(), entries.end(), [](auto &entry) { return entry.OutputSlot == 0; });
 
   HRESULT hr = d3d11_device_->CreateGeometryShaderWithStreamOutput(
-      pShaderBytecode, BytecodeLength, entries.data(), entries.size(), &OutputStreamStride, 1,
-      D3D11_SO_NO_RASTERIZED_STREAM, nullptr, ppGeometryShader ? &d3d11_shader : nullptr
+      // Direct3D 10 has one stream, which is rasterized while a pixel shader or the depth test takes it
+      // ("Stream-Output Stage"). the stride is "only used when the output slot is 0 for all entries"; each of several
+      // slots has its one element's
+      pShaderBytecode, BytecodeLength, entries.data(), entries.size(), &OutputStreamStride, one_slot, 0, nullptr,
+      ppGeometryShader ? &d3d11_shader : nullptr
   );
 
   if (hr != S_OK)
@@ -1085,11 +1108,16 @@ MTLD3D10Device::CreateBlendState(const D3D10_BLEND_DESC *pBlendStateDesc, ID3D10
 
   D3D11_BLEND_DESC d3d11_desc;
 
-  if (pBlendStateDesc != nullptr) {
+  if (!pBlendStateDesc)
+    return E_INVALIDARG;
+  {
     d3d11_desc.AlphaToCoverageEnable = pBlendStateDesc->AlphaToCoverageEnable;
-    d3d11_desc.IndependentBlendEnable = TRUE;
+    d3d11_desc.IndependentBlendEnable = FALSE;
 
     for (unsigned i = 0; i < 8; i++) {
+      d3d11_desc.IndependentBlendEnable |=
+          bool(pBlendStateDesc->BlendEnable[i]) != bool(pBlendStateDesc->BlendEnable[0]) ||
+          pBlendStateDesc->RenderTargetWriteMask[i] != pBlendStateDesc->RenderTargetWriteMask[0];
       d3d11_desc.RenderTarget[i].BlendEnable = pBlendStateDesc->BlendEnable[i];
       d3d11_desc.RenderTarget[i].SrcBlend = D3D11_BLEND(pBlendStateDesc->SrcBlend);
       d3d11_desc.RenderTarget[i].DestBlend = D3D11_BLEND(pBlendStateDesc->DestBlend);
@@ -1139,6 +1167,8 @@ MTLD3D10Device::CreateRasterizerState(
       reinterpret_cast<const D3D11_RASTERIZER_DESC *>(pRasterizerDesc), ppRasterizerState ? &d3d11_state : nullptr
   );
 
+  if (hr == D3D11_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS)
+    return D3D10_ERROR_TOO_MANY_UNIQUE_STATE_OBJECTS;
   if (hr != S_OK)
     return hr;
 
@@ -1179,7 +1209,7 @@ HRESULT STDMETHODCALLTYPE
 MTLD3D10Device::CreateQuery(const D3D10_QUERY_DESC *pQueryDesc, ID3D10Query **ppQuery) {
   InitReturnPtr(ppQuery);
 
-  if (pQueryDesc == nullptr)
+  if (pQueryDesc == nullptr || UINT(pQueryDesc->Query) > D3D10_QUERY_SO_OVERFLOW_PREDICATE)
     return E_INVALIDARG;
 
   D3D11_QUERY_DESC d3d11_desc;
@@ -1199,6 +1229,9 @@ HRESULT STDMETHODCALLTYPE
 MTLD3D10Device::CreatePredicate(const D3D10_QUERY_DESC *pPredicateDesc, ID3D10Predicate **ppPredicate) {
   InitReturnPtr(ppPredicate);
 
+  if (!pPredicateDesc)
+    return E_INVALIDARG;
+
   D3D11_QUERY_DESC d3d11_desc;
   d3d11_desc.Query = D3D11_QUERY(pPredicateDesc->Query);
   d3d11_desc.MiscFlags = pPredicateDesc->MiscFlags;
@@ -1215,14 +1248,20 @@ MTLD3D10Device::CreatePredicate(const D3D10_QUERY_DESC *pPredicateDesc, ID3D10Pr
 HRESULT STDMETHODCALLTYPE
 MTLD3D10Device::CreateCounter(const D3D10_COUNTER_DESC *pCounterDesc, ID3D10Counter **ppCounter) {
   InitReturnPtr(ppCounter);
-  WARN("CreateCounter: not supported");
-  return E_NOTIMPL;
+  // the device has no counters of its own, and does not support the well-known ones (ID3D10Device::CreateCounter:
+  // E_INVALIDARG for an out-of-range counter, DXGI_ERROR_UNSUPPORTED for a well-known one the device lacks)
+  if (!pCounterDesc || UINT(pCounterDesc->Counter) > D3D10_COUNTER_TEXTURE_CACHE_HIT_RATE)
+    return E_INVALIDARG;
+  return DXGI_ERROR_UNSUPPORTED;
 }
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D10Device::CheckFormatSupport(DXGI_FORMAT Format, UINT *pFormatSupport) {
-  // FIXME: valid mask pFormatSupport & 0x1FFFFFF
-  return d3d11_device_->CheckFormatSupport(Format, pFormatSupport);
+  // of Direct3D 11's answer, what Direct3D 10 has names for: D3D10_FORMAT_SUPPORT's bits up to its last
+  HRESULT hr = d3d11_device_->CheckFormatSupport(Format, pFormatSupport);
+  if (pFormatSupport)
+    *pFormatSupport &= D3D10_FORMAT_SUPPORT_BACK_BUFFER_CAST * 2 - 1;
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE
@@ -1234,7 +1273,8 @@ void STDMETHODCALLTYPE
 MTLD3D10Device::CheckCounterInfo(D3D10_COUNTER_INFO *pCounterInfo) {
   if (!pCounterInfo)
     return;
-  pCounterInfo->LastDeviceDependentCounter = D3D10_COUNTER{D3D10_COUNTER_DEVICE_DEPENDENT_0};
+  // none (D3D10_COUNTER_INFO: "if the device doesn't support any device-dependent counters, this value is 0")
+  pCounterInfo->LastDeviceDependentCounter = D3D10_COUNTER(0);
   pCounterInfo->NumSimultaneousCounters = 0;
   pCounterInfo->NumDetectableParallelUnits = 0;
 }
@@ -1244,8 +1284,9 @@ MTLD3D10Device::CheckCounter(
     const D3D10_COUNTER_DESC *pDesc, D3D10_COUNTER_TYPE *pType, UINT *pActiveCounters, char *name, UINT *pNameLength,
     char *units, UINT *pUnitsLength, char *description, UINT *pDescriptionLength
 ) {
-  WARN("CheckCounter: not supported");
-  return E_NOTIMPL;
+  if (!pDesc || UINT(pDesc->Counter) > D3D10_COUNTER_TEXTURE_CACHE_HIT_RATE)
+    return E_INVALIDARG;
+  return DXGI_ERROR_UNSUPPORTED;
 }
 
 UINT STDMETHODCALLTYPE
@@ -1312,4 +1353,4 @@ MTLD3D10Device::GetFeatureLevel() {
   return D3D10_FEATURE_LEVEL1(d3d11_device_->GetFeatureLevel());
 }
 
-} // namespace dxmt
+} // namespace mullion

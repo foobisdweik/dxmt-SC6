@@ -1,0 +1,12 @@
+# Metal 4: a render pass keeps Metal's sample positions where its samples lie at the pixel center
+# family native
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -4592,7 +4592,6 @@
+       descriptor.renderTargetHeight = info->render_target_height;
+       descriptor.renderTargetWidth = info->render_target_width;
+       descriptor.visibilityResultBuffer = (id<MTLBuffer>)info->visibility_buffer;
+-      center_samples(descriptor, info->center_samples);
+ 
+       if (info->tile_height && info->tile_width) {
+         descriptor.tileWidth = info->tile_width;

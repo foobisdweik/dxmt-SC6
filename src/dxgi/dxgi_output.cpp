@@ -1,18 +1,23 @@
 #include <algorithm>
 #include <numeric>
+#include <map>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <thread>
 
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "dxgi_interfaces.h"
 #include "dxgi_output.hpp"
 #include "dxgi_options.hpp"
-#include "dxmt_format.hpp"
-#include "dxmt_presenter.hpp"
+#include "mullion_format.hpp"
+#include "mullion_presenter.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "wsi_monitor.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 /*
  * \see
@@ -28,10 +33,9 @@ uint32_t GetMonitorFormatBpp(DXGI_FORMAT Format) {
   case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
   case DXGI_FORMAT_R10G10B10A2_UNORM:
   case DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM:
-    return 32;
-
+  // a display's modes are what the desktop has them as, whatever a swap chain's buffers hold
   case DXGI_FORMAT_R16G16B16A16_FLOAT:
-    return 64;
+    return 32;
 
   default:
     Logger::warn(str::format("GetMonitorFormatBpp: Unknown format: ", Format));
@@ -108,7 +112,7 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
   }
 
   // Filter by closest refresh rate
-  uint32_t minDiffRefreshRate = 0;
+  uint64_t minDiffRefreshRate = 0;
 
   if (TargetMode.RefreshRate.Numerator && TargetMode.RefreshRate.Denominator) {
     minDiffRefreshRate = std::accumulate(
@@ -135,27 +139,48 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
   }
 }
 
+// a monitor's gamma ramp is the monitor's, whichever output object set it: the identity until one does
+struct DXGIMonitorState {
+  MullionGammaRamp gamma;
+  std::atomic_uint fullscreens{0};
+};
+
+static DXGIMonitorState &
+MonitorState(HMONITOR monitor) {
+  static mullion::mutex mutex;
+  static std::map<HMONITOR, DXGIMonitorState> ramps;
+  std::lock_guard<mullion::mutex> lock(mutex);
+  auto [ramp, added] = ramps.try_emplace(monitor);
+  if (added)
+    for (uint32_t i = 0; i < MULLION_GAMMA_CP_COUNT; i++)
+      ramp->second.gamma.red[i] = ramp->second.gamma.green[i] = ramp->second.gamma.blue[i] =
+          float(i) / float(MULLION_GAMMA_CP_COUNT - 1);
+  return ramp->second;
+}
+
 class MTLDXGIOutputImpl : public MTLDXGIOutput {
 public:
   MTLDXGIOutputImpl(IMTLDXGIAdapter *adapter, HMONITOR monitor, DxgiOptions &options)
-      : adapter_(adapter), monitor_(monitor), options_(options) {
+      : adapter_(adapter), monitor_(monitor), options_(options), monitor_state_(MonitorState(monitor)) {
     WMTGetDisplayDescription(monitor_ == wsi::getDefaultMonitor()
                                  ? WMTGetPrimaryDisplayId()
                                  : WMTGetSecondaryDisplayId(),
                              &native_desc_);
-    for (uint32_t i = 0; i < DXMT_GAMMA_CP_COUNT; i++) {
-      gamma_ramp_.red[i] = gamma_ramp_.green[i] = gamma_ramp_.blue[i] =
-          float(i) / float(DXMT_GAMMA_CP_COUNT - 1);
-    }
-    gamma_ramp_.version = 0;
   }
 
   ~MTLDXGIOutputImpl() {}
 
-  const DXMTGammaRamp *
+  const MullionGammaRamp *
   STDMETHODCALLTYPE
   GetGammaRamp() override {
-    return &gamma_ramp_;
+    return &monitor_state_.gamma;
+  }
+
+  void STDMETHODCALLTYPE SetFullscreen(bool fullscreen) override {
+    if (fullscreen)
+      monitor_state_.fullscreens++;
+    else
+      monitor_state_.fullscreens--;
   }
 
   HRESULT
@@ -163,7 +188,7 @@ public:
   QueryInterface(REFIID riid, void **ppvObject) final {
 
     if (ppvObject == nullptr)
-      return E_POINTER;
+      return FAIL(E_POINTER);
 
     *ppvObject = nullptr;
 
@@ -193,7 +218,7 @@ public:
   STDMETHODCALLTYPE
   GetDesc(DXGI_OUTPUT_DESC *pDesc) final {
     if (pDesc == nullptr)
-      return DXGI_ERROR_INVALID_CALL;
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     if (!wsi::getDesktopCoordinates(monitor_, &pDesc->DesktopCoordinates)) {
       ERR("Failed to query monitor coords");
@@ -216,7 +241,7 @@ public:
   GetDisplayModeList(DXGI_FORMAT EnumFormat, UINT Flags, UINT *pNumModes,
                      DXGI_MODE_DESC *pDesc) final {
     if (pNumModes == nullptr)
-      return DXGI_ERROR_INVALID_CALL;
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     std::vector<DXGI_MODE_DESC1> modes;
 
@@ -246,7 +271,7 @@ public:
                           DXGI_MODE_DESC *pClosestMatch,
                           IUnknown *pConcernedDevice) final {
     if (!pModeToMatch || !pClosestMatch)
-      return DXGI_ERROR_INVALID_CALL;
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     DXGI_MODE_DESC1 modeToMatch;
     modeToMatch.Width = pModeToMatch->Width;
@@ -276,7 +301,25 @@ public:
 
   HRESULT
   STDMETHODCALLTYPE
-  WaitForVBlank() final { return S_OK; }
+  WaitForVBlank() final {
+    // "Halt a thread until the next vertical blank occurs" (Microsoft Learn, IDXGIOutput::WaitForVBlank). the
+    // display's refreshes are not told to a Windows thread, so the next one is estimated, as DXVK does: refreshes
+    // come once a period of the current mode's refresh rate, counted from the steady clock's epoch
+    wsi::WsiMode mode = {};
+    double hz = 0;
+    if (wsi::getCurrentDisplayMode(monitor_, &mode) && mode.refreshRate.denominator)
+      hz = double(mode.refreshRate.numerator) / double(mode.refreshRate.denominator);
+    // 0 or 1 is "the display hardware's default" (DEVMODE, dmDisplayFrequency)
+    if (hz <= 1)
+      hz = 60;
+    const std::chrono::duration<double> period(1.0 / hz);
+    auto now = std::chrono::steady_clock::now().time_since_epoch();
+    auto next = std::chrono::steady_clock::time_point(std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        (std::floor(now / period) + 1) * period
+    ));
+    std::this_thread::sleep_until(next);
+    return S_OK;
+  }
 
   HRESULT
   STDMETHODCALLTYPE
@@ -293,45 +336,45 @@ public:
   STDMETHODCALLTYPE
   GetGammaControlCapabilities(
       DXGI_GAMMA_CONTROL_CAPABILITIES *gamma_caps) final {
-    if (gamma_caps == nullptr)
-      return DXGI_ERROR_INVALID_CALL;
+    if (gamma_caps == nullptr || !monitor_state_.fullscreens)
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     gamma_caps->ScaleAndOffsetSupported = false;
     gamma_caps->MaxConvertedValue = 1.0f;
     gamma_caps->MinConvertedValue = 0.0f;
-    gamma_caps->NumGammaControlPoints = DXMT_GAMMA_CP_COUNT;
+    gamma_caps->NumGammaControlPoints = MULLION_GAMMA_CP_COUNT;
     for (uint32_t i = 0; i < gamma_caps->NumGammaControlPoints; i++)
-      gamma_caps->ControlPointPositions[i] = float(i) / float(DXMT_GAMMA_CP_COUNT - 1);
+      gamma_caps->ControlPointPositions[i] = float(i) / float(MULLION_GAMMA_CP_COUNT - 1);
     return S_OK;
   }
 
   HRESULT
   STDMETHODCALLTYPE
   SetGammaControl(const DXGI_GAMMA_CONTROL *gamma_control) final {
-    if (gamma_control == nullptr)
-      return DXGI_ERROR_INVALID_CALL;
+    if (gamma_control == nullptr || !monitor_state_.fullscreens)
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
-    for (uint32_t i = 0; i < DXMT_GAMMA_CP_COUNT; i++) {
-      gamma_ramp_.red[i] = gamma_control->GammaCurve[i].Red;
-      gamma_ramp_.green[i] = gamma_control->GammaCurve[i].Green;
-      gamma_ramp_.blue[i] = gamma_control->GammaCurve[i].Blue;
+    for (uint32_t i = 0; i < MULLION_GAMMA_CP_COUNT; i++) {
+      monitor_state_.gamma.red[i] = gamma_control->GammaCurve[i].Red;
+      monitor_state_.gamma.green[i] = gamma_control->GammaCurve[i].Green;
+      monitor_state_.gamma.blue[i] = gamma_control->GammaCurve[i].Blue;
     }
-    gamma_ramp_.version++;
+    monitor_state_.gamma.version++;
     return S_OK;
   }
 
   HRESULT
   STDMETHODCALLTYPE
   GetGammaControl(DXGI_GAMMA_CONTROL *gamma_control) final {
-    if (gamma_control == nullptr)
-      return DXGI_ERROR_INVALID_CALL;
+    if (gamma_control == nullptr || !monitor_state_.fullscreens)
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     gamma_control->Scale = { 1.0f, 1.0f, 1.0f };
     gamma_control->Offset = { 0.0f, 0.0f, 0.0f };
-    for (uint32_t i = 0; i < DXMT_GAMMA_CP_COUNT; i++) {
-      gamma_control->GammaCurve[i].Red = gamma_ramp_.red[i];
-      gamma_control->GammaCurve[i].Green = gamma_ramp_.green[i];
-      gamma_control->GammaCurve[i].Blue = gamma_ramp_.blue[i];
+    for (uint32_t i = 0; i < MULLION_GAMMA_CP_COUNT; i++) {
+      gamma_control->GammaCurve[i].Red = monitor_state_.gamma.red[i];
+      gamma_control->GammaCurve[i].Green = monitor_state_.gamma.green[i];
+      gamma_control->GammaCurve[i].Blue = monitor_state_.gamma.blue[i];
     }
   
     return S_OK;
@@ -363,7 +406,7 @@ public:
   GetDisplayModeList1(DXGI_FORMAT EnumFormat, UINT Flags, UINT *pNumModes,
                       DXGI_MODE_DESC1 *pDesc) final {
     if (pNumModes == nullptr)
-      return DXGI_ERROR_INVALID_CALL;
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     // Special case, just return zero modes
     if (EnumFormat == DXGI_FORMAT_UNKNOWN) {
@@ -444,14 +487,14 @@ public:
                            DXGI_MODE_DESC1 *pClosestMatch,
                            IUnknown *pConcernedDevice) final {
     if (!pModeToMatch || !pClosestMatch)
-      return DXGI_ERROR_INVALID_CALL;
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     if (pModeToMatch->Format == DXGI_FORMAT_UNKNOWN && !pConcernedDevice)
-      return DXGI_ERROR_INVALID_CALL;
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     // Both or neither must be zero
     if ((pModeToMatch->Width == 0) ^ (pModeToMatch->Height == 0))
-      return DXGI_ERROR_INVALID_CALL;
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     wsi::WsiMode activeWsiMode = {};
     wsi::getCurrentDisplayMode(monitor_, &activeWsiMode);
@@ -492,7 +535,7 @@ public:
     }
 
     UINT modeCount = 0;
-    GetDisplayModeList1(targetFormat, DXGI_ENUM_MODES_SCALING, &modeCount,
+    GetDisplayModeList1(targetFormat, DXGI_ENUM_MODES_SCALING | DXGI_ENUM_MODES_INTERLACED, &modeCount,
                         nullptr);
 
     if (modeCount == 0) {
@@ -501,7 +544,7 @@ public:
     }
 
     std::vector<DXGI_MODE_DESC1> modes(modeCount);
-    GetDisplayModeList1(targetFormat, DXGI_ENUM_MODES_SCALING, &modeCount,
+    GetDisplayModeList1(targetFormat, DXGI_ENUM_MODES_SCALING | DXGI_ENUM_MODES_INTERLACED, &modeCount,
                         modes.data());
 
     FilterModesByDesc(modes, *pModeToMatch);
@@ -538,15 +581,8 @@ public:
   STDMETHODCALLTYPE
   DuplicateOutput(IUnknown *pDevice,
                   IDXGIOutputDuplication **ppOutputDuplication) final {
-    InitReturnPtr(ppOutputDuplication);
-
-    if (!pDevice)
-      return E_INVALIDARG;
-
-    ERR("Not implemented");
-
-    // At least return a valid error code
-    return DXGI_ERROR_UNSUPPORTED;
+    const DXGI_FORMAT format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    return DuplicateOutput1(pDevice, 0, 1, &format, ppOutputDuplication);
   }
 
   HRESULT
@@ -574,7 +610,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE GetDesc1(DXGI_OUTPUT_DESC1 *pDesc) override {
     if (pDesc == nullptr)
-      return DXGI_ERROR_INVALID_CALL;
+      return FAIL(DXGI_ERROR_INVALID_CALL);
 
     if (!wsi::getDesktopCoordinates(monitor_, &pDesc->DesktopCoordinates)) {
       ERR("Failed to query monitor coords");
@@ -625,8 +661,17 @@ public:
                    const DXGI_FORMAT *formats,
                    IDXGIOutputDuplication **ppOutputDuplication) override {
     InitReturnPtr(ppOutputDuplication);
-    if (!pDevice)
-      return E_INVALIDARG;
+    Com<IDXGIDevice> device;
+    if (!ppOutputDuplication || !pDevice || FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&device))))
+      return FAIL(E_INVALIDARG);
+    Com<IDXGIAdapter> adapter;
+    Com<IDXGIFactory1> factory;
+    DXGI_ADAPTER_DESC desc{}, own_desc{};
+    if (FAILED(device->GetAdapter(&adapter)) || FAILED(adapter->GetParent(IID_PPV_ARGS(&factory))) ||
+        FAILED(adapter->GetDesc(&desc)) || FAILED(adapter_->GetDesc(&own_desc)) ||
+        desc.AdapterLuid.LowPart != own_desc.AdapterLuid.LowPart ||
+        desc.AdapterLuid.HighPart != own_desc.AdapterLuid.HighPart)
+      return FAIL(E_INVALIDARG);
 
     ERR("Not implemented");
 
@@ -638,11 +683,11 @@ private:
   HMONITOR monitor_ = nullptr;
   WMTDisplayDescription native_desc_;
   DxgiOptions &options_;
-  DXMTGammaRamp gamma_ramp_;
+  DXGIMonitorState &monitor_state_;
 };
 
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options) {
   return Com<IDXGIOutput>::transfer(new MTLDXGIOutputImpl(pAadapter, monitor, options));
 };
 
-} // namespace dxmt
+} // namespace mullion

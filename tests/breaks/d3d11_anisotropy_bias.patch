@@ -1,0 +1,13 @@
+# a biased sample through an anisotropic sampler never scales its gradients, so the GPU's clamp undoes the bias
+# family native
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -2340,7 +2340,7 @@
+   }
+   auto Anisotropy = ir.CreateAnd(ir.CreateLShr(SamplerMetadata, SM50_SAMPLER_METADATA_ANISOTROPY),
+                                  (1 << SM50_SAMPLER_METADATA_ANISOTROPY_BITS) - 1);
+-  if (auto Known = dyn_cast<ConstantInt>(ir.CreateICmpUGT(Anisotropy, ir.getInt64(1))); Known && Known->isZero())
++  if (true)
+     return Biased();
+   auto DDX = air.CreateDerivative(Coord, false), DDY = air.CreateDerivative(Coord, true);
+   return air.CreateSampleGrad(Tex.Texture, Tex.Handle, Sampler, Coord, ArrayIndex, BiasGradient(DDX, Bias),

@@ -1,0 +1,12 @@
+# invert the D3D10 predicate value
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -205,7 +205,7 @@
+   Com<ID3D11Query> d3d11_predicate;
+   if (pPredicate) {
+     pPredicate->QueryInterface(__uuidof(ID3D11Query), reinterpret_cast<void **>(&d3d11_predicate));
+-    d3d11_context_->SetPredication(reinterpret_cast<ID3D11Predicate *>(d3d11_predicate.ptr()), PredicateValue);
++    d3d11_context_->SetPredication(reinterpret_cast<ID3D11Predicate *>(d3d11_predicate.ptr()), !PredicateValue);
+   } else {
+     d3d11_context_->SetPredication(nullptr, PredicateValue);
+   }

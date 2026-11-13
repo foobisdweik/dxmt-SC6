@@ -32,7 +32,7 @@
 #include <variant>
 #include "nt/air_builder.hpp"
 
-namespace dxmt::air {
+namespace mullion::air {
 
 inline llvm::StructType *
 getOrCreateStructType(llvm::StringRef Name, llvm::LLVMContext &Ctx) {
@@ -72,14 +72,33 @@ enum class AddressSpace : uint32_t {
 enum class Sign { inapplicable, with_sign, no_sign };
 
 using TextureKind = llvm::air::Texture::ResourceKind;
-using SampleType = llvm::air::Texture::SampleType;
 
-inline TextureKind lowering_texture_1d_to_2d(TextureKind kind) {
+// a 1D view is a 2D texture one texel high, and one a shader compares against (SampleCmp) a depth texture, as Metal
+// compares only those
+inline TextureKind lowering_texture_1d_to_2d(TextureKind kind, bool compared = false) {
   switch (kind) {
   case TextureKind::texture_1d:
-    return TextureKind::texture_2d;
+    return compared ? TextureKind::depth_2d : TextureKind::texture_2d;
   case TextureKind::texture_1d_array:
+    return compared ? TextureKind::depth_2d_array : TextureKind::texture_2d_array;
+  default:
+    break;
+  }
+  return kind;
+};
+
+// a non-array, non-multisampled bindless D3D12 1D or 2D view is a 1-layer 2D array; array views keep their layers.
+// a shader may declare an array for a view that is not one (D3D11.3 22.3.12), and a handle of another type than its
+// view's reads the wrong layer and mip on Apple7. a 1D view a shader compares against is a depth texture
+inline TextureKind lowering_texture_to_array(TextureKind kind, bool compared = false) {
+  switch (kind) {
+  case TextureKind::texture_1d:
+  case TextureKind::texture_1d_array:
+    return compared ? TextureKind::depth_2d_array : TextureKind::texture_2d_array;
+  case TextureKind::texture_2d:
     return TextureKind::texture_2d_array;
+  case TextureKind::depth_2d:
+    return TextureKind::depth_2d_array;
   default:
     break;
   }
@@ -128,14 +147,6 @@ struct MSLUint {
   };
 };
 
-struct MSLShort {
-  std::string get_name() const { return "short"; };
-
-  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
-    return llvm::Type::getInt16Ty(context);
-  };
-};
-
 struct MSLUshort {
   std::string get_name() const { return "ushort"; };
 
@@ -174,13 +185,10 @@ constexpr auto msl_int = MSLInt{};
 constexpr auto msl_uint = MSLUint{};
 constexpr auto msl_float = MSLFloat{};
 constexpr auto msl_ulong = MSLUlong{};
-constexpr auto msl_half = MSLHalf{};
-constexpr auto msl_short = MSLShort{};
-constexpr auto msl_ushort = MSLUshort{};
 
 using MSLScalerType = std::variant<
   MSLFloat, MSLInt, MSLUint, MSLBool, MSLHalf, MSLUshort,
-  MSLUlong, MSLShort>; // incomplete list
+  MSLUlong>; // incomplete list
 
 constexpr auto msl_sampler = MSLSampler{};
 
@@ -214,9 +222,6 @@ constexpr auto msl_float3 = MSLVector{3, msl_float};
 constexpr auto msl_int4 = MSLVector{4, msl_int};
 constexpr auto msl_uint4 = MSLVector{4, msl_uint};
 constexpr auto msl_float4 = MSLVector{4, msl_float};
-constexpr auto msl_short4 = MSLVector{4, msl_short};
-constexpr auto msl_ushort4 = MSLVector{4, msl_ushort};
-constexpr auto msl_half4 = MSLVector{4, msl_half};
 
 struct MSLTexture {
   MSLScalerType component_type;
@@ -458,7 +463,7 @@ public:
   uint32_t DefineTexture(
     std::string name, TextureKind kind, MemoryAccess access,
     MSLScalerType scaler_type, uint32_t location_index = UINT32_MAX,
-    std::optional<uint32_t> raster_order_group = std::nullopt
+    std::optional<uint32_t> raster_order_group = std::nullopt, bool compared = false
   );
   uint32_t
   DefineSampler(std::string name, uint32_t location_index = UINT32_MAX);
@@ -509,6 +514,13 @@ struct InputFragmentStageIn {
   MSLScalerOrVectorType type;
   Interpolation interpolation;
   bool pull_mode;
+  // a flat input the shader also reads at each vertex of the primitive (Metal 4's vertex_value<T>)
+  bool vertex_value = false;
+};
+
+// the pixel's barycentric coordinates in the primitive, which Metal gives at the center only
+struct InputBarycentricCoord {
+  bool perspective;
 };
 
 struct InputVertexID {};
@@ -522,6 +534,11 @@ struct InputPrimitiveID {};
 struct InputFrontFacing {};
 struct InputInputCoverage {};
 struct InputSampleIndex {};
+// what a color attachment holds, read before the shader's output replaces it ([[color(index)]])
+struct InputRenderTarget {
+  uint32_t index;
+  MSLScalerOrVectorType type;
+};
 
 struct InputPayload {
   uint32_t size;
@@ -547,10 +564,15 @@ struct InputPosition {
 
 struct InputThreadIndexInThreadgroup {};    // uint
 struct InputThreadPositionInThreadgroup {}; // uint3
+struct InputThreadIndexInSIMDGroup {};      // uint, in every stage but vertex
+struct InputThreadsPerSIMDGroup {};         // uint, in every stage but vertex
 struct InputThreadPositionInGrid {};        // uint3
 struct InputThreadgroupPositionInGrid {};   // uint3
 
 struct InputThreadgroupsPerGrid {};         // uint3
+struct InputThreadsPerThreadgroup {};       // uint3
+// uint3: the origin the encoder's stage-in region has when the kernel is dispatched
+struct InputStageInGridOrigin {};
 
 struct OutputRenderTarget {
   bool dual_source_blending;
@@ -589,12 +611,16 @@ struct OutputViewportArrayIndex {
   bool operator==(OutputViewportArrayIndex const& rhs) const { return true; }
 };
 
-struct OutputPointSize {
-  bool operator==(OutputPointSize const& rhs) const { return true; }
-};
-
 struct OutputPrimitiveID {
   bool operator==(OutputPrimitiveID const& rhs) const { return true; }
+};
+
+struct OutputPrimitiveCulled {
+  bool operator==(OutputPrimitiveCulled const& rhs) const { return true; }
+};
+
+struct OutputPointSize {
+  bool operator==(OutputPointSize const& rhs) const { return true; }
 };
 
 using FunctionInput = template_concat_t<
@@ -607,13 +633,14 @@ using FunctionInput = template_concat_t<
     /* fragment */
     InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
     InputFrontFacing, InputPosition, InputSampleIndex, //
-    InputFragmentStageIn, InputInputCoverage,
+    InputFragmentStageIn, InputInputCoverage, InputRenderTarget, InputBarycentricCoord,
     /* object & mesh */
     InputPayload, InputMeshGridProperties, InputMesh,
     /* kernel */
     InputThreadIndexInThreadgroup, InputThreadPositionInThreadgroup,
     InputThreadPositionInGrid, InputThreadgroupPositionInGrid,
-    InputThreadgroupsPerGrid>>;
+    InputThreadgroupsPerGrid, InputStageInGridOrigin, InputThreadIndexInSIMDGroup, InputThreadsPerSIMDGroup,
+    InputThreadsPerThreadgroup>>;
 
 using FunctionOutput = std::variant<
   /* vertex */
@@ -625,7 +652,7 @@ using FunctionOutput = std::variant<
 using MeshVertexOutput = std::variant<OutputMeshData, OutputPosition, OutputClipDistance, OutputPointSize>;
 
 using MeshPrimitiveOutput =
-    std::variant<OutputMeshData, OutputRenderTargetArrayIndex, OutputViewportArrayIndex, OutputPrimitiveID>;
+    std::variant<OutputMeshData, OutputRenderTargetArrayIndex, OutputViewportArrayIndex, OutputPrimitiveID, OutputPrimitiveCulled>;
 
 class FunctionSignatureBuilder {
 public:
@@ -636,10 +663,21 @@ public:
    * for ArgumentBinding*: no guarantee
    */
   uint32_t DefineInput(const FunctionInput &input);
+  size_t InputCount() const { return inputs.size(); }
   uint32_t DefineOutput(const FunctionOutput &output);
   uint32_t DefineMeshVertexOutput(const MeshVertexOutput &output);
   uint32_t DefineMeshPrimitiveOutput(const MeshPrimitiveOutput &output);
+  // removes every output: a function that runs two stages (dxbc_converter_gs_layered.cpp) takes the first stage's
+  // signature for its inputs and gives the second stage's outputs
+  void ClearOutputs() { outputs.clear(); }
   void UseEarlyFragmentTests() { early_fragment_tests = true; }
+  // the inputs defined so far, by argument index, and the outputs
+  const std::vector<FunctionInput> &Inputs() const { return inputs; }
+  const std::vector<FunctionOutput> &Outputs() const { return outputs; }
+  bool EarlyFragmentTests() const { return early_fragment_tests; }
+  void UseLateFragmentTests() { early_fragment_tests = false; }
+  // a fragment function's inputs at the centroid at the center instead
+  void CenterCentroids();
   void UseMaxWorkgroupSize(uint32_t size) { max_work_group_size = size; }
   void UseMaxMeshWorkgroupSize(uint32_t size) { max_mesh_work_group_size = size; }
 
@@ -659,7 +697,7 @@ private:
 };
 
 inline TextureKind to_air_resource_type(
-  dxmt::shader::common::ResourceType type, bool use_depth = false
+  mullion::shader::common::ResourceType type, bool use_depth = false
 ) {
   switch (type) {
   case shader::common::ResourceType::TextureBuffer:
@@ -691,28 +729,8 @@ inline TextureKind to_air_resource_type(
   assert(0 && "unreachable");
 };
 
-inline SampleType
-to_air_sample_type(dxmt::shader::common::ScalerDataType type, bool use_depth = false) {
-  using namespace dxmt::shader::common;
-  switch (type) {
-  case ScalerDataType::Uint:
-    return SampleType::sample_uint;
-  case ScalerDataType::Int:
-    return SampleType::sample_int;
-  case ScalerDataType::Half:
-    // depth texture must use `float` type
-    return use_depth ? SampleType::sample_float : SampleType::sample_half;
-  case ScalerDataType::Short:
-    return SampleType::sample_short;
-  case ScalerDataType::UShort:
-    return SampleType::sample_ushort;
-  default:
-    return SampleType::sample_float;
-  }
-}
-
 inline MSLScalerType
-to_air_scaler_type(dxmt::shader::common::ScalerDataType type) {
+to_air_scaler_type(mullion::shader::common::ScalerDataType type) {
   switch (type) {
   case shader::common::ScalerDataType::Float:
     return msl_float;
@@ -720,12 +738,6 @@ to_air_scaler_type(dxmt::shader::common::ScalerDataType type) {
     return msl_uint;
   case shader::common::ScalerDataType::Int:
     return msl_int;
-  case shader::common::ScalerDataType::Half:
-    return msl_half;
-  case shader::common::ScalerDataType::Short:
-    return msl_short;
-  case shader::common::ScalerDataType::UShort:
-    return msl_ushort;
   case shader::common::ScalerDataType::Double:
     assert(0 && "");
     break;
@@ -874,4 +886,4 @@ enum class MTLPixelFormat : uint32_t {
   X24_Stencil8 = 262,
 };
 
-} // namespace dxmt::air
+} // namespace mullion::air

@@ -1,0 +1,12 @@
+# a group's threads number a triangle by the inner steps before its slot, not the outer ones
+--- a/src/airconv/shaders/air_tessellation.metal
++++ b/src/airconv/shaders/air_tessellation.metal
+@@ -900,7 +900,7 @@
+       if (step_inner || step_outer) {
+         short3 triangle = step_inner ? short3(base_inner + i, base_outer + taken_o, base_inner + i + 1)
+                                      : short3(base_outer + o, base_outer + o + 1, base_inner + taken_i);
+-        put_triangle(mesh, behind, primitives + taken_i + taken_o, triangle, ccw_xor);
++        put_triangle(mesh, behind, primitives + taken_i, triangle, ccw_xor);
+       }
+       inner_steps += popcount(kinds.x);
+       outer_steps += popcount(kinds.y);

@@ -1,0 +1,12 @@
+# index fetch omits the current storage offset
+--- a/src/mullion/mullion_context.hpp
++++ b/src/mullion/mullion_context.hpp
+@@ -568,7 +568,7 @@
+   currentIndexBuffer() {
+     // because of indirect draw, we can't predicate the accessed buffer range
+     auto [ibuf_alloc, offset] = access<PipelineStage::Vertex>(ibuf_, 0, ibuf_->length(), ResourceAccess::Read);
+-    return {ibuf_alloc->buffer(), offset};
++    return {ibuf_alloc->buffer(), 0};
+   };
+ 
+   void clearState() {

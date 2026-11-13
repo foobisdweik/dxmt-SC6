@@ -6,7 +6,7 @@
 #include "log/log.hpp"
 #include "util_string.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 MTLD3D11ClassLinkage::MTLD3D11ClassLinkage(MTLD3D11Device *pDevice)
     : MTLD3D11DeviceChild<ID3D11ClassLinkage>(pDevice) {}
@@ -50,4 +50,4 @@ HRESULT STDMETHODCALLTYPE MTLD3D11ClassLinkage::GetClassInstance(
   return E_NOTIMPL;
 }
 
-} // namespace dxmt
+} // namespace mullion

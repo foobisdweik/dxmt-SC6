@@ -1,5 +1,6 @@
 nvngx_src = [
   'nvngx.cpp',
+  'nvngx_d3d12.cpp',
 ]
 
 nvngx_ld_args      = []
@@ -8,7 +9,7 @@ nvngx_link_depends = []
 nvngx_dll = shared_library('nvngx', nvngx_src,
   name_prefix         : '',
   dependencies        : [ dxgi_dep, util_dep, winemetal_dep ],
-  include_directories : [ dxmt_include_path ],
+  include_directories : [ mullion_include_path ],
   install             : true,
   install_dir         : windows_builtin_install_dir,
   link_args           : nvngx_ld_args,

@@ -1,0 +1,12 @@
+# SV_Coverage is the samples Metal gives a shader it runs once a sample
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -620,7 +620,7 @@
+     );
+     // a covered pixel has all its samples (D3D11.3 15.17.5), where Metal gives a shader that writes memory, which it
+     // runs once a sample, that sample's alone
+-    if (~conservative_coverage) {
++    if (false) {
+       auto all =
+           builder.CreateSub(builder.CreateShl(builder.getInt32(1), air.CreateGetNumSamples()), builder.getInt32(1));
+       conservative_inputs.push_back(

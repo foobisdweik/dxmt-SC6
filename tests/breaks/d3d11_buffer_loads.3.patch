@@ -1,0 +1,12 @@
+# a raw load that crosses the end reads zeros for the units inside too
+--- a/src/airconv/nt/dxbc_converter_base.cpp
++++ b/src/airconv/nt/dxbc_converter_base.cpp
+@@ -3290,7 +3290,7 @@
+     BufferResourceHandle &Buffer, llvm::Value *Base, llvm::Value *Last, uint32_t UnitBytes,
+     llvm::function_ref<llvm::Value *(llvm::Value *, bool)> Read
+ ) {
+-  if (!Buffer.Metadata || !Last || !Buffer.StructureStride)
++  if (!Buffer.Metadata || !Last)
+     return Read(Base, false);
+   auto Bytes = DecodeRawBufferByteLength(Buffer.Metadata);
+   auto Units = ir.CreateZExtOrTrunc(ir.CreateUDiv(Bytes, llvm::ConstantInt::get(Bytes->getType(), UnitBytes)), Last->getType());

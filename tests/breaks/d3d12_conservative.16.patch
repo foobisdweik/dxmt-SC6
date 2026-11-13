@@ -1,0 +1,12 @@
+# a triangle is culled only when the last plane leaves nothing of it
+--- a/src/airconv/dxbc_converter_gs.cpp
++++ b/src/airconv/dxbc_converter_gs.cpp
+@@ -197,7 +197,7 @@
+     }
+     polygon = std::move(gathered);
+     // nothing left by one plane is nothing, whatever the next keeps of the filler
+-    out.culled = builder.CreateOr(out.culled, builder.CreateICmpEQ(count, builder.getInt32(0)));
++    out.culled = builder.CreateICmpEQ(count, builder.getInt32(0));
+   }
+   // the window, where pixels are squares a unit wide, and back
+   auto window = [&](pvalue x, pvalue y) -> std::array<pvalue, 2> {

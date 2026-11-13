@@ -1,0 +1,12 @@
+# drop stream output offsets from the D3D10 getter
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -668,7 +668,7 @@
+ void STDMETHODCALLTYPE
+ MTLD3D10Device::SOGetTargets(UINT NumBuffers, ID3D10Buffer **ppSOTargets, UINT *pOffsets) {
+   d3d11_context_->SOGetTargetsWithOffsets(
+-      NumBuffers, __uuidof(ID3D10Buffer), reinterpret_cast<void **>(ppSOTargets), pOffsets
++      NumBuffers, __uuidof(ID3D10Buffer), reinterpret_cast<void **>(ppSOTargets), nullptr
+   );
+ }
+ 

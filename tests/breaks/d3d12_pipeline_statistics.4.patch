@@ -1,0 +1,12 @@
+# the resolver leaves a command past the count with what an earlier execution wrote
+--- a/src/d3d12/d3d12_command_signature.cpp
++++ b/src/d3d12/d3d12_command_signature.cpp
+@@ -287,8 +287,6 @@
+       source << ");\n";
+     }
+     source << "if (i >= command_data.max_count) return;\n";
+-    if (is_compute && !rays)
+-      source << "if (command_data.statistics) command_data.statistics[i] = 0;\n";
+     if (!is_compute)
+       source << "if (command_data.statistics && !command_data.statistics_cuts) {\n"
+                 "command_data.statistics[i] = {};\n"

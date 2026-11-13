@@ -2,7 +2,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
-namespace dxmt {
+namespace mullion {
 
 class UnsupportedFeature : public llvm::ErrorInfo<UnsupportedFeature> {
 public:
@@ -17,4 +17,4 @@ public:
     return std::make_error_code(std::errc::not_supported);
   }
 };
-}; // namespace dxmt
+}; // namespace mullion

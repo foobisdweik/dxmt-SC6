@@ -19,10 +19,10 @@
 #pragma once
 #include "com/com_pointer.hpp"
 #include "d3d11_3.h"
-#include "dxmt_buffer.hpp"
-#include "dxmt_counter.hpp"
-#include "dxmt_subresource.hpp"
-#include "dxmt_texture.hpp"
+#include "mullion_buffer.hpp"
+#include "mullion_counter.hpp"
+#include "mullion_subresource.hpp"
+#include "mullion_texture.hpp"
 
 struct MTL_RENDER_PASS_ATTACHMENT_DESC {
   uint32_t RenderTargetArrayLength;
@@ -32,7 +32,7 @@ struct MTL_RENDER_PASS_ATTACHMENT_DESC {
   uint32_t Height;
 };
 
-namespace dxmt {
+namespace mullion {
 
 struct D3D11ResourceCommon;
 
@@ -80,6 +80,7 @@ struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
   BufferSlice slice_{};
   Texture *texture_{};
   uint64_t view_id_{};
+  uint64_t w_range_{};
   Rc<Counter> counter_;
   ResourceSubsetState subset_{};
   uint32_t bind_flags_{};

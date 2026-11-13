@@ -1,0 +1,13 @@
+# the GS dispatch marshal does not leave what an indirect stream output draw lacked
+diff --git a/src/mullion/mullion_command.metal b/src/mullion/mullion_command.metal
+index 25d41ae..cc690ab 100644
+--- a/src/mullion/mullion_command.metal
++++ b/src/mullion/mullion_command.metal
+@@ -616,7 +616,6 @@
+       ulong groups = (ulong)output.x * output.y, zeroed = 32 + 16 * (groups + ((groups + 1023) >> 10));
+       ulong need = (zeroed + 16 * groups * task.so_invocations + 15) & ~15ul;
+       if (so_used + need > task.so_scratch_size) {
+-        *task.so_overflow = max(*task.so_overflow, so_used + need);
+         for (uint part = 0; part < task.parts; part++) {
+           task.dispatch_arguments_out[part].x = 0;
+           task.dispatch_arguments_out[part].y = 0;

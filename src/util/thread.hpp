@@ -24,7 +24,7 @@
 #include "./rc/util_rc.hpp"
 #include "./rc/util_rc_ptr.hpp"
 
-namespace dxmt {
+namespace mullion {
 
 /**
  * \brief Thread priority
@@ -42,7 +42,7 @@ enum class ThreadPriority : int32_t {
  * that calls Windows APIs. It means that in winelib builds, we can't let
  * standard C++ library create threads and need to use Wine for that instead. We
  * use a thin wrapper around Windows thread functions so that the rest of code
- * just has to use dxmt::thread class instead of std::thread.
+ * just has to use mullion::thread class instead of std::thread.
  */
 class ThreadFn : public RcObject {
   using Proc = std::function<void()>;
@@ -262,20 +262,20 @@ public:
 
   void notify_all() { WakeAllConditionVariable(&m_cond); }
 
-  void wait(std::unique_lock<dxmt::mutex> &lock) {
+  void wait(std::unique_lock<mullion::mutex> &lock) {
     auto srw = lock.mutex()->native_handle();
     SleepConditionVariableSRW(&m_cond, srw, INFINITE, 0);
   }
 
   template <typename Predicate>
-  void wait(std::unique_lock<dxmt::mutex> &lock, Predicate pred) {
+  void wait(std::unique_lock<mullion::mutex> &lock, Predicate pred) {
     while (!pred())
       wait(lock);
   }
 
   template <typename Clock, typename Duration>
   std::cv_status
-  wait_until(std::unique_lock<dxmt::mutex> &lock,
+  wait_until(std::unique_lock<mullion::mutex> &lock,
              const std::chrono::time_point<Clock, Duration> &time) {
     auto now = Clock::now();
 
@@ -283,7 +283,7 @@ public:
   }
 
   template <typename Clock, typename Duration, typename Predicate>
-  bool wait_until(std::unique_lock<dxmt::mutex> &lock,
+  bool wait_until(std::unique_lock<mullion::mutex> &lock,
                   const std::chrono::time_point<Clock, Duration> &time,
                   Predicate pred) {
     if (pred())
@@ -294,7 +294,7 @@ public:
   }
 
   template <typename Rep, typename Period>
-  std::cv_status wait_for(std::unique_lock<dxmt::mutex> &lock,
+  std::cv_status wait_for(std::unique_lock<mullion::mutex> &lock,
                           const std::chrono::duration<Rep, Period> &timeout) {
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
     auto srw = lock.mutex()->native_handle();
@@ -305,7 +305,7 @@ public:
   }
 
   template <typename Rep, typename Period, typename Predicate>
-  bool wait_for(std::unique_lock<dxmt::mutex> &lock,
+  bool wait_for(std::unique_lock<mullion::mutex> &lock,
                 const std::chrono::duration<Rep, Period> &timeout,
                 Predicate pred) {
     bool result = pred();
@@ -367,4 +367,4 @@ struct null_mutex {
   bool try_lock() { return true; }
 };
 
-} // namespace dxmt
+} // namespace mullion

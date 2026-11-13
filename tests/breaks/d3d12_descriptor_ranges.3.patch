@@ -1,0 +1,12 @@
+# copies the first RTV or DSV to every destination slot in a range
+--- a/src/d3d12/d3d12_descriptor_heap.cpp
++++ b/src/d3d12/d3d12_descriptor_heap.cpp
+@@ -490,7 +490,7 @@
+   CopyDescriptors(UINT From, MTLD3D12RenderTargetDescriptorHeap *pHeapTo, UINT DescriptorTo, UINT CopyCount) {
+     for (unsigned i = 0; i < CopyCount; i++) {
+       static_cast<MTLD3D12RenderTargetDescriptorHeapImpl *>(pHeapTo)->render_targets_[DescriptorTo + i] =
+-          render_targets_[From + i];
++          render_targets_[From];
+     }
+   }
+ };

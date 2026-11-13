@@ -1,0 +1,12 @@
+# deferred updates copy into the first slot
+--- a/src/d3d11/d3d11_context_def.cpp
++++ b/src/d3d11/d3d11_context_def.cpp
+@@ -79,7 +79,7 @@
+       ctx_state.current_dynamic_buffer_allocations.contains(dynamic.ptr()) &&
+       "GetDynamicBufferAllocation() failed on deferred context");
+   auto &ret = ctx_state.current_dynamic_buffer_allocations.at(dynamic.ptr());
+-  return {ret.allocation, ret.suballocation};
++  return {ret.allocation, 0};
+ }
+ 
+ template <>

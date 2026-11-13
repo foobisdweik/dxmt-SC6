@@ -1,0 +1,13 @@
+# a discard leaves the run's later writes on
+--- a/src/airconv/nt/air_builder.cpp
++++ b/src/airconv/nt/air_builder.cpp
+@@ -1210,8 +1210,7 @@
+ 
+ CallInst *
+ AIRBuilder::CreateDiscard() {
+-  if (Live)
+-    builder.CreateStore(builder.getFalse(), Live);
++
+   auto &Context = getContext();
+   auto Attrs = AttributeList::get(
+       Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},

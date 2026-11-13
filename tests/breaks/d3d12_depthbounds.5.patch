@@ -1,0 +1,13 @@
+# the samples out of the bounds stay covered
+# family 9
+--- a/src/airconv/dxbc_converter.cpp
++++ b/src/airconv/dxbc_converter.cpp
+@@ -799,7 +799,7 @@
+     phi->addIncoming(samples, from);
+     bounded = phi;
+   }
+-  resource_map.kept_samples = kept && bounded ? builder.CreateAnd(kept, bounded) : kept ? kept : bounded;
++  resource_map.kept_samples = kept;
+   if (pso_sample_mask != 0xffffffff) {
+     air.CentroidCoverage = kept ? kept : function->getArg(input_coverage);
+     air.CentroidMask = builder.getInt32(pso_sample_mask);

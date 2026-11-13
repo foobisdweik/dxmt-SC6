@@ -1,0 +1,12 @@
+# drop the pixel shader set by a D3D10 Effects pass
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -63,7 +63,7 @@
+ 
+ void STDMETHODCALLTYPE
+ MTLD3D10Device::PSSetShader(ID3D10PixelShader *pPixelShader) {
+-  d3d11_context_->PSSetShader(GetD3D11Interface<MTLD3D10PixelShader>(pPixelShader), nullptr, 0);
++  d3d11_context_->PSSetShader(nullptr, nullptr, 0);
+ }
+ 
+ void STDMETHODCALLTYPE

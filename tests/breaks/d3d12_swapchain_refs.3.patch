@@ -1,0 +1,12 @@
+# internal buffer ownership is public and retains the swap chain
+--- a/src/d3d12/d3d12_swapchain.cpp
++++ b/src/d3d12/d3d12_swapchain.cpp
+@@ -143,7 +143,7 @@
+   mullion::mutex mutex_;
+
+   D3D12SwapChainBufferRefs buffer_refs_{this};
+-  std::vector<Com<MTLD3D12Resource, false>> backbuffers_;
++  std::vector<Com<MTLD3D12Resource>> backbuffers_;
+   struct PresentQueue {
+     Com<ID3D12CommandQueue> queue;
+     Com<ID3D12Fence> ready;

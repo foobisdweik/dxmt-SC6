@@ -1,0 +1,12 @@
+# enqueues and commits in order but drops the requested delay
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -155,7 +155,7 @@
+     // MTLCommandBuffer.enqueue reserves queue order before the delayed commit (Apple, enqueue discussion).
+     [buffer enqueue];
+     dispatch_async(test_late_commits, ^{
+-      dispatch_semaphore_wait(test_late_timer, deadline);
++      (void)deadline;
+       @autoreleasepool {
+         [buffer commit];
+       }

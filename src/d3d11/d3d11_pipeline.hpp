@@ -7,6 +7,11 @@
 #include "d3d11_state_object.hpp"
 #include "util_hash.hpp"
 
+// SC6 fork: MTL_GRAPHICS_PIPELINE_DESC::GSPassthrough of an ordinary pipeline whose vertex function also runs a
+// layered geometry shader (MTL_GEOMETRY_SHADER_REFLECTION's LayeredFaces). ~0u is a geometry shader that is no pass
+// through, so the two cannot meet
+constexpr uint32_t kGSLayered = 0xFFFFFFFE;
+
 struct MTL_GRAPHICS_PIPELINE_DESC {
   ManagedShader VertexShader;
   ManagedShader HullShader;
@@ -25,7 +30,22 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   bool GSStripTopology;
   SM50_INDEX_BUFFER_FORMAT IndexBufferFormat;
   uint32_t SampleMask;
+  // the render targets' samples all lie at the pixel center (D3D11_CENTER_MULTISAMPLE_PATTERN)
+  bool CenteredSamples;
+  // one sample rasterizes for multisampled targets (ForcedSampleCount 1)
+  bool SingleRasterSample;
+  // each raster sample stands for two of D3D's (RasterSampleCount)
+  bool PairedSamples;
+  // the last pre-raster stage's clip distances, which the pixel shader tests (SM50_SHADER_PSO_PIXEL_SHADER_DATA)
+  uint32_t ClipDistances;
   uint32_t GSPassthrough;
+  // a geometry pipeline without a geometry shader: its input primitive (D3D10_SB_PRIMITIVE), and whether the mesh
+  // stage passes the vertex shader's primitives on to the rasterizer; without that it only streams output
+  uint32_t InputPrimitive;
+  bool PassThrough;
+  // the lines it passes on are quadrilaterals (SM50_SHADER_PSO_GEOMETRY_SHADER_DATA)
+  bool QuadLines;
+  bool PipelineStatistics = false;
 };
 
 struct MTL_COMPUTE_PIPELINE_DESC {
@@ -34,6 +54,12 @@ struct MTL_COMPUTE_PIPELINE_DESC {
 
 struct MTL_COMPILED_GRAPHICS_PIPELINE {
   WMT::RenderPipelineState PipelineState;
+  // with stream output: the pass that counts before PipelineState writes, and the geometry shader's instances
+  WMT::RenderPipelineState StreamOutputCount;
+  uint32_t GeometryInstances;
+  // the mesh threadgroups an object threadgroup starts for each primitive: the geometry shader's instances, 1 when
+  // the mesh stage only passes primitives on, 0 when it starts none (stream output alone)
+  uint32_t MeshInstances;
 };
 
 struct MTL_COMPILED_COMPUTE_PIPELINE {
@@ -44,12 +70,14 @@ struct MTL_COMPILED_TESSELLATION_MESH_PIPELINE {
   WMT::RenderPipelineState PipelineState;
   uint32_t NumControlPointOutputElement;
   uint32_t ThreadsPerPatch;
+  // the object threadgroups that share a patch group's mesh threadgroups (tessellation_parts)
+  uint32_t Parts;
 };
 
 namespace std {
 template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
   size_t operator()(const MTL_GRAPHICS_PIPELINE_DESC &v) const noexcept {
-    dxmt::HashState state;
+    mullion::HashState state;
     state.add((size_t)v.VertexShader);
     state.add((size_t)v.PixelShader);
     state.add((size_t)v.HullShader);
@@ -63,7 +91,16 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     state.add((size_t)v.IndexBufferFormat);
     state.add((size_t)v.GSStripTopology);
     state.add((size_t)v.SampleMask);
+    state.add(v.CenteredSamples);
+    state.add(v.SingleRasterSample);
+    state.add(v.PairedSamples);
+    state.add(v.ClipDistances);
     state.add((size_t)v.GSPassthrough);
+    state.add((size_t)v.SOLayout);
+    state.add((size_t)v.InputPrimitive);
+    state.add((size_t)v.PassThrough);
+    state.add(v.QuadLines);
+    state.add(v.PipelineStatistics);
     state.add((size_t)v.SampleCount);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < v.NumColorAttachments; i++) {
@@ -132,20 +169,27 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
            (x.GSStripTopology == y.GSStripTopology) &&
            (x.SampleCount == y.SampleCount) &&
            (x.IndexBufferFormat == y.IndexBufferFormat) &&
-           (x.SampleMask == y.SampleMask) &&
-           (x.GSPassthrough == y.GSPassthrough);
+           (x.SampleMask == y.SampleMask) && (x.CenteredSamples == y.CenteredSamples) &&
+           (x.SingleRasterSample == y.SingleRasterSample) && (x.PairedSamples == y.PairedSamples) &&
+           (x.ClipDistances == y.ClipDistances) &&
+           (x.GSPassthrough == y.GSPassthrough) && (x.SOLayout == y.SOLayout) &&
+           (x.InputPrimitive == y.InputPrimitive) && (x.PassThrough == y.PassThrough) && (x.QuadLines == y.QuadLines) &&
+           (x.PipelineStatistics == y.PipelineStatistics);
   }
 };
 } // namespace std
 
-namespace dxmt {
+namespace mullion {
+
+class PipelineArchive;
 
 class MTLCompiledGraphicsPipeline : public ThreadpoolWork {
 public:
   /**
   NOTE: the current thread is blocked if it's not ready
    */
-  virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pGraphicsPipeline) = 0;
+  const MTL_GRAPHICS_PIPELINE_DESC *description;
+  virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pGraphicsPipeline, bool statistics = false) = 0;
 };
 
 class MTLCompiledComputePipeline : public ThreadpoolWork {
@@ -155,18 +199,25 @@ public:
 
 class MTLCompiledGeometryPipeline : public ThreadpoolWork {
 public:
-  virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pGeometryPipeline) = 0;
+  const MTL_GRAPHICS_PIPELINE_DESC *description;
+  virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pGeometryPipeline, bool statistics = false) = 0;
 };
 
 class MTLCompiledTessellationMeshPipeline : public ThreadpoolWork {
 public:
-  virtual void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *pTessellationPipeline) = 0;
+  const MTL_GRAPHICS_PIPELINE_DESC *description;
+  virtual void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *pTessellationPipeline, bool statistics = false) = 0;
 };
 
+// SC6 fork: pArchive (the persistent pipeline archive, d3d11.pipelineArchive) may be null. WarmUp marks a pipeline
+// compiled ahead of its first use from a PipelineArchive record.
 std::unique_ptr<MTLCompiledGraphicsPipeline>
-CreateGraphicsPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc);
+CreateGraphicsPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                       PipelineArchive *pArchive = nullptr, bool WarmUp = false);
 
-std::unique_ptr<MTLCompiledComputePipeline> CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader);
+std::unique_ptr<MTLCompiledComputePipeline>
+CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader,
+                      PipelineArchive *pArchive = nullptr, bool WarmUp = false);
 
 std::unique_ptr<MTLCompiledGeometryPipeline>
 CreateGeometryPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc);
@@ -174,4 +225,4 @@ CreateGeometryPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDes
 std::unique_ptr<MTLCompiledTessellationMeshPipeline>
 CreateTessellationMeshPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc);
 
-}; // namespace dxmt
+}; // namespace mullion

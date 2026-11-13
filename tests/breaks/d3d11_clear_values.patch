@@ -1,0 +1,12 @@
+# takes an A8 uint clear from red instead of alpha.
+--- a/src/mullion/mullion_command_clear.hpp
++++ b/src/mullion/mullion_command_clear.hpp
+@@ -246,7 +246,7 @@
+     std::array<uint32_t, 4> packed{};
+     switch (source_format) {
+     case WMTPixelFormatA8Unorm:
+-      packed[0] = color[3] & 0xff;
++      packed[0] = color[0] & 0xff;
+       break;
+     case WMTPixelFormatR8Unorm:
+     case WMTPixelFormatR8Unorm_sRGB:

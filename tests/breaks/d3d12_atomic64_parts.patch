@@ -1,0 +1,12 @@
+# resource atomics do not request the dispatch origin
+--- a/src/airconv/dxbc_signature.cpp
++++ b/src/airconv/dxbc_signature.cpp
+@@ -1208,7 +1208,7 @@
+ // groups
+ void declare_dispatch_origin(SM50ShaderInternal *sm50_shader) {
+   if (sm50_shader->shader_type != microsoft::D3D11_SB_COMPUTE_SHADER ||
+-      !(sm50_shader->groups_work_together || sm50_shader->device_atomics64) || !sm50_shader->reads_dispatch_position)
++      !sm50_shader->groups_work_together || !sm50_shader->reads_dispatch_position)
+     return;
+   auto index = sm50_shader->func_signature.DefineInput(InputStageInGridOrigin{});
+   sm50_shader->signature_handlers.push_back([=](SignatureContext &ctx) {

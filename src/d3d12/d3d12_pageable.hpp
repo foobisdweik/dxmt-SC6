@@ -19,7 +19,7 @@
 #pragma once
 #include "d3d12_device_child.hpp"
 
-namespace dxmt {
+namespace mullion {
 template <typename... Base> class MTLD3D12Pageable : public MTLD3D12DeviceChild<Base...> {
 public:
   MTLD3D12Pageable(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<Base...>(pDevice) {}
@@ -27,4 +27,4 @@ public:
 
 using MTLD3D12PageableCommon = MTLD3D12Pageable<ID3D12Pageable>;
 
-}; // namespace dxmt
+}; // namespace mullion

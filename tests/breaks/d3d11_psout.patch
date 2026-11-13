@@ -1,0 +1,12 @@
+# drops alpha-to-coverage even when the shader has no coverage output.
+--- a/src/d3d11/d3d11_state_object.cpp
++++ b/src/d3d11/d3d11_state_object.cpp
+@@ -352,7 +352,7 @@
+       info->logic_operation = kLogicOpMap[desc_.RenderTarget[0].LogicOp];
+ #endif
+     }
+-    info->alpha_to_coverage_enabled = desc_.AlphaToCoverageEnable;
++    info->alpha_to_coverage_enabled = false;
+   }
+ 
+ private:

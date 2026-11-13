@@ -1,0 +1,14 @@
+# malformed DXBC tokens stop the converter at an assertion again, instead of refusing the shader
+# family native
+--- a/src/airconv/dxbc_instructions.hpp
++++ b/src/airconv/dxbc_instructions.hpp
+@@ -29,8 +29,7 @@
+ // what a shader's tokens must be: one that is not refuses the shader (Refuse)
+ #define DXASSERT_DXBC(x)                                                                                               \
+   do {                                                                                                                 \
+-    if (!(x))                                                                                                          \
+-      Refuse("malformed tokens: " #x);                                                                                 \
++    assert(x);                                                                                                         \
+   } while (0)
+ 
+ namespace mullion::dxbc {

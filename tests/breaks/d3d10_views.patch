@@ -1,0 +1,12 @@
+# ignore the explicit D3D10 render target view descriptor
+--- a/src/d3d10/d3d10_device.cpp
++++ b/src/d3d10/d3d10_device.cpp
+@@ -905,7 +905,7 @@
+   Com<ID3D11RenderTargetView> d3d11_view;
+   HRESULT hr = d3d11_device_->CreateRenderTargetView(
+       /* compatible memory layout to MTLD3D10Texture1/2/3D */
+-      GetD3D11Interface<MTLD3D10Buffer>(pResource), reinterpret_cast<const D3D11_RENDER_TARGET_VIEW_DESC *>(pDesc),
++      GetD3D11Interface<MTLD3D10Buffer>(pResource), nullptr,
+       ppRTView ? &d3d11_view : nullptr
+   );
+ 

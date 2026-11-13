@@ -1,0 +1,13 @@
+# COMPUTE lists refuse interface 8
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -473,7 +473,8 @@
+         riid == __uuidof(ID3D12GraphicsCommandList1) || riid == __uuidof(ID3D12GraphicsCommandList2) ||
+         riid == __uuidof(ID3D12GraphicsCommandList3) || riid == __uuidof(ID3D12GraphicsCommandList4) ||
+         riid == __uuidof(ID3D12GraphicsCommandList5) || riid == __uuidof(ID3D12GraphicsCommandList6) ||
+-        riid == __uuidof(ID3D12GraphicsCommandList7) || riid == __uuidof(ID3D12GraphicsCommandList8)) {
++        riid == __uuidof(ID3D12GraphicsCommandList7) ||
++        (riid == __uuidof(ID3D12GraphicsCommandList8) && type_ != D3D12_COMMAND_LIST_TYPE_COMPUTE)) {
+       *ppvObject = ref(this);
+       return S_OK;
+     }

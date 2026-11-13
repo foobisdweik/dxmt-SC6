@@ -1,0 +1,11 @@
+# R10G10B10A2_UINT is not offered for vertex input.
+--- a/src/mullion/mullion_format.cpp
++++ b/src/mullion/mullion_format.cpp
+@@ -686,7 +686,6 @@
+   }
+   case DXGI_FORMAT_R10G10B10A2_UINT: {
+     description.PixelFormat = WMTPixelFormatRGB10A2Uint;
+-    description.AttributeFormat = WMTAttributeFormatUInt1010102;
+     description.BytesPerTexel = 4;
+     break;
+   }

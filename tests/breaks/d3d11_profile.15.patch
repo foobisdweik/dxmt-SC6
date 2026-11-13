@@ -1,0 +1,13 @@
+# erase the encoder thread chunk interval
+diff --git a/src/mullion/mullion_command_queue.cpp b/src/mullion/mullion_command_queue.cpp
+--- a/src/mullion/mullion_command_queue.cpp
++++ b/src/mullion/mullion_command_queue.cpp
+@@ -249,7 +249,7 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
+   if (encoding_cancelled_ || stopped.load(std::memory_order_acquire))
+     return;
+   if (profile_)
+-    diag::Write(diag::Line("span", "encode", seq, GetCurrentThreadId(), began, diag::Now() - began));
++    diag::Write(diag::Line("span", "encode", seq, GetCurrentThreadId(), began, uint64_t(0)));
+   if (profile_) {
+     auto &buffer = profile_->buffers[seq % kCommandChunkCount];
+     device.sampleTimestamps(buffer.cpu_begin, buffer.gpu_begin);

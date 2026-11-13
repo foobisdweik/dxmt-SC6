@@ -38,7 +38,7 @@
 
 using namespace llvm;
 
-namespace dxmt::air {
+namespace mullion::air {
 
 class StreamMDHelper {
 public:
@@ -124,7 +124,7 @@ uint32_t ArgumentBufferBuilder::DefineSampler(
 uint32_t ArgumentBufferBuilder::DefineTexture(
   std::string name, TextureKind kind, MemoryAccess access,
   MSLScalerType scaler_type, uint32_t location_index,
-  std::optional<uint32_t> raster_order_group
+  std::optional<uint32_t> raster_order_group, bool compared
 ) {
   auto element_index = fieldsType.size();
   assert(!fields.count(name) && "otherwise duplicated field name");
@@ -137,7 +137,7 @@ uint32_t ArgumentBufferBuilder::DefineTexture(
       MSLTexture{
         .component_type = scaler_type,
         .memory_access = access,
-        .resource_kind =  air::lowering_texture_1d_to_2d(kind),
+        .resource_kind =  air::lowering_texture_1d_to_2d(kind, compared),
         .resource_kind_logical = kind,
       },
     .arg_name = name,
@@ -274,16 +274,16 @@ auto build_argument_binding_texture(
     ->integer(texture.array_size);
 
   switch (texture.memory_access) {
-  case dxmt::air::MemoryAccess::read:
+  case mullion::air::MemoryAccess::read:
     md.string("air.read");
     break;
-  case dxmt::air::MemoryAccess::write:
+  case mullion::air::MemoryAccess::write:
     md.string("air.write");
     break;
-  case dxmt::air::MemoryAccess::read_write:
+  case mullion::air::MemoryAccess::read_write:
     md.string("air.read_write");
     break;
-  case dxmt::air::MemoryAccess::sample:
+  case mullion::air::MemoryAccess::sample:
     md.string("air.sample");
     break;
   }
@@ -440,6 +440,22 @@ auto ArgumentBufferBuilder::Build(
   return std::make_pair(struct_type, struct_metadata.BuildTuple(context));
 };
 
+void
+FunctionSignatureBuilder::CenterCentroids() {
+  auto center = [](Interpolation &interpolation) {
+    if (interpolation == Interpolation::centroid_perspective)
+      interpolation = Interpolation::center_perspective;
+    else if (interpolation == Interpolation::centroid_no_perspective)
+      interpolation = Interpolation::center_no_perspective;
+  };
+  for (auto &input : inputs) {
+    if (auto stage_in = std::get_if<InputFragmentStageIn>(&input))
+      center(stage_in->interpolation);
+    else if (auto position = std::get_if<InputPosition>(&input))
+      center(position->interpolation);
+  }
+}
+
 uint32_t FunctionSignatureBuilder::DefineInput(const FunctionInput &input) {
   uint32_t index = inputs.size();
   for (auto &element : enumerate(inputs)) {
@@ -473,6 +489,12 @@ uint32_t FunctionSignatureBuilder::DefineInput(const FunctionInput &input) {
                 return s.location_index ==
                        std::get<ArgumentBindingIndirectBuffer>(element.value())
                          .location_index;
+              },
+              [&](const InputRenderTarget s) {
+                return s.index == std::get<InputRenderTarget>(element.value()).index;
+              },
+              [&](const InputBarycentricCoord s) {
+                return s.perspective == std::get<InputBarycentricCoord>(element.value()).perspective;
               },
               [](auto) { return true; }
             },
@@ -609,6 +631,13 @@ auto FunctionSignatureBuilder::CreateFunction(
                   ->string("air.arg_name")
                   ->string("mtl_primitive_id");
             },
+            [&](const OutputPrimitiveCulled) {
+              md.string("air.primitive_culled")
+                  ->string("air.arg_type_name")
+                  ->string("bool")
+                  ->string("air.arg_name")
+                  ->string("mtl_primitive_culled");
+            },
         },
         output
     );
@@ -636,14 +665,31 @@ auto FunctionSignatureBuilder::CreateFunction(
         [&](const InputFragmentStageIn &frag_in) -> llvm::Type * {
           metadata_field.string("air.fragment_input")
             ->string(std::string("user(") + frag_in.user + ")");
-          insert_inteterpolation(metadata_field, frag_in.interpolation, frag_in.pull_mode);
+          if (frag_in.vertex_value)
+            metadata_field.string("air.vertex_value");
+          else
+            insert_inteterpolation(metadata_field, frag_in.interpolation, frag_in.pull_mode);
           metadata_field.string("air.arg_type_name")
             ->string(get_name(frag_in.type))
             ->string("air.arg_name")
             ->string(frag_in.user);
+          if (frag_in.vertex_value)
+            return getOrCreateStructType("struct._vertex_value_t", context)->getPointerTo(1);
           if (frag_in.pull_mode)
             return getOrCreateStructType("struct._interpolant_t", context)->getPointerTo(1);
           return get_llvm_type(frag_in.type, context);
+        },
+        [&](const InputBarycentricCoord &barycentric) -> llvm::Type * {
+          metadata_field.string("air.barycentric_coord");
+          insert_inteterpolation(
+              metadata_field,
+              barycentric.perspective ? Interpolation::center_perspective : Interpolation::center_no_perspective, false
+          );
+          metadata_field.string("air.arg_type_name")
+            ->string("float3")
+            ->string("air.arg_name")
+            ->string(barycentric.perspective ? "barycentric_coord" : "barycentric_coord_no_perspective");
+          return llvm::FixedVectorType::get(llvm::Type::getFloatTy(context), 3);
         },
         [&](const ArgumentBindingBuffer &buffer) {
           return build_argument_binding_buffer(
@@ -739,12 +785,44 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("mtl_thread_index_in_threadgroup");
           return msl_uint.get_llvm_type(context);
         },
+        [&](const InputThreadIndexInSIMDGroup &) {
+          metadata_field.string("air.thread_index_in_simdgroup")
+            ->string("air.arg_type_name")
+            ->string("uint")
+            ->string("air.arg_name")
+            ->string("mtl_thread_index_in_simdgroup");
+          return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputThreadsPerSIMDGroup &) {
+          metadata_field.string("air.threads_per_simdgroup")
+            ->string("air.arg_type_name")
+            ->string("uint")
+            ->string("air.arg_name")
+            ->string("mtl_threads_per_simdgroup");
+          return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputThreadsPerThreadgroup &) {
+          metadata_field.string("air.threads_per_threadgroup")
+            ->string("air.arg_type_name")
+            ->string("uint3")
+            ->string("air.arg_name")
+            ->string("mtl_threads_per_threadgroup");
+          return msl_uint3.get_llvm_type(context);
+        },
         [&](const InputThreadgroupsPerGrid &) {
           metadata_field.string("air.threadgroups_per_grid")
             ->string("air.arg_type_name")
             ->string("uint3") // HARDCODED
             ->string("air.arg_name")
             ->string("mtl_threadgroups_per_grid");
+          return msl_uint3.get_llvm_type(context);
+        },
+        [&](const InputStageInGridOrigin &) {
+          metadata_field.string("air.stage_in_grid_origin")
+            ->string("air.arg_type_name")
+            ->string("uint3")
+            ->string("air.arg_name")
+            ->string("mtl_grid_origin");
           return msl_uint3.get_llvm_type(context);
         },
         [&](const InputVertexID &) {
@@ -786,6 +864,15 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("air.arg_name")
             ->string("mtl_primitive_id");
           return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputRenderTarget &target) {
+          metadata_field.string("air.render_target")
+            ->integer(target.index)
+            ->string("air.arg_type_name")
+            ->string(get_name(target.type))
+            ->string("air.arg_name")
+            ->string("render_target_in_" + std::to_string(target.index));
+          return get_llvm_type(target.type, context);
         },
         [&](const InputInputCoverage &) {
           metadata_field.string("air.sample_mask_in")
@@ -1012,4 +1099,4 @@ auto FunctionSignatureBuilder::CreateFunction(
   return std::make_pair(function, MDTuple::get(context, function_def_tuple));
 };
 
-} // namespace dxmt::air
+} // namespace mullion::air

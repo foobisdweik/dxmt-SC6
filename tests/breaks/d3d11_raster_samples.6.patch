@@ -1,0 +1,12 @@
+# passes of center pattern targets keep the standard sample positions
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -520,7 +520,7 @@
+   descriptor.visibilityResultBuffer = (id<MTLBuffer>)info->visibility_buffer;
+ 
+   // one sample lies at the center already, and Metal takes custom positions only for more
+-  if (info->center_samples > 1) {
++  if (0) {
+     MTLSamplePosition center[info->center_samples];
+     for (unsigned i = 0; i < info->center_samples; i++)
+       center[i] = MTLSamplePositionMake(0.5, 0.5);

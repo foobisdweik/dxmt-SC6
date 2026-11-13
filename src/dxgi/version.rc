@@ -14,13 +14,13 @@ BEGIN
   BEGIN
     BLOCK "080904b0"
     BEGIN
-      VALUE "CompanyName",      "DXMT"
+      VALUE "CompanyName",      "Mullion"
       VALUE "FileDescription",  "DirectX Graphics Infrastructure"
       VALUE "FileVersion",      "10.0.17763.1 (WinBuild.160101.0800)"
       VALUE "InternalName",     "dxgi.dll"
       VALUE "LegalCopyright",   "MIT License"
       VALUE "OriginalFilename", "dxgi.dll"
-      VALUE "ProductName",      "DXMT"
+      VALUE "ProductName",      "Mullion"
       VALUE "ProductVersion",   "10.0.17763.1"
     END
   END

@@ -18,6 +18,7 @@
 
 #include "Metal.hpp"
 #include "airconv_public.h"
+#include "tessellation_limits.hpp"
 #include "config/config.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
@@ -25,9 +26,9 @@
 #include "log/log.hpp"
 #include "thread.hpp"
 
-namespace dxmt {
+namespace mullion {
 
-static dxmt::mutex ts_global_mutex;
+static mullion::mutex ts_global_mutex;
 
 class MTLCompiledTessellationPipelineImpl: public MTLCompiledTessellationMeshPipeline {
 public:
@@ -37,7 +38,7 @@ public:
         depth_stencil_format(pDesc->DepthStencilFormat), device_(pDevice),
         pBlendState(pDesc->BlendState),
         RasterizationEnabled(pDesc->RasterizationEnabled),
-        SampleCount(pDesc->SampleCount) {
+        SampleCount(pDesc->SampleCount), desc(*pDesc) {
     if (pDesc->RasterizationEnabled && !pDesc->PixelShader)
       num_rtvs = 0;
     uint32_t unorm_output_reg_mask = 0;
@@ -50,39 +51,22 @@ public:
 
     hull_reflection = pDesc->HullShader->reflection();
     auto &domain_reflection = pDesc->DomainShader->reflection();
-    uint32_t max_potential_factor = domain_reflection.PostTessellator.MaxPotentialTessFactor;
-
-    if (!device_->GetMTLDevice().supportsFamily(WMTGPUFamilyApple9)) {
-      // indeed this value might be too conservative
-      max_potential_factor = std::min(8u, max_potential_factor);
-    }
-    auto expected_tess_factor = hull_reflection.Tessellator.MaxFactor;
+    // what a vertex of the domain shader's takes of a mesh, and the largest factor, which only the configuration
+    // lowers
+    mesh_vertex_size = domain_reflection.PostTessellator.MeshVertexSize;
+    max_potential_factor = UINT32_MAX;
     if (uint32_t tess_factor_config = Config::getInstance().getOption<int32_t>("d3d11.maxTessFactor", 0u);
-        tess_factor_config >= 4 && tess_factor_config <= 64) {
-      expected_tess_factor = tess_factor_config;
-      max_potential_factor = std::min(tess_factor_config, max_potential_factor);
-    }
-    if ((float)max_potential_factor < expected_tess_factor) {
-      WARN(
-          "maxtessfactor(", expected_tess_factor, ") is too large for a mesh pipeline. Clamping to ",
-          max_potential_factor
-      );
-    }
+        tess_factor_config >= 4 && tess_factor_config <= 64)
+      max_potential_factor = tess_factor_config;
 
-    VertexHullShader =
-        pDesc->HullShader->get_shader(ShaderVariantTessellationVertexHull{
-            pDesc->InputLayout,
-            pDesc->VertexShader, pDesc->IndexBufferFormat,
-            max_potential_factor});
-    DomainShader =
-        pDesc->DomainShader->get_shader(ShaderVariantTessellationDomain{
-            pDesc->HullShader, pDesc->GSPassthrough,
-            max_potential_factor, !pDesc->RasterizationEnabled});
+    GetTessellationShaders();
     if (pDesc->PixelShader) {
-      PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
+      PixelShader = pDesc->PixelShader->get_pixel_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
           depth_stencil_format == WMTPixelFormatInvalid,
-          unorm_output_reg_mask});
+          unorm_output_reg_mask, pDesc->PipelineStatistics, pDesc->BlendState->IsAlphaToCoverage(),
+          pDesc->CenteredSamples, pDesc->SingleRasterSample, pDesc->PairedSamples, pDesc->ClipDistances},
+          {rtv_formats, num_rtvs}, pDesc->BlendState);
       ps_valid_render_targets = pDesc->PixelShader->reflection().PSValidRenderTargets;
     } else {
       PixelShader = nullptr;
@@ -90,10 +74,45 @@ public:
     }
   }
 
-  void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *pPipeline) final {
+  // the vertex-hull and domain shaders, for what the device says a mesh grid may have, and how many object
+  // threadgroups then share a patch group's mesh threadgroups
+  void GetTessellationShaders() {
+    max_mesh_threadgroups = device_->GetMullionDevice().max_mesh_threadgroups;
+    auto partitioning = microsoft::D3D11_SB_TESSELLATOR_PARTITIONING(hull_reflection.Tessellator.Partition);
+    auto domain = microsoft::D3D11_SB_TESSELLATOR_DOMAIN(hull_reflection.Tessellator.Domain);
+    auto factor = dxbc::get_final_factor(hull_reflection.Tessellator.MaxFactor, partitioning, max_potential_factor).second;
+    parts = dxbc::tessellation_grids(
+                dxbc::get_max_potential_workload_count(factor, domain, partitioning) * (32 / hull_reflection.ThreadsPerPatch),
+                // a geometry shader runs in the mesh stage after the domain shader, a threadgroup for each primitive
+                desc.GeometryShader
+                    ? dxbc::get_max_workload_vertices(factor, domain)
+                    : dxbc::tessellation_pieces(
+                          factor, domain,
+                          microsoft::D3D11_SB_TESSELLATOR_OUTPUT_PRIMITIVE(hull_reflection.Tessellator.OutputPrimitive),
+                          mesh_vertex_size
+                      ).count,
+                desc.GeometryShader ? desc.GeometryShader->reflection().GeometryShader.InstanceCount : 1,
+                max_mesh_threadgroups
+    ).parts;
+    VertexHullShader = desc.HullShader->get_shader(ShaderVariantTessellationVertexHull{
+        desc.InputLayout, desc.VertexShader, desc.IndexBufferFormat, max_potential_factor, mesh_vertex_size,
+        desc.GeometryShader, max_mesh_threadgroups});
+    DomainShader = desc.DomainShader->get_shader(ShaderVariantTessellationDomain{
+        desc.HullShader, max_potential_factor, mesh_vertex_size, !desc.RasterizationEnabled, desc.GeometryShader,
+        max_mesh_threadgroups, desc.ClipDistances != 0});
+  }
+
+  void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *pPipeline, bool statistics) final {
+    if (statistics && description->PixelShader && !description->PipelineStatistics) {
+      auto desc = *description;
+      desc.PipelineStatistics = true;
+      MTLCompiledTessellationMeshPipeline *pipeline;
+      device_->CreateTessellationMeshPipeline(&desc, &pipeline);
+      return pipeline->GetPipeline(pPipeline);
+    }
     ready_.wait(false, std::memory_order_acquire);
     *pPipeline = {state_rasterization_, hull_reflection.NumOutputElement,
-                  hull_reflection.ThreadsPerPatch};
+                  hull_reflection.ThreadsPerPatch, parts};
   }
 
   ThreadpoolWork *RunThreadpoolWork() {
@@ -163,6 +182,9 @@ public:
       pBlendState->SetupMetalPipelineDescriptor(
           (WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
     }
+    // explicit shader coverage disables A2C (D3D11.3 17.18)
+    if (description->PixelShader && description->PixelShader->reflection().PixelShader.HasCoverageOutput)
+      info.alpha_to_coverage_enabled = false;
 
     info.raster_sample_count = SampleCount;
     // so far it's a fixed constant
@@ -172,13 +194,20 @@ public:
     info.object_tgsize_is_multiple_of_sgwidth = true;
 
     {
-      std::lock_guard<dxmt::mutex> lock(ts_global_mutex);
+      std::lock_guard<mullion::mutex> lock(ts_global_mutex);
       state_rasterization_ =
           device_->GetMTLDevice().newRenderPipelineState(info, err);
     }
     if (state_rasterization_ == nullptr) {
       ERR("Failed to create tessellation raster PSO: ",
           err.description().getUTF8String());
+    }
+    // only a pipeline tells what a grid may have: the device's first is built to ask, then built for it
+    if (!max_mesh_threadgroups && state_rasterization_ != nullptr) {
+      device_->GetMullionDevice().max_mesh_threadgroups =
+          std::min<uint64_t>(state_rasterization_.maxTotalThreadgroupsPerMeshGrid(), UINT32_MAX);
+      GetTessellationShaders();
+      return RunThreadpoolWork();
     }
 
     return this;
@@ -205,6 +234,11 @@ private:
 
   MTL_SHADER_REFLECTION hull_reflection;
 
+  MTL_GRAPHICS_PIPELINE_DESC desc;
+  uint32_t max_potential_factor;
+  uint32_t mesh_vertex_size;
+  uint32_t max_mesh_threadgroups;
+  uint32_t parts;
   CompiledShader *VertexHullShader;
   CompiledShader *PixelShader;
   CompiledShader *DomainShader;
@@ -216,4 +250,4 @@ CreateTessellationMeshPipeline(MTLD3D11Device *pDevice,
   return std::make_unique<MTLCompiledTessellationPipelineImpl>(pDevice, pDesc);
 }
 
-} // namespace dxmt
+} // namespace mullion

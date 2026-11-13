@@ -1,0 +1,13 @@
+# a copy whose destination follows on from the copy before is joined to it wherever its source is
+# family native
+--- a/src/d3d12/d3d12_command_list.cpp
++++ b/src/d3d12/d3d12_command_list.cpp
+@@ -2037,7 +2037,7 @@
+         static_cast<BlitEncoderData *>(allocator_->encoder_current)->cmd_tail
+     );
+     if (src != dst && last->type == WMTBlitCommandCopyFromBufferToBuffer && last->src == src && last->dst == dst &&
+-        last->src_offset + last->copy_length == SrcOffset && last->dst_offset + last->copy_length == DstOffset) {
++        last->dst_offset + last->copy_length == DstOffset) {
+       last->copy_length += ByteCount;
+       return;
+     }

@@ -22,7 +22,7 @@
 
 #include "../util_env.hpp"
 
-namespace dxmt {
+namespace mullion {
 
   class SingletonConfig : public Config {
   public:
@@ -41,11 +41,6 @@ namespace dxmt {
 
 
   const static ProfileList g_profiles = {{
-    { R"(\\(GenshinImpact|YuanShen|ZenlessZoneZero)\.exe$)", {{
-      { "dxgi.customDeviceDesc",   "AMD Radeon Pro 5300M" },
-      { "dxgi.customVendorId",     "1002" },
-      { "dxgi.customDeviceId",     "7340" },
-    }} },
     { R"(\\SONIC_X_SHADOW_GENERATIONS\.exe$)", {{
       { "d3d11.ignoreMapFlagNoWait",   "True" },
     }} },
@@ -63,6 +58,20 @@ namespace dxmt {
     /** Helldivers 2 */
     { R"(\\helldivers2\.exe$)", {{
       { "d3d11.maxFeatureLevel",   "12_1" },
+    }} },
+    /** SoulCalibur VI (SC6 fork): ProMotion pacing at up to 120 Hz, MetalFX upscaling to the panel, native
+     *  fullscreen, a layer format macOS can show directly, and the persistent pipeline archive */
+    { R"(\\SoulcaliburVI\.exe$)", {{
+      { "d3d11.preferredMaxFrameRate",     "120" },
+      { "d3d11.metalSpatialUpscale",       "True" },
+      { "d3d11.metalSpatialUpscaleFactor", "2.0" },
+      { "dxgi.nativeFullscreen",           "True" },
+      { "dxgi.metalLayerPixelFormat",      "bgr10a2" },
+      { "d3d11.pipelineArchive",           "True" },
+      /* the old SC6 build read constant buffers without bounds checks, and the game never reads past one */
+      { "mullion.cbufferBounds",           "False" },
+      /* the old SC6 build sampled with Metal's own LOD; the gradient path costs a branch in every 2D sample */
+      { "mullion.anisoGradients",          "False" },
     }} },
   }};
 
@@ -350,15 +359,18 @@ namespace dxmt {
   Config Config::getUserConfig() {
     Config config;
 
-    // Load either $DXMT_CONFIG_FILE or $PWD/dxmt.conf
-    std::string filePath = env::getEnvVar("DXMT_CONFIG_FILE");
-    std::string confLine = env::getEnvVar("DXMT_CONFIG");
+    // Load either $MULLION_CONFIG_FILE or $PWD/mullion.conf (dxmt.conf, the name it had, when there is none)
+    std::string filePath = env::getEnvVar("MULLION_CONFIG_FILE");
+    std::string confLine = env::getEnvVar("MULLION_CONFIG");
 
-    if (filePath == "")
-      filePath = "dxmt.conf";
+    bool named = filePath != "";
+    if (!named)
+      filePath = "mullion.conf";
 
     // Open the file if it exists
     std::ifstream stream(str::topath(filePath.c_str()).c_str());
+    if (!stream && !named)
+      stream.open(str::topath((filePath = "dxmt.conf").c_str()).c_str());
 
     if (!stream && confLine.empty())
       return config;
@@ -384,6 +396,8 @@ namespace dxmt {
       // help when debugging configuration issues
       Logger::info(str::format("Found config env: ", confLine));
 
+      // the environment applies to this executable, whichever section the file ended in
+      ctx.active = true;
       for(auto l : str::split(confLine, ";"))
         parseUserConfigLine(config, ctx, std::string(l.data(), l.size()));
     }

@@ -1,0 +1,12 @@
+# Direct3D 11 does not wait for the fences a returned resource was given
+--- a/src/d3d11/d3d11_on12.cpp
++++ b/src/d3d11/d3d11_on12.cpp
+@@ -197,7 +197,7 @@
+     // the returned fences live until the command buffer completes: the last release of a fence ends its waits
+     auto returned = std::exchange(returned_, {});
+     for (auto &[fence, value] : returned)
+-      queue_->Wait(fence.ptr(), value);
++      ;
+     queue_->Signal(ordered_.ptr(), ++ordered_value_);
+     ordered_metal_->SignalMetalAt(ordered_value_, ordered_event_.handle);
+     chunk.wait_event = ordered_event_;

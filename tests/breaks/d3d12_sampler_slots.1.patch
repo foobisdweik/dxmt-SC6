@@ -1,0 +1,14 @@
+# running out of samplers says nothing
+# family 7
+--- a/src/mullion/mullion_sampler.cpp
++++ b/src/mullion/mullion_sampler.cpp
+@@ -18,8 +18,7 @@
+   static mullion::mutex mutex;
+   static std::unordered_set<uint64_t> ids;
+   std::lock_guard<mullion::mutex> lock(mutex);
+-  if (ids.insert(id).second && ids.size() == device.maxArgumentBufferSamplerCount() + 1)
+-    WARN("Sampler: past the ", ids.size() - 1, " distinct samplers Metal holds; the newer ones sample wrong");
++  ids.insert(id);
+ }
+ 
+ void

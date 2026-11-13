@@ -1,0 +1,358 @@
+{
+ "test_alpha_to_coverage": {
+  "verdict": "passed"
+ },
+ "test_blend": {
+  "verdict": "passed"
+ },
+ "test_buffer_srv": {
+  "verdict": "passed"
+ },
+ "test_cb_relative_addressing": {
+  "verdict": "passed"
+ },
+ "test_check_multisample_quality_levels": {
+  "verdict": "passed"
+ },
+ "test_clear_after_draw": {
+  "verdict": "passed"
+ },
+ "test_clear_depth_stencil_view": {
+  "verdict": "passed"
+ },
+ "test_clear_render_target_view_1d": {
+  "verdict": "passed"
+ },
+ "test_clear_render_target_view_2d": {
+  "verdict": "passed"
+ },
+ "test_clear_state": {
+  "verdict": "failed",
+  "failed": 4,
+  "first": "d3d10core.c:5938: Test failed: Got unexpected stream output offset 16 in slot 0."
+ },
+ "test_clip_distance": {
+  "verdict": "passed"
+ },
+ "test_color_mask": {
+  "verdict": "passed"
+ },
+ "test_combined_clip_and_cull_distances": {
+  "verdict": "passed"
+ },
+ "test_compressed_format_compatibility": {
+  "verdict": "passed"
+ },
+ "test_copy_subresource_region": {
+  "verdict": "passed"
+ },
+ "test_copy_subresource_region_1d": {
+  "verdict": "passed"
+ },
+ "test_create_blend_state": {
+  "verdict": "passed"
+ },
+ "test_create_buffer": {
+  "verdict": "failed",
+  "failed": 1,
+  "first": "d3d10core.c:2564: Test failed: Got unexpected hr 0."
+ },
+ "test_create_depthstencil_state": {
+  "verdict": "passed"
+ },
+ "test_create_depthstencil_view": {
+  "verdict": "passed"
+ },
+ "test_create_input_layout": {
+  "verdict": "passed"
+ },
+ "test_create_query": {
+  "verdict": "passed"
+ },
+ "test_create_rasterizer_state": {
+  "verdict": "passed"
+ },
+ "test_create_rendertarget_view": {
+  "verdict": "passed"
+ },
+ "test_create_sampler_state": {
+  "verdict": "passed"
+ },
+ "test_create_shader": {
+  "verdict": "passed"
+ },
+ "test_create_shader_resource_view": {
+  "verdict": "passed"
+ },
+ "test_create_texture1d": {
+  "verdict": "passed"
+ },
+ "test_create_texture2d": {
+  "verdict": "passed"
+ },
+ "test_create_texture3d": {
+  "verdict": "passed"
+ },
+ "test_cube_maps": {
+  "verdict": "passed"
+ },
+ "test_ddy": {
+  "verdict": "passed"
+ },
+ "test_depth_bias": {
+  "verdict": "failed",
+  "failed": 205,
+  "first": "d3d10core.c:16198: Test failed: Format 0x2d: z 0.125000, bias -10000, clamp 0.000000: Got 0x1ff63c, expected 0x1fd8f0 at (0, 0), sub-resource 0."
+ },
+ "test_depth_clip": {
+  "verdict": "passed"
+ },
+ "test_depth_stencil_sampling": {
+  "verdict": "partly",
+  "skipped": [
+   "Some AMD drivers have a bug affecting the test."
+  ]
+ },
+ "test_depthstencil_view_interfaces": {
+  "verdict": "passed"
+ },
+ "test_desktop_window": {
+  "verdict": "passed"
+ },
+ "test_device_interfaces": {
+  "verdict": "passed"
+ },
+ "test_device_removed_reason": {
+  "verdict": "passed"
+ },
+ "test_draw_depth_only": {
+  "verdict": "passed"
+ },
+ "test_dual_source_blend": {
+  "verdict": "passed"
+ },
+ "test_dynamic_map_synchronization": {
+  "verdict": "passed"
+ },
+ "test_face_culling": {
+  "verdict": "passed"
+ },
+ "test_feature_level": {
+  "verdict": "passed"
+ },
+ "test_format_compatibility": {
+  "verdict": "failed",
+  "failed": 54,
+  "first": "d3d10core.c:16453: Test failed: Test 26: Got unexpected colour 0x00ff0000 at (0, 1), expected 0x00000000."
+ },
+ "test_format_support": {
+  "verdict": "passed"
+ },
+ "test_fp_specials": {
+  "verdict": "passed"
+ },
+ "test_fragment_coords": {
+  "verdict": "passed"
+ },
+ "test_generate_mips": {
+  "verdict": "failed",
+  "failed": 15,
+  "first": "d3d10core.c:17454: Test failed: Test 2: unexpectedly succeeded to create shader resource view, hr 0."
+ },
+ "test_geometry_shader": {
+  "verdict": "passed"
+ },
+ "test_il_append_aligned": {
+  "verdict": "passed"
+ },
+ "test_immediate_constant_buffer": {
+  "verdict": "passed"
+ },
+ "test_independent_blend": {
+  "verdict": "passed"
+ },
+ "test_index_buffer_offset": {
+  "verdict": "passed"
+ },
+ "test_initial_depth_stencil_state": {
+  "verdict": "passed"
+ },
+ "test_initial_texture_data": {
+  "verdict": "passed"
+ },
+ "test_input_assembler": {
+  "verdict": "passed"
+ },
+ "test_input_layout_alignment": {
+  "verdict": "failed",
+  "failed": 6,
+  "first": "d3d10core.c:12650: Test failed: Test 1: Got unexpected hr 0, expected 0x80070057."
+ },
+ "test_instanced_draw": {
+  "verdict": "passed"
+ },
+ "test_layered_rendering": {
+  "verdict": "passed"
+ },
+ "test_layered_rtv_mismatch": {
+  "verdict": "passed"
+ },
+ "test_line_antialiasing_blending": {
+  "verdict": "passed"
+ },
+ "test_multiple_render_targets": {
+  "verdict": "passed"
+ },
+ "test_multiple_viewports": {
+  "verdict": "passed"
+ },
+ "test_multisample_resolve": {
+  "verdict": "failed",
+  "failed": 2,
+  "first": "d3d10core.c:18312: Test failed: Got 0xffbcffbc, expected 0xff80ff80 at (0, 0), sub-resource 0."
+ },
+ "test_null_sampler": {
+  "verdict": "passed"
+ },
+ "test_occlusion_query": {
+  "verdict": "failed",
+  "failed": 1,
+  "first": "d3d10core.c:4841: Test failed: Got unexpected query result 0x0000000090000000."
+ },
+ "test_pipeline_statistics_query": {
+  "verdict": "passed"
+ },
+ "test_primitive_restart": {
+  "verdict": "passed"
+ },
+ "test_private_data": {
+  "verdict": "passed"
+ },
+ "test_render_a8": {
+  "verdict": "passed"
+ },
+ "test_render_target_device_mismatch": {
+  "verdict": "passed"
+ },
+ "test_render_target_views": {
+  "verdict": "passed"
+ },
+ "test_resinfo_instruction": {
+  "verdict": "passed"
+ },
+ "test_resource_access": {
+  "verdict": "passed"
+ },
+ "test_rtv_depth_slice": {
+  "verdict": "passed"
+ },
+ "test_sample_c_lz": {
+  "verdict": "passed"
+ },
+ "test_sample_mask": {
+  "verdict": "passed"
+ },
+ "test_scissor": {
+  "verdict": "passed"
+ },
+ "test_shader_input_registers_limits": {
+  "verdict": "passed"
+ },
+ "test_shader_interstage_interface": {
+  "verdict": "passed"
+ },
+ "test_shader_stage_input_output_matching": {
+  "verdict": "passed"
+ },
+ "test_sm4_breakc_instruction": {
+  "verdict": "passed"
+ },
+ "test_sm4_continuec_instruction": {
+  "verdict": "passed"
+ },
+ "test_sm4_discard_instruction": {
+  "verdict": "passed"
+ },
+ "test_sm4_if_instruction": {
+  "verdict": "passed"
+ },
+ "test_sm4_ret_instruction": {
+  "verdict": "passed"
+ },
+ "test_so_statistics_query": {
+  "verdict": "passed"
+ },
+ "test_staging_buffers": {
+  "verdict": "passed"
+ },
+ "test_state_refcounting": {
+  "verdict": "failed",
+  "failed": 4,
+  "first": "d3d10core.c:8986: Test failed: Got unexpected pointer 00000000007301F0, expected NULL."
+ },
+ "test_stencil_only_write_after_clear": {
+  "verdict": "passed"
+ },
+ "test_stencil_separate": {
+  "verdict": "passed"
+ },
+ "test_stream_output": {
+  "verdict": "failed",
+  "failed": 28,
+  "first": "d3d10core.c:15676: Test failed: Test 15: Got unexpected hr 0."
+ },
+ "test_stream_output_resume": {
+  "verdict": "passed"
+ },
+ "test_stream_output_vs": {
+  "verdict": "passed"
+ },
+ "test_swapchain_flip": {
+  "verdict": "passed"
+ },
+ "test_swapchain_formats": {
+  "verdict": "passed"
+ },
+ "test_swapchain_views": {
+  "verdict": "passed"
+ },
+ "test_texture": {
+  "verdict": "passed"
+ },
+ "test_texture1d": {
+  "verdict": "passed"
+ },
+ "test_texture1d_interfaces": {
+  "verdict": "passed"
+ },
+ "test_texture2d_interfaces": {
+  "verdict": "passed"
+ },
+ "test_texture_compressed_3d": {
+  "verdict": "passed"
+ },
+ "test_timestamp_query": {
+  "verdict": "passed"
+ },
+ "test_uint_shader_instructions": {
+  "verdict": "passed"
+ },
+ "test_unbind_shader_resource_view": {
+  "verdict": "passed"
+ },
+ "test_unbound_multisample_texture": {
+  "verdict": "passed"
+ },
+ "test_unbound_streams": {
+  "verdict": "passed"
+ },
+ "test_update_subresource": {
+  "verdict": "passed"
+ },
+ "test_vertex_formats": {
+  "verdict": "passed"
+ },
+ "test_vs_input_relative_addressing": {
+  "verdict": "passed"
+ }
+}
